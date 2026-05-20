@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat src/.env)",
+      "Bash(ls .env*)",
+      "Bash(dir .env*)",
+      "Bash(Start-Sleep -Seconds 8)",
+      "Bash(Invoke-RestMethod -Uri \"https://api-sigic.inovaprojetosti.com.br/api/v1/health\" -Method Get)",
+      "PowerShell(Start-Sleep -Seconds 5; \\(Invoke-RestMethod -Uri \"https://api-sigic.inovaprojetosti.com.br/api/v1/health\"\\).status)",
+      "Bash(node gerar-relatorio.js)",
+      "Bash(powershell -Command \"\\(Get-Item 'RELATORIO_SEMESTRAL_QUALIDADE_DESENVOLVE-AL.docx'\\).Length / 1KB\")",
+      "Bash(git commit -m ' *)",
+      "PowerShell(Get-Process -Name \"node\" 2>$null | Select-Object Id, CPU, @{N='Cmd';E={$_.CommandLine}} | Format-Table -AutoSize)",
+      "PowerShell(cd \"C:\\\\Users\\\\micha\\\\inovaProjetoTi\\\\SIGID\"; \\(npx prisma generate 2>&1\\) -join \"`n\" | Select-String \"Generated|Error|Done|StatusDocReg\" | Select-Object -First 10)",
+      "PowerShell(curl -s http://localhost:3000/api/v1/health)",
+      "PowerShell(Start-Process -FilePath \"powershell\" -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\micha\\\\inovaProjetoTi\\\\SIGID'; npm run start:dev\" -WindowStyle Minimized)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\micha\\\\inovaProjetoTi\\\\SIGID\\\\src\\\\jobs\" -Filter \"*.ts\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(git cherry-pick *)",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -o '\\\\[M[0-9]*\\\\][^\\\\\\\\]*\\\\\\\\n')",
+      "Bash(grep -o '\\\\[M[0-9]*\\\\][^\\\\\\\\]*')",
+      "Bash(grep -o '\\\\[B[0-9]*\\\\][^\\\\\\\\]*')",
+      "PowerShell(docker info --format \"{{.ServerVersion}}\" 2>&1)",
+      "PowerShell(scp -i \"c:\\\\Users\\\\micha\\\\.ssh\\\\brsupercarga_ec2\" -o StrictHostKeyChecking=no ec2-user@3.89.171.59:/tmp/sigid_prod.dump \"$env:TEMP\\\\sigid_prod.dump\" && Write-Host \"SCP OK\")",
+      "PowerShell(docker exec -e PGPASSWORD=sigic123 sigid-postgres-1 psql -U sigic -d sigic_dev -c \"SELECT id, nome, email, role, ativo FROM usuarios WHERE nome ILIKE '%michael%' OR email ILIKE '%michael%';\")",
+      "PowerShell(docker exec -e PGPASSWORD=sigic123 sigid-postgres-1 psql -U sigic -d sigic_dev -c \"UPDATE usuarios SET senha = '\\\\$2b\\\\$10\\\\$TpJQG77uk.3jU9uujeuaSO/r6pUh9tXQ0tv7Clk6Ww65BE0vZQPv2' WHERE email = 'michael.alessander@desenvolve-al.com.br' RETURNING email, nome;\")",
+      "PowerShell(docker exec -e PGPASSWORD=sigic123 sigid-postgres-1 psql -U sigic -d sigic_dev -c \"UPDATE usuarios SET senha_hash = '\\\\$2b\\\\$10\\\\$TpJQG77uk.3jU9uujeuaSO/r6pUh9tXQ0tv7Clk6Ww65BE0vZQPv2' WHERE email = 'michael.alessander@desenvolve-al.com.br' RETURNING email, nome;\")",
+      "PowerShell(docker exec -e PGPASSWORD=sigic123 sigid-postgres-1 psql -U sigic -d sigic_dev -c \"SELECT email, nome, role, ativo FROM usuarios WHERE role = 'ADMIN' ORDER BY nome;\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\micha\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-micha-inovaProjetoTi-SIGID\\\\c5a0cefe-b74e-489c-8871-26b400fc10db\\\\tasks\\\\bchplyvkw.output\" -Wait)",
+      "Bash(Select-String --line-buffered \"Nest application successfully started|error|Error|FATAL|listening\")",
+      "PowerShell(cd \"C:\\\\Users\\\\micha\\\\inovaProjetoTi\\\\SIGID\"; node -e \"const bcrypt = require\\('bcrypt'\\); const {Client} = require\\('pg'\\); \\(async \\(\\) => { const hash = await bcrypt.hash\\('Senha@123', 10\\); const c = new Client\\({host:'localhost',port:15432,user:'sigic',password:'sigic123',database:'sigic_dev'}\\); await c.connect\\(\\); const r = await c.query\\('UPDATE usuarios SET senha_hash = \\\\$1 WHERE email = \\\\$2 RETURNING email,nome',[hash,'michael.alessander@desenvolve-al.com.br']\\); console.log\\(r.rows[0]\\); await c.end\\(\\); }\\)\\(\\)\")"
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "selene",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "turbo dev --filter=@selene/web",
+    "dev:api": "turbo dev --filter=@selene/api",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "~5.9.3",
+    "@types/node": "^24.0.0"
+  },
+  "packageManager": "bun@1.2.0"
+}

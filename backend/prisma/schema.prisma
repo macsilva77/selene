@@ -1,0 +1,1447 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                 String                   @id @default(uuid())
+  nome               String
+  slug               String                   @unique
+  cnpj               String?                  @unique
+  plano              PlanoTenant              @default(free)
+  ativo              Boolean                  @default(true)
+  criadoEm           DateTime                 @default(now()) @map("criado_em")
+  atualizadoEm       DateTime                 @updatedAt @map("atualizado_em")
+  nomeFantasia        String?                  @map("nome_fantasia")
+  email               String?
+  telefone            String?
+  cep                 String?
+  logradouro          String?
+  numero              String?
+  complemento         String?
+  bairro              String?
+  municipio           String?
+  uf                  String?
+  cnaePrincipal       String?                  @map("cnae_principal")
+  inscricaoEstadual   String?                  @map("inscricao_estadual")
+  inscricaoMunicipal  String?                  @map("inscricao_municipal")
+  regimeTributario    String?                  @map("regime_tributario")
+  situacaoCadastral   String?                  @map("situacao_cadastral")
+  tipoEstabelecimento String?                  @map("tipo_estabelecimento")
+  auditLogs           AuditLog[]
+  certificados        CertificadoDigital[]
+  boardColunas       BoardColuna[]
+  configsNotificacao ConfigNotificacao[]
+  contratos          Contrato[]
+  documentos         Documento[]
+  empresas           Empresa[]
+  fornecedores       Fornecedor[]
+  iniciativas        Iniciativa[]
+  notificacoes       Notificacao[]
+  pendencias         Pendencia[]
+  perfis             Perfil[]
+  tiposOrigem        TipoOrigem[]
+  unidades             UnidadeOrganizacional[]
+  unidadeVisibilidades UnidadeVisibilidade[]
+  usuarios             Usuario[]
+  tiposDocumentoReg    TipoDocumentoReg[]
+  documentosReg        DocumentoReg[]
+  dfeConfigs           DfeConfig[]
+  etiquetas            Etiqueta[]
+
+  @@map("tenants")
+}
+
+model Usuario {
+  id                     String                  @id @default(uuid())
+  nome                   String
+  email                  String                  @map("email")
+  senhaHash              String?                 @map("senha_hash")
+  role                   Role
+  ativo                  Boolean                 @default(true)
+  criadoEm               DateTime                @default(now()) @map("criado_em")
+  atualizadoEm           DateTime                @updatedAt @map("atualizado_em")
+  tenantId               String                  @map("tenant_id")
+  resetToken             String?                 @map("reset_token")
+  resetTokenExpiry       DateTime?               @map("reset_token_expiry")
+  cpf                    String?
+  telefone               String?
+  cep                    String?
+  logradouro             String?
+  numero                 String?
+  complemento            String?
+  bairro                 String?
+  municipio              String?
+  uf                     String?
+  atualizacoesIniciativa  AtualizacaoIniciativa[]
+  boardColunasCriadas     BoardColuna[]            @relation("BoardColunasCriadas")
+  calendarioIntegracoes   CalendarioIntegracao[]
+  contratosCriados        Contrato[]               @relation("ContratoCriadoPor")
+  contratosGestor         Contrato[]               @relation("ContratoGestor")
+  contratosResponsavel    Contrato[]               @relation("ContratoResponsavel")
+  documentos              Documento[]
+  iniciativasCriadas      Iniciativa[]             @relation("IniciativaCriadaPor")
+  iniciativasResponsavel  Iniciativa[]             @relation("IniciativaResponsavel")
+  movimentacoes           MovimentacaoPendencia[]
+  notificacoes            Notificacao[]
+  pendenciasAuditor       Pendencia[]              @relation("PendenciaAuditor")
+  pendenciasDestinatario  Pendencia[]              @relation("PendenciaDestinatario")
+  pendenciasResponsavel   Pendencia[]              @relation("PendenciaResponsavel")
+  perfis                  UsuarioPerfil[]
+  unidades                UsuarioUnidade[]
+  unidadesResponsavel     UnidadeOrganizacional[]  @relation("UnidadeResponsavel")
+  visibilidadesCriadas    UnidadeVisibilidade[]    @relation("VisibilidadeCriadaPor")
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id])
+  documentosRegCriados    DocumentoReg[]           @relation("DocRegCriadoPor")
+  revisoesDocReg          RevisaoDocReg[]
+  signatariosDocReg           SignatarioDocReg[]
+  assinaturasDocReg           AssinaturaDocReg[]
+  revisoresDocReg             RevisorDocReg[]
+  workflowRevisoresTipoDoc    WorkflowRevisorTipoDoc[]
+  workflowSignatariosTipoDoc  WorkflowSignatarioTipoDoc[]
+  certificadosCriados         CertificadoDigital[]        @relation("CertCriadoPor")
+  dfeConfigsCriados           DfeConfig[]                 @relation("DfeConfigCriadoPor")
+  etiquetaHistorico           EtiquetaHistorico[]
+
+  @@unique([tenantId, email])
+  @@map("usuarios")
+}
+
+model CalendarioIntegracao {
+  id        String         @id @default(uuid())
+  usuarioId String         @map("usuario_id")
+  tipo      CalendarioTipo
+  email     String
+  ativo     Boolean        @default(true)
+  criadoEm  DateTime       @default(now()) @map("criado_em")
+  usuario   Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("calendario_integracoes")
+}
+
+model Empresa {
+  id                  String   @id @default(uuid())
+  tenantId            String   @map("tenant_id")
+  nome                String
+  nomeFantasia        String?  @map("nome_fantasia")
+  cnpj                String
+  email               String?
+  telefone            String?
+  cep                 String?  @db.VarChar(10)
+  logradouro          String?
+  numero              String?  @db.VarChar(20)
+  complemento         String?
+  bairro              String?
+  municipio           String?
+  uf                  String?  @db.VarChar(2)
+  cnaePrincipal       String?  @map("cnae_principal")
+  cnaeSecundario      String?  @map("cnae_secundario")
+  quadroSocietario    String?  @map("quadro_societario")
+  inscricaoEstadual   String?  @map("inscricao_estadual")
+  inscricaoMunicipal  String?  @map("inscricao_municipal")
+  regimeTributario    String?  @map("regime_tributario")
+  situacaoCadastral   String?  @map("situacao_cadastral")
+  tipoEstabelecimento String?  @map("tipo_estabelecimento")
+  naturezaJuridica    String?  @map("natureza_juridica")
+  dataInicioAtividade String?  @map("data_inicio_atividade")
+  ativo               Boolean  @default(true)
+  criadoEm            DateTime @default(now()) @map("criado_em")
+  atualizadoEm        DateTime @updatedAt @map("atualizado_em")
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  certificados        CertificadoEmpresa[]
+
+  @@unique([tenantId, cnpj])
+  @@map("empresas")
+}
+
+model Fornecedor {
+  id                  String     @id @default(uuid())
+  nome                String
+  cnpj                String
+  email               String?
+  telefone            String?
+  ativo               Boolean    @default(true)
+  criadoEm            DateTime   @default(now()) @map("criado_em")
+  atualizadoEm        DateTime   @updatedAt @map("atualizado_em")
+  tenantId            String     @map("tenant_id")
+  nomeFantasia        String?    @map("nome_fantasia")
+  cep                 String?    @db.VarChar(10)
+  logradouro          String?
+  numero              String?    @db.VarChar(20)
+  complemento         String?
+  bairro              String?
+  municipio           String?
+  uf                  String?    @db.VarChar(2)
+  cnaePrincipal       String?    @map("cnae_principal")
+  inscricaoEstadual   String?    @map("inscricao_estadual")
+  inscricaoMunicipal  String?    @map("inscricao_municipal")
+  regimeTributario    String?    @map("regime_tributario")
+  situacaoCadastral   String?    @map("situacao_cadastral")
+  tipoEstabelecimento String?    @map("tipo_estabelecimento")
+  contratos           Contrato[]
+  tenant              Tenant     @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, cnpj])
+  @@map("fornecedores")
+}
+
+model Contrato {
+  id               String               @id @default(uuid())
+  numero           String
+  objeto           String
+  modalidade       ContratoModalidade
+  valor            Decimal              @db.Decimal(15, 2)
+  dataInicio       DateTime             @map("data_inicio") @db.Date
+  dataTermino      DateTime             @map("data_termino") @db.Date
+  renovavel        Boolean              @default(false)
+  maxRenovacoes    Int?                 @map("max_renovacoes")
+  renovacoesFeiras Int                  @default(0) @map("renovacoes_feitas")
+  status           ContratoStatus       @default(vigente)
+  observacoes      String?
+  tags             String[]
+  version          Int                  @default(1)
+  criadoEm         DateTime             @default(now()) @map("criado_em")
+  atualizadoEm     DateTime             @updatedAt @map("atualizado_em")
+  fornecedorId     String               @map("fornecedor_id")
+  responsavelId    String               @map("responsavel_id")
+  criadoPorId      String               @map("criado_por")
+  tenantId         String               @map("tenant_id")
+  numeroProcesso   String?              @map("numero_processo") @db.VarChar(100)
+  termoAditivo     String?              @map("termo_aditivo") @db.VarChar(100)
+  valorParcela     Decimal?             @map("valor_parcela") @db.Decimal(15, 2)
+  dataAssinatura   DateTime?            @map("data_assinatura") @db.Date
+  dataPublicacao   DateTime?            @map("data_publicacao") @db.Date
+  prazo            String?              @db.VarChar(100)
+  fiscalNome       String?              @map("fiscal_nome") @db.VarChar(255)
+  oficioTceal      String?              @map("oficio_tceal") @db.VarChar(150)
+  protocoloTceal   String?              @map("protocolo_tceal") @db.VarChar(100)
+  gestorId         String?              @map("gestor_id")
+  unidadeId        String?              @map("unidade_id")
+  subtipo          ContratoSubtipo?
+  aditivos         Aditivo[]
+  criadoPor        Usuario              @relation("ContratoCriadoPor", fields: [criadoPorId], references: [id])
+  fornecedor       Fornecedor           @relation(fields: [fornecedorId], references: [id])
+  gestor           Usuario?             @relation("ContratoGestor", fields: [gestorId], references: [id])
+  responsavel      Usuario              @relation("ContratoResponsavel", fields: [responsavelId], references: [id])
+  tenant           Tenant               @relation(fields: [tenantId], references: [id])
+  unidade          UnidadeOrganizacional? @relation(fields: [unidadeId], references: [id])
+  documentos       Documento[]          @relation("ContratoDocumentos")
+  iniciativas      IniciativaContrato[]
+  pendencias       Pendencia[]
+  termosAditivos   TermoAditivo[]
+
+  @@unique([tenantId, numero])
+  @@index([tenantId, status])
+  @@index([tenantId, dataTermino])
+  @@index([tenantId, responsavelId])
+  @@map("contratos")
+}
+
+model Aditivo {
+  id           String   @id @default(uuid())
+  contratoId   String   @map("contrato_id")
+  prazAnterior DateTime @map("prazo_anterior") @db.Date
+  novoPrazo    DateTime @map("novo_prazo") @db.Date
+  motivo       String
+  criadoPorId  String   @map("criado_por")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  contrato     Contrato @relation(fields: [contratoId], references: [id])
+
+  @@map("aditivos")
+}
+
+model TermoAditivo {
+  id                 String      @id @default(uuid())
+  contratoId         String      @map("contrato_id")
+  numero             String      @db.VarChar(100)
+  tipo               TipoAditivo
+  dataAssinatura     DateTime    @map("data_assinatura") @db.Date
+  dataPublicacao     DateTime?   @map("data_publicacao") @db.Date
+  vigenciaAnterior   DateTime?   @map("vigencia_anterior") @db.Date
+  novaVigencia       DateTime?   @map("nova_vigencia") @db.Date
+  valorAnterior      Decimal?    @map("valor_anterior") @db.Decimal(15, 2)
+  novoValor          Decimal?    @map("novo_valor") @db.Decimal(15, 2)
+  percentualReajuste Decimal?    @map("percentual_reajuste") @db.Decimal(5, 2)
+  objetoAditivo      String?     @map("objeto_aditivo")
+  justificativa      String
+  fundamentoLegal    String?     @map("fundamento_legal") @db.VarChar(500)
+  publicacaoLink     String?     @map("publicacao_link") @db.VarChar(500)
+  criadoPorId        String      @map("criado_por")
+  criadoEm           DateTime    @default(now()) @map("criado_em")
+  atualizadoEm       DateTime    @updatedAt @map("atualizado_em")
+  contrato           Contrato    @relation(fields: [contratoId], references: [id])
+
+  @@map("termos_aditivos")
+}
+
+model TipoOrigem {
+  id          String       @id @default(uuid())
+  tenantId    String       @map("tenant_id")
+  nome        String       @db.VarChar(100)
+  ativo       Boolean      @default(true)
+  criadoEm    DateTime     @default(now()) @map("criado_em")
+  iniciativas Iniciativa[]
+  pendencias  Pendencia[]
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+
+  @@map("tipos_origem")
+}
+
+model BoardColuna {
+  id           String       @id @default(uuid())
+  tenantId     String       @map("tenant_id")
+  nome         String       @db.VarChar(100)
+  ordem        Int
+  cor          String?      @db.VarChar(7)
+  padrao       Boolean      @default(false)
+  ativo        Boolean      @default(true)
+  criadoEm     DateTime     @default(now()) @map("criado_em")
+  atualizadoEm DateTime     @updatedAt @map("atualizado_em")
+  criadoPorId  String?      @map("criado_por")
+  criadoPor    Usuario?     @relation("BoardColunasCriadas", fields: [criadoPorId], references: [id])
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  iniciativas  Iniciativa[]
+  pendencias   Pendencia[]
+
+  @@unique([tenantId, ordem])
+  @@map("board_colunas")
+}
+
+model Pendencia {
+  id              String                  @id @default(uuid())
+  titulo          String                  @db.VarChar(200)
+  descricao       String
+  refExterna      String?                 @map("ref_externa") @db.VarChar(100)
+  prazoResposta   DateTime                @map("prazo_resposta") @db.Date
+  status          PendenciaStatus         @default(aguardando_resposta)
+  prioridade      PrioridadePendencia     @default(media)
+  motivoDevolucao     String?                 @map("motivo_devolucao")
+  categoriaDevolucao  CategoriaDevolucao?     @map("categoria_devolucao")
+  criadoEm        DateTime                @default(now()) @map("criado_em")
+  atualizadoEm    DateTime                @updatedAt @map("atualizado_em")
+  responsavelId   String                  @map("responsavel_id")
+  auditorId       String                  @map("auditor_id")
+  contratoId      String?                 @map("contrato_id")
+  iniciativaId    String?                 @map("iniciativa_id")
+  tenantId        String                  @map("tenant_id")
+  destinatarioId  String                  @map("destinatario_id")
+  tipoOrigemId    String?                 @map("tipo_origem_id")
+  boardColunaId   String?                 @map("board_coluna_id")
+  dataInicio      DateTime?               @map("data_inicio") @db.Date
+  unidadeId       String?                 @map("unidade_id")
+  documentos      Documento[]             @relation("PendenciaDocumentos")
+  movimentacoes   MovimentacaoPendencia[]
+  auditor         Usuario                 @relation("PendenciaAuditor", fields: [auditorId], references: [id])
+  boardColuna     BoardColuna?            @relation(fields: [boardColunaId], references: [id])
+  contrato        Contrato?               @relation(fields: [contratoId], references: [id])
+  destinatario    Usuario                 @relation("PendenciaDestinatario", fields: [destinatarioId], references: [id])
+  iniciativa      Iniciativa?             @relation(fields: [iniciativaId], references: [id])
+  responsavel     Usuario                 @relation("PendenciaResponsavel", fields: [responsavelId], references: [id])
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id])
+  tipoOrigem      TipoOrigem?             @relation(fields: [tipoOrigemId], references: [id])
+  unidade         UnidadeOrganizacional?  @relation(fields: [unidadeId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([tenantId, prazoResposta])
+  @@map("pendencias")
+}
+
+model MovimentacaoPendencia {
+  id             String           @id @default(uuid())
+  pendenciaId    String           @map("pendencia_id")
+  usuarioId      String           @map("usuario_id")
+  tipo           MovimentacaoTipo
+  texto          String
+  statusAnterior PendenciaStatus? @map("status_anterior")
+  statusNovo     PendenciaStatus? @map("status_novo")
+  criadoEm       DateTime         @default(now()) @map("criado_em")
+  documentos     Documento[]      @relation("MovimentacaoDocumentos")
+  pendencia      Pendencia        @relation(fields: [pendenciaId], references: [id])
+  usuario        Usuario          @relation(fields: [usuarioId], references: [id])
+
+  @@map("movimentacoes_pendencia")
+}
+
+model Iniciativa {
+  id            String                  @id @default(uuid())
+  titulo        String
+  descricao     String
+  categoria     IniciativaCategoria
+  prioridade    IniciativaPrioridade
+  status        IniciativaStatus        @default(planejada)
+  dataInicio    DateTime                @map("data_inicio") @db.Date
+  dataLimite    DateTime                @map("data_limite") @db.Date
+  criadoEm      DateTime                @default(now()) @map("criado_em")
+  atualizadoEm  DateTime                @updatedAt @map("atualizado_em")
+  responsavelId String                  @map("responsavel_id")
+  criadoPorId   String                  @map("criado_por")
+  paiId         String?                 @map("pai_id")
+  tenantId      String                  @map("tenant_id")
+  progresso     Int                     @default(0)
+  tipoOrigemId  String?                 @map("tipo_origem_id")
+  boardColunaId String?                 @map("board_coluna_id")
+  unidadeId     String?                 @map("unidade_id")
+  atualizacoes  AtualizacaoIniciativa[]
+  documentos    Documento[]             @relation("IniciativaDocumentos")
+  boardColuna   BoardColuna?            @relation(fields: [boardColunaId], references: [id])
+  criadoPor     Usuario                 @relation("IniciativaCriadaPor", fields: [criadoPorId], references: [id])
+  pai           Iniciativa?             @relation("SubIniciativas", fields: [paiId], references: [id])
+  filhos        Iniciativa[]            @relation("SubIniciativas")
+  responsavel   Usuario                 @relation("IniciativaResponsavel", fields: [responsavelId], references: [id])
+  tenant        Tenant                  @relation(fields: [tenantId], references: [id])
+  tipoOrigem    TipoOrigem?             @relation(fields: [tipoOrigemId], references: [id])
+  unidade       UnidadeOrganizacional?  @relation(fields: [unidadeId], references: [id])
+  contratos     IniciativaContrato[]
+  marcos        Marco[]
+  pendencias    Pendencia[]
+
+  @@map("iniciativas")
+}
+
+model AtualizacaoIniciativa {
+  id           String     @id @default(uuid())
+  iniciativaId String     @map("iniciativa_id")
+  usuarioId    String     @map("usuario_id")
+  texto        String
+  avancoAntes  Int        @map("avanco_antes")
+  avancoDepois Int        @map("avanco_depois")
+  criadoEm     DateTime   @default(now()) @map("criado_em")
+  iniciativa   Iniciativa @relation(fields: [iniciativaId], references: [id])
+  usuario      Usuario    @relation(fields: [usuarioId], references: [id])
+
+  @@map("atualizacoes_iniciativa")
+}
+
+model IniciativaContrato {
+  iniciativaId String     @map("iniciativa_id")
+  contratoId   String     @map("contrato_id")
+  contrato     Contrato   @relation(fields: [contratoId], references: [id])
+  iniciativa   Iniciativa @relation(fields: [iniciativaId], references: [id])
+
+  @@id([iniciativaId, contratoId])
+  @@map("iniciativas_contratos")
+}
+
+model Marco {
+  id                 String     @id @default(uuid())
+  iniciativaId       String     @map("iniciativa_id")
+  titulo             String
+  dataAlvo           DateTime   @map("data_alvo") @db.Date
+  criteriosConclusao String     @map("criterios_conclusao")
+  concluido          Boolean    @default(false)
+  concluidoEm        DateTime?  @map("concluido_em")
+  criadoEm           DateTime   @default(now()) @map("criado_em")
+  iniciativa         Iniciativa @relation(fields: [iniciativaId], references: [id])
+
+  @@map("marcos")
+}
+
+model Documento {
+  id               String                 @id @default(uuid())
+  nomeOriginal     String                 @map("nome_original") @db.VarChar(255)
+  storageKey       String                 @unique @map("storage_key")
+  mimeType         String                 @map("mime_type") @db.VarChar(100)
+  tamanhoBytes     BigInt                 @map("tamanho_bytes")
+  entidadeTipo     DocumentoEntidadeTipo  @map("entidade_tipo")
+  entidadeId       String                 @map("entidade_id")
+  ativo            Boolean                @default(true)
+  motivoInativacao String?                @map("motivo_inativacao")
+  criadoEm         DateTime               @default(now()) @map("criado_em")
+  enviadoPorId     String                 @map("enviado_por")
+  tenantId         String                 @map("tenant_id")
+  nomeExibicao     String?                @map("nome_exibicao") @db.VarChar(255)
+  contratoId       String?                @map("contrato_id")
+  pendenciaId      String?                @map("pendencia_id")
+  iniciativaId     String?                @map("iniciativa_id")
+  movimentacaoId   String?                @map("movimentacao_id")
+  contrato         Contrato?              @relation("ContratoDocumentos", fields: [contratoId], references: [id])
+  enviadoPor       Usuario                @relation(fields: [enviadoPorId], references: [id])
+  iniciativa       Iniciativa?            @relation("IniciativaDocumentos", fields: [iniciativaId], references: [id])
+  movimentacao     MovimentacaoPendencia? @relation("MovimentacaoDocumentos", fields: [movimentacaoId], references: [id])
+  pendencia        Pendencia?             @relation("PendenciaDocumentos", fields: [pendenciaId], references: [id])
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id])
+
+  @@map("documentos")
+}
+
+model AuditLog {
+  id            BigInt    @id @default(autoincrement())
+  correlationId String?   @map("correlation_id") @db.Uuid
+  usuarioId     String?   @map("usuario_id")
+  entidadeTipo  String    @map("entidade_tipo") @db.VarChar(50)
+  entidadeId    String    @map("entidade_id")
+  acao          AuditAcao
+  payloadAntes  Json?     @map("payload_antes")
+  payloadDepois Json?     @map("payload_depois")
+  ipOrigem      String?   @map("ip_origem")
+  userAgent     String?   @map("user_agent")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+  tenantId      String?   @map("tenant_id")
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+
+  @@index([criadoEm])
+  @@index([entidadeTipo, entidadeId])
+  @@index([usuarioId])
+  @@index([tenantId])
+  @@map("audit_logs")
+}
+
+model Notificacao {
+  id             String            @id @default(uuid())
+  eventoOrigem   String            @map("evento_origem")
+  canal          NotificacaoCanal
+  status         NotificacaoStatus @default(pendente)
+  tentativas     Int               @default(0)
+  erro           String?
+  payload        Json
+  criadoEm       DateTime          @default(now()) @map("criado_em")
+  enviadoEm      DateTime?         @map("enviado_em")
+  destinatarioId String            @map("destinatario_id")
+  tenantId       String            @map("tenant_id")
+  lida           Boolean           @default(false) @map("lida")
+  destinatario   Usuario           @relation(fields: [destinatarioId], references: [id])
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+
+  @@map("notificacoes")
+}
+
+model ConfigNotificacao {
+  id               String           @id @default(uuid())
+  eventoTipo       String           @map("evento_tipo")
+  canais           NotificacaoCanal
+  diasAntecedencia Int[]            @map("dias_antecedencia")
+  ativo            Boolean          @default(true)
+  atualizadoEm     DateTime         @updatedAt @map("atualizado_em")
+  tenantId         String           @map("tenant_id")
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, eventoTipo])
+  @@map("config_notificacoes")
+}
+
+model Perfil {
+  id           String          @id @default(uuid())
+  tenantId     String          @map("tenant_id")
+  nome         String
+  descricao    String?
+  role         Role
+  ativo        Boolean         @default(true)
+  criadoEm     DateTime        @default(now()) @map("criado_em")
+  atualizadoEm DateTime        @updatedAt @map("atualizado_em")
+  permissoes   String[]        @default([]) @map("permissoes")
+  tenant       Tenant          @relation(fields: [tenantId], references: [id])
+  usuarios     UsuarioPerfil[]
+
+  @@unique([tenantId, nome])
+  @@map("perfis")
+}
+
+model UsuarioPerfil {
+  usuarioId   String   @map("usuario_id")
+  perfilId    String   @map("perfil_id")
+  atribuidoEm DateTime @default(now()) @map("atribuido_em")
+  perfil      Perfil   @relation(fields: [perfilId], references: [id])
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@id([usuarioId, perfilId])
+  @@map("usuario_perfis")
+}
+
+model UnidadeOrganizacional {
+  id                 String                  @id @default(uuid())
+  tenantId           String                  @map("tenant_id")
+  nome               String                  @db.VarChar(200)
+  sigla              String?                 @db.VarChar(20)
+  tipo               TipoUnidade
+  responsavelId      String?                 @map("responsavel_id")
+  paiId              String?                 @map("pai_id")
+  ativo              Boolean                 @default(true)
+  dataVigenciaInicio DateTime?               @map("data_vigencia_inicio") @db.Date
+  dataVigenciaFim    DateTime?               @map("data_vigencia_fim") @db.Date
+  criadoEm           DateTime                @default(now()) @map("criado_em")
+  atualizadoEm       DateTime                @updatedAt @map("atualizado_em")
+
+  tenant      Tenant                    @relation(fields: [tenantId], references: [id])
+  responsavel Usuario?                  @relation("UnidadeResponsavel", fields: [responsavelId], references: [id])
+  pai         UnidadeOrganizacional?    @relation("Hierarquia", fields: [paiId], references: [id])
+  filhos      UnidadeOrganizacional[]   @relation("Hierarquia")
+  usuarios            UsuarioUnidade[]
+  contratos           Contrato[]
+  pendencias          Pendencia[]
+  iniciativas         Iniciativa[]
+  visibilidadesOrigem UnidadeVisibilidade[] @relation("VisibilidadeOrigem")
+  visibilidadesAlvo   UnidadeVisibilidade[] @relation("VisibilidadeAlvo")
+
+  @@unique([tenantId, sigla])
+  @@index([tenantId])
+  @@index([paiId])
+  @@map("unidades_organizacionais")
+}
+
+model UsuarioUnidade {
+  usuarioId   String   @map("usuario_id")
+  unidadeId   String   @map("unidade_id")
+  principal   Boolean  @default(false)
+  atribuidoEm DateTime @default(now()) @map("atribuido_em")
+
+  usuario  Usuario               @relation(fields: [usuarioId], references: [id])
+  unidade  UnidadeOrganizacional @relation(fields: [unidadeId], references: [id])
+
+  @@id([usuarioId, unidadeId])
+  @@map("usuario_unidades")
+}
+
+model UnidadeVisibilidade {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  origemId    String   @map("origem_id")
+  alvoId      String   @map("alvo_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+  criadoPorId String   @map("criado_por_id")
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  origem    UnidadeOrganizacional @relation("VisibilidadeOrigem", fields: [origemId], references: [id])
+  alvo      UnidadeOrganizacional @relation("VisibilidadeAlvo",   fields: [alvoId],   references: [id])
+  criadoPor Usuario               @relation("VisibilidadeCriadaPor", fields: [criadoPorId], references: [id])
+
+  @@unique([tenantId, origemId, alvoId])
+  @@index([tenantId, origemId])
+  @@map("unidade_visibilidades")
+}
+
+enum Role {
+  ADMIN
+  GESTOR
+  RESP
+  AUD_INT
+  AUD_EXT
+  EXEC
+}
+
+enum PlanoTenant {
+  free
+  starter
+  professional
+  enterprise
+}
+
+enum ContratoModalidade {
+  servicos
+  fornecimento
+  obra
+  convenio
+  outro
+}
+
+enum ContratoSubtipo {
+  manutencao_predial
+  conservacao
+  utilidades
+  software
+  infraestrutura
+  hardware
+  consultoria
+  rh
+}
+
+enum ContratoStatus {
+  vigente
+  vencido
+  encerrado
+  suspenso
+  em_licitacao
+}
+
+enum PendenciaStatus {
+  aguardando_resposta
+  respondida
+  devolvida
+  encerrada
+  atrasada
+  em_andamento
+}
+
+enum PrioridadePendencia {
+  baixa
+  media
+  alta
+  critica
+}
+
+enum CategoriaDevolucao {
+  resposta_insuficiente
+  documentacao_faltante
+  informacao_incorreta
+  nao_atende_requisito
+  pendente_complementacao
+  outro
+}
+
+enum MovimentacaoTipo {
+  comentario
+  resposta
+  devolucao
+  aceite
+  encerramento
+  alert_sistema
+}
+
+enum IniciativaCategoria {
+  estrategica
+  operacional
+  regulatoria
+  inovacao
+  outro
+}
+
+enum IniciativaPrioridade {
+  alta
+  media
+  baixa
+}
+
+enum IniciativaStatus {
+  planejada
+  em_andamento
+  concluida
+  cancelada
+  suspensa
+}
+
+enum CalendarioTipo {
+  google
+  outlook
+}
+
+enum TipoAditivo {
+  PRAZO
+  VALOR_ACRESCIMO
+  VALOR_SUPRESSAO
+  OBJETO
+  REAJUSTE
+  APOSTILAMENTO
+  MISTO
+}
+
+enum DocumentoEntidadeTipo {
+  contrato
+  pendencia
+  iniciativa
+  processo
+  movimentacao
+}
+
+enum AuditAcao {
+  CREATE
+  UPDATE
+  STATUS_CHANGE
+  UPLOAD
+  INATIVAR
+  LOGIN
+  LOGOUT
+  NOTIFICACAO_DISPARADA
+  LOGIN_FALHO
+  USO
+}
+
+enum NotificacaoCanal {
+  email
+  mensagem_interna
+  ambos
+}
+
+enum NotificacaoStatus {
+  pendente
+  enviado
+  falha
+}
+
+enum TipoUnidade {
+  UA
+  UG
+}
+
+// ── Documentos Regulatórios ───────────────────────────────────────────────────
+
+enum StatusDocReg {
+  rascunho
+  em_revisao
+  aguardando_assinaturas
+  vigente
+  arquivado
+}
+
+enum TipoRevisaoDoc {
+  comentario
+  ajuste_solicitado
+  aprovado
+}
+
+enum MetodoAssinatura {
+  senha
+  icp_brasil
+}
+
+model TipoDocumentoReg {
+  id                    String                      @id @default(uuid())
+  tenantId              String                      @map("tenant_id")
+  nome                  String
+  descricao             String?
+  periodicidadeDias     Int?                        @map("periodicidade_dias")
+  alertaAntesDias       Int                         @default(30) @map("alerta_antes_dias")
+  ativo                 Boolean                     @default(true)
+  exigeRevisao          Boolean                     @default(false) @map("exige_revisao")
+  assinaturaSequencial  Boolean                     @default(false) @map("assinatura_sequencial")
+  criadoEm              DateTime                    @default(now()) @map("criado_em")
+  tenant                Tenant                      @relation(fields: [tenantId], references: [id])
+  documentos            DocumentoReg[]
+  workflowRevisores     WorkflowRevisorTipoDoc[]
+  workflowSignatarios   WorkflowSignatarioTipoDoc[]
+
+  @@unique([tenantId, nome])
+  @@map("tipos_documento_reg")
+}
+
+model DocumentoReg {
+  id           String           @id @default(uuid())
+  tenantId     String           @map("tenant_id")
+  tipoId       String           @map("tipo_id")
+  titulo       String
+  versao       String           @default("1.0")
+  status       StatusDocReg     @default(rascunho)
+  storageKey   String?          @map("storage_key")
+  nomeArquivo  String?          @map("nome_arquivo")
+  hashArquivo  String?          @map("hash_arquivo")
+  dataValidade DateTime?        @map("data_validade")
+  criadoEm     DateTime         @default(now()) @map("criado_em")
+  atualizadoEm DateTime         @updatedAt @map("atualizado_em")
+  criadoPorId  String           @map("criado_por_id")
+  tenant       Tenant           @relation(fields: [tenantId], references: [id])
+  tipo         TipoDocumentoReg @relation(fields: [tipoId], references: [id])
+  criadoPor    Usuario          @relation("DocRegCriadoPor", fields: [criadoPorId], references: [id])
+  revisoes     RevisaoDocReg[]
+  signatarios  SignatarioDocReg[]
+  assinaturas  AssinaturaDocReg[]
+  revisores    RevisorDocReg[]
+
+  @@index([tenantId, status])
+  @@map("documentos_reg")
+}
+
+model RevisaoDocReg {
+  id          String         @id @default(uuid())
+  documentoId String         @map("documento_id")
+  tipo        TipoRevisaoDoc @default(comentario)
+  texto       String
+  criadoEm    DateTime       @default(now()) @map("criado_em")
+  criadoPorId String         @map("criado_por_id")
+  documento   DocumentoReg   @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  criadoPor   Usuario        @relation(fields: [criadoPorId], references: [id])
+
+  @@map("revisoes_doc_reg")
+}
+
+model SignatarioDocReg {
+  id          String       @id @default(uuid())
+  documentoId String       @map("documento_id")
+  usuarioId   String       @map("usuario_id")
+  ordem       Int?
+  obrigatorio Boolean      @default(true)
+  documento   DocumentoReg @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  usuario     Usuario      @relation(fields: [usuarioId], references: [id])
+
+  @@unique([documentoId, usuarioId])
+  @@map("signatarios_doc_reg")
+}
+
+model AssinaturaDocReg {
+  id            String           @id @default(uuid())
+  documentoId   String           @map("documento_id")
+  usuarioId     String           @map("usuario_id")
+  assinadoEm    DateTime         @default(now()) @map("assinado_em")
+  metodo        MetodoAssinatura @default(senha)
+  hashDocumento String           @map("hash_documento")
+  ip            String?
+  certificadoCN String?          @map("certificado_cn")
+  documento     DocumentoReg     @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  usuario       Usuario          @relation(fields: [usuarioId], references: [id])
+
+  @@unique([documentoId, usuarioId])
+  @@map("assinaturas_doc_reg")
+}
+
+model RevisorDocReg {
+  id           String       @id @default(uuid())
+  documentoId  String       @map("documento_id")
+  usuarioId    String       @map("usuario_id")
+  ordem        Int?
+  obrigatorio  Boolean      @default(true)
+  aprovado     Boolean?
+  comentario   String?
+  respondidoEm DateTime?    @map("respondido_em")
+  criadoEm     DateTime     @default(now()) @map("criado_em")
+  documento    DocumentoReg @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  usuario      Usuario      @relation(fields: [usuarioId], references: [id])
+
+  @@unique([documentoId, usuarioId])
+  @@map("revisores_doc_reg")
+}
+
+model WorkflowRevisorTipoDoc {
+  id          String           @id @default(uuid())
+  tipoId      String           @map("tipo_id")
+  usuarioId   String           @map("usuario_id")
+  ordem       Int?
+  obrigatorio Boolean          @default(true)
+  tipo        TipoDocumentoReg @relation(fields: [tipoId], references: [id], onDelete: Cascade)
+  usuario     Usuario          @relation(fields: [usuarioId], references: [id])
+
+  @@unique([tipoId, usuarioId])
+  @@map("workflow_revisores_tipo_doc")
+}
+
+model WorkflowSignatarioTipoDoc {
+  id          String           @id @default(uuid())
+  tipoId      String           @map("tipo_id")
+  usuarioId   String           @map("usuario_id")
+  ordem       Int?
+  obrigatorio Boolean          @default(true)
+  tipo        TipoDocumentoReg @relation(fields: [tipoId], references: [id], onDelete: Cascade)
+  usuario     Usuario          @relation(fields: [usuarioId], references: [id])
+
+  @@unique([tipoId, usuarioId])
+  @@map("workflow_signatarios_tipo_doc")
+}
+
+// ── Certificados Digitais A1 ──────────────────────────────────────────────────
+
+enum CertificadoStatus {
+  ATIVO
+  VENCIDO
+  REVOGADO
+  INVALIDO
+  EXPIRACAO_PROXIMA
+}
+
+enum CertificadoAcao {
+  UPLOAD
+  ASSOCIACAO
+  USO
+  REMOCAO
+  VISUALIZACAO
+}
+
+model CertificadoDigital {
+  id             String               @id @default(uuid())
+  tenantId       String               @map("tenant_id")
+  razaoSocial    String               @map("razao_social")
+  cnpjCert       String               @map("cnpj_cert")
+  raizCnpj       String               @map("raiz_cnpj")
+  numeroSerie    String               @map("numero_serie")
+  autoridadeCert String               @map("autoridade_cert")
+  dataEmissao    DateTime             @map("data_emissao")
+  dataValidade   DateTime             @map("data_validade")
+  thumbprint     String
+  status         CertificadoStatus
+  arquivoEnc     Bytes?               @map("arquivo_enc")
+  storageIv      String?              @map("storage_iv")
+  /// Certificado público em PEM, criptografado AES-256-GCM
+  certPemEnc     Bytes?               @map("cert_pem_enc")
+  certPemIv      String?              @map("cert_pem_iv")
+  /// Chave privada em PEM, criptografada AES-256-GCM
+  keyPemEnc      Bytes?               @map("key_pem_enc")
+  keyPemIv       String?              @map("key_pem_iv")
+  nomeArquivo    String?              @map("nome_arquivo")
+  ativo          Boolean              @default(true)
+  criadoEm      DateTime              @default(now()) @map("criado_em")
+  atualizadoEm  DateTime              @updatedAt @map("atualizado_em")
+  criadoPorId   String                @map("criado_por_id")
+
+  tenant        Tenant                @relation(fields: [tenantId], references: [id])
+  criadoPor     Usuario               @relation("CertCriadoPor", fields: [criadoPorId], references: [id])
+  empresas      CertificadoEmpresa[]
+  procuracao    ProcuracaoEletronica?
+  logs          CertificadoLog[]
+  dfeConfigs    DfeConfig[]
+
+  @@unique([tenantId, thumbprint])
+  @@index([tenantId, status])
+  @@index([tenantId, raizCnpj])
+  @@map("certificados_digitais")
+}
+
+model CertificadoEmpresa {
+  certificadoId String             @map("certificado_id")
+  empresaId     String             @map("empresa_id")
+  associadoEm   DateTime           @default(now()) @map("associado_em")
+
+  certificado   CertificadoDigital @relation(fields: [certificadoId], references: [id])
+  empresa       Empresa            @relation(fields: [empresaId], references: [id])
+
+  @@id([certificadoId, empresaId])
+  @@map("certificados_empresas")
+}
+
+model ProcuracaoEletronica {
+  id               String             @id @default(uuid())
+  certificadoId    String             @unique @map("certificado_id")
+  cnpjOutorgante   String             @map("cnpj_outorgante")
+  cpfCnpjOutorgado String             @map("cpf_cnpj_outorgado")
+  nomeOutorgado    String             @map("nome_outorgado")
+  poderesDelegados String             @map("poderes_delegados")
+  dataInicio       DateTime           @map("data_inicio")           @db.Date
+  dataValidade     DateTime           @map("data_validade_proc")    @db.Date
+  storageKey       String?            @map("storage_key")
+  nomeArquivo      String?            @map("nome_arquivo")
+  criadoEm        DateTime            @default(now())               @map("criado_em")
+
+  certificado      CertificadoDigital @relation(fields: [certificadoId], references: [id])
+
+  @@map("procuracoes_eletronicas")
+}
+
+model CertificadoLog {
+  id            BigInt             @id @default(autoincrement())
+  certificadoId String             @map("certificado_id")
+  tenantId      String             @map("tenant_id")
+  usuarioId     String?            @map("usuario_id")
+  usuarioNome   String?            @map("usuario_nome")
+  acao          CertificadoAcao
+  descricao     String?
+  ipOrigem      String?            @map("ip_origem")
+  criadoEm      DateTime           @default(now()) @map("criado_em")
+
+  certificado   CertificadoDigital @relation(fields: [certificadoId], references: [id])
+
+  @@index([certificadoId])
+  @@index([tenantId, criadoEm])
+  @@map("certificados_logs")
+}
+
+// ── Distribuição de DF-e (NF-e / CT-e / NFS-e) ───────────────────────────────
+
+enum DfeLoteStatus {
+  RECEBIDO
+  PROCESSANDO
+  PROCESSADO
+  ERRO
+  REPROCESSAR
+}
+
+enum DfeTipoDocumento {
+  PROC_NFE
+  PROC_EVENTO_NFE
+  RES_NFE
+  RES_EVENTO
+}
+
+/// Configuração de monitoramento DF-e por CNPJ/tenant
+model DfeConfig {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  /// CNPJ monitorado, 14 dígitos sem máscara
+  cnpj          String
+  /// Código IBGE da UF (ex: 35 = SP, 41 = PR, 43 = RS)
+  cUf           Int      @map("c_uf")
+  /// 1 = produção, 2 = homologação
+  tpAmb         Int      @default(1) @map("tp_amb")
+  certificadoId String   @map("certificado_id")
+  ativo         Boolean  @default(true)
+  /// Horário de captura no formato "HH:MM" (ex: "08:00")
+  horarioCaptura  String  @default("00:00") @map("horario_captura")
+  /// Intervalo em minutos entre execuções (ex: 60 = a cada 1h)
+  intervaloMinutos Int   @default(60) @map("intervalo_minutos")
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+  criadoPorId   String   @map("criado_por_id")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  certificado CertificadoDigital @relation(fields: [certificadoId], references: [id])
+  criadoPor   Usuario            @relation("DfeConfigCriadoPor", fields: [criadoPorId], references: [id])
+  controle    DfeNsuControle?
+  gaps        DfeGapNsu[]
+  varredura   DfeVarreduraNsu?
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId, ativo])
+  @@map("dfe_configs")
+}
+
+/// Controle de NSU com lock distribuído por CNPJ
+model DfeNsuControle {
+  id                String    @id @default(uuid())
+  configId          String    @unique @map("config_id")
+  tenantId          String    @map("tenant_id")
+  cnpj              String
+  /// Último NSU processado com sucesso (15 dígitos, zero-padded)
+  ultimoNsu         String    @default("000000000000000") @map("ultimo_nsu")
+  /// maxNSU recebido na última resposta da SEFAZ
+  maxNsu            String    @default("000000000000000") @map("max_nsu")
+  ultimaConsulta    DateTime? @map("ultima_consulta")
+  proximaConsulta   DateTime? @map("proxima_consulta")
+  // — lock distribuído —
+  emProcessamento   Boolean   @default(false) @map("em_processamento")
+  lockId            String?   @map("lock_id")
+  lockAte           DateTime? @map("lock_ate")
+  /// "hostname:pid" do processo que detém o lock
+  lockProcessoId    String?   @map("lock_processo_id")
+  // — estatísticas —
+  totalDocBaixados  Int       @default(0) @map("total_doc_baixados")
+  totalLotes        Int       @default(0) @map("total_lotes")
+  totalErros        Int       @default(0) @map("total_erros")
+  ultimoErro        String?   @map("ultimo_erro")
+  ultimoErroEm      DateTime? @map("ultimo_erro_em")
+  errosConsecutivos Int       @default(0) @map("erros_consecutivos")
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  config DfeConfig @relation(fields: [configId], references: [id])
+  lotes  DfeLote[]
+
+  @@unique([tenantId, cnpj])
+  @@index([proximaConsulta, emProcessamento])
+  @@map("dfe_nsu_controles")
+}
+
+/// Lote de requisição à SEFAZ — cada chamada ao web service gera um lote
+model DfeLote {
+  id             String        @id @default(uuid())
+  controleId     String        @map("controle_id")
+  tenantId       String        @map("tenant_id")
+  cnpj           String
+  /// NSU enviado na requisição
+  nsuEnviado     String        @map("nsu_enviado")
+  cStat          String        @map("c_stat")
+  xMotivo        String        @map("x_motivo")
+  ultNsuRecebido String        @map("ult_nsu_recebido")
+  maxNsuRecebido String        @map("max_nsu_recebido")
+  qtdDocumentos  Int           @default(0) @map("qtd_documentos")
+  status         DfeLoteStatus @default(RECEBIDO)
+  tentativas     Int           @default(1)
+  duracaoMs      Int?          @map("duracao_ms")
+  iniciadoEm     DateTime      @default(now()) @map("iniciado_em")
+  finalizadoEm   DateTime?     @map("finalizado_em")
+  erroMensagem   String?       @map("erro_mensagem")
+
+  controle   DfeNsuControle @relation(fields: [controleId], references: [id])
+  documentos DfeDocumento[]
+
+  @@index([tenantId, cnpj, status])
+  @@index([tenantId, iniciadoEm])
+  @@index([controleId, status])
+  @@map("dfe_lotes")
+}
+
+/// Documento fiscal eletrônico baixado da SEFAZ
+model DfeDocumento {
+  id               String           @id @default(uuid())
+  loteId           String           @map("lote_id")
+  tenantId         String           @map("tenant_id")
+  cnpjDestinatario String           @map("cnpj_destinatario")
+  /// NSU do documento (15 dígitos, zero-padded) — chave natural
+  nsu              String
+  /// Schema XML conforme SEFAZ (ex: "procNFe_v4.00.xsd")
+  schema           String
+  tipoDocumento    DfeTipoDocumento @map("tipo_documento")
+  /// XML original descomprimido — null quando armazenado no GCS (ver xmlStoragePath)
+  xmlOriginal      Bytes?           @map("xml_original")
+  /// Path do XML no Google Cloud Storage (ex: xmls/{tenantId}/{cnpj}/{nsu}.xml)
+  xmlStoragePath   String?          @map("xml_storage_path") @db.VarChar(500)
+  /// SHA-256 do XML para validação de integridade
+  xmlHash          String           @map("xml_hash")
+  chaveAcesso      String?          @map("chave_acesso")
+  nfeEmitenteCnpj  String?          @map("nfe_emitente_cnpj")
+  nfeEmitenteNome  String?          @map("nfe_emitente_nome")
+  nfeValorTotal    Decimal?         @map("nfe_valor_total") @db.Decimal(15, 2)
+  nfeDhEmissao     DateTime?        @map("nfe_dh_emissao")
+  nfeSituacao           String?          @map("nfe_situacao")
+  eventoTipo            String?          @map("evento_tipo")
+  eventoDescricao       String?          @map("evento_descricao")
+  nfeTransportadorCnpj  String?          @map("nfe_transportador_cnpj")
+  nfeAutXmlCnpjs        String?          @map("nfe_autxml_cnpjs")
+  processado       Boolean          @default(false)
+  processadoEm     DateTime?        @map("processado_em")
+  erroProcessamento String?         @map("erro_processamento")
+  criadoEm         DateTime         @default(now()) @map("criado_em")
+
+  lote              DfeLote                @relation(fields: [loteId], references: [id])
+  manifestacoes     DfeManifestacao[]
+  gapsRecuperados   DfeGapNsu[]
+  etiquetas         DfeDocumentoEtiqueta[]
+  etiquetaHistorico EtiquetaHistorico[]
+
+  /// Idempotência: mesmo NSU nunca é inserido duas vezes por tenant
+  @@unique([tenantId, nsu])
+  @@index([tenantId, cnpjDestinatario])
+  @@index([tenantId, chaveAcesso])
+  @@index([tenantId, tipoDocumento])
+  @@index([tenantId, processado])
+  @@index([tenantId, nfeDhEmissao])
+  @@map("dfe_documentos")
+}
+
+/// Trilha de auditoria de todas as operações NSU/DF-e
+model DfeAuditoria {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  cnpj      String
+  operacao  String
+  nsuAntes  String?  @map("nsu_antes")
+  nsuDepois String?  @map("nsu_depois")
+  cStat     String?  @map("c_stat")
+  sucesso   Boolean
+  detalhe   String?  @db.Text
+  duracaoMs Int?     @map("duracao_ms")
+  hostname  String?
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@index([tenantId, cnpj, criadoEm])
+  @@index([tenantId, sucesso])
+  @@map("dfe_auditorias")
+}
+
+// ── Controle de lacunas NSU (gaps) ────────────────────────────────────────────
+
+enum DfeGapStatus {
+  /// Gap detectado, aguarda tentativa de recuperação via consNSU
+  PENDENTE
+  /// SEFAZ retornou cStat=138 — documento recuperado com sucesso
+  RECUPERADO
+  /// SEFAZ retornou cStat=137 — NSU não existe no Ambiente Nacional
+  INEXISTENTE
+  /// Máximo de tentativas atingido sem resposta definitiva
+  ESGOTADO
+}
+
+/// Lacuna NSU detectada entre documentos consecutivos de um lote.
+/// Recuperada pontualmente via consNSU conforme MOC 7.0 seção 5.7.4.5.
+model DfeGapNsu {
+  id              String       @id @default(uuid())
+  tenantId        String       @map("tenant_id")
+  cnpj            String
+  configId        String       @map("config_id")
+  /// NSU identificado como faltante (15 dígitos zero-padded)
+  nsuFaltante     String       @map("nsu_faltante")
+  status          DfeGapStatus @default(PENDENTE)
+  tentativas      Int          @default(0)
+  /// NSU do documento anterior que gerou a detecção do gap
+  nsuAnterior     String       @map("nsu_anterior")
+  /// NSU do documento posterior que confirmou o gap
+  nsuPosterior    String       @map("nsu_posterior")
+  proximaTentativa DateTime?   @map("proxima_tentativa")
+  recuperadoEm    DateTime?    @map("recuperado_em")
+  /// ID do DfeDocumento inserido após recuperação bem-sucedida
+  documentoId     String?      @map("documento_id")
+  erroMensagem    String?      @map("erro_mensagem") @db.Text
+  criadoEm        DateTime     @default(now()) @map("criado_em")
+  atualizadoEm    DateTime     @updatedAt @map("atualizado_em")
+
+  config    DfeConfig     @relation(fields: [configId], references: [id])
+  documento DfeDocumento? @relation(fields: [documentoId], references: [id])
+
+  /// Garante que o mesmo NSU faltante não seja registrado duas vezes por tenant
+  @@unique([tenantId, nsuFaltante])
+  @@index([tenantId, cnpj, status])
+  @@index([status, proximaTentativa])
+  @@index([configId, status])
+  @@map("dfe_gap_nsus")
+}
+
+// ── Varredura retroativa de NSU ───────────────────────────────────────────────
+
+enum DfeVarreduraStatus {
+  /// Varredura em execução pelo job
+  ATIVA
+  /// Varredura pausada pelo usuário ou aguardando retomada
+  PAUSADA
+  /// Varredura concluída (alcançou nsuFim)
+  CONCLUIDA
+  /// Varredura encerrada por erro não-recuperável
+  ERRO
+}
+
+/// Varredura retroativa: itera NSUs via consNSU para recuperar documentos
+/// não enfileirados na distribuição normal (anteriores ao primeiro distNSU).
+model DfeVarreduraNsu {
+  id               String             @id @default(uuid())
+  /// Um único registro por configuração (upsert ao iniciar nova varredura)
+  configId         String             @unique @map("config_id")
+  tenantId         String             @map("tenant_id")
+  cnpj             String
+  status           DfeVarreduraStatus @default(PAUSADA)
+  /// NSU inicial da varredura (15 dígitos, zero-padded)
+  nsuInicio        String             @map("nsu_inicio")
+  /// NSU final da varredura (15 dígitos) — geralmente maxNSU no momento do início
+  nsuFim           String             @map("nsu_fim")
+  /// NSU atual sendo processado — atualizado a cada lote
+  nsuAtual         String             @map("nsu_atual")
+  /// Quantidade de NSUs já consultados
+  totalConsultado  Int                @default(0) @map("total_consultado")
+  /// Quantidade de documentos recuperados (cStat=138)
+  totalRecuperado  Int                @default(0) @map("total_recuperado")
+  iniciadoEm       DateTime?          @map("iniciado_em")
+  pausadoEm        DateTime?          @map("pausado_em")
+  concluidoEm      DateTime?          @map("concluido_em")
+  ultimoErro       String?            @map("ultimo_erro") @db.Text
+  criadoEm         DateTime           @default(now()) @map("criado_em")
+  atualizadoEm     DateTime           @updatedAt @map("atualizado_em")
+
+  config DfeConfig @relation(fields: [configId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("dfe_varreduras_nsu")
+}
+
+// ── Etiquetas ─────────────────────────────────────────────────────────────────
+
+/// Etiqueta de classificação aplicável a documentos fiscais (DfeDocumento).
+/// Uniqueness de nome e cor é validada em nível de serviço (ativas por tenant),
+/// pois o soft-delete (deletadoEm) impede o uso de unique constraints no banco.
+model Etiqueta {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  nome         String    @db.VarChar(100)
+  cor          String    @db.VarChar(7)
+  /// Apenas uma etiqueta por tenant pode ter padrao=true (troca atômica no serviço)
+  padrao       Boolean   @default(false)
+  /// Soft delete — registros com deletadoEm != null são ignorados nas consultas
+  deletadoEm   DateTime? @map("deletado_em")
+  criadoEm     DateTime  @default(now()) @map("criado_em")
+  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
+
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id])
+  documentos DfeDocumentoEtiqueta[]
+
+  @@index([tenantId, deletadoEm])
+  @@map("etiquetas")
+}
+
+/// Tabela de junção entre DfeDocumento e Etiqueta.
+model DfeDocumentoEtiqueta {
+  id          String   @id @default(uuid())
+  documentoId String   @map("documento_id")
+  etiquetaId  String   @map("etiqueta_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  documento DfeDocumento @relation(fields: [documentoId], references: [id])
+  etiqueta  Etiqueta     @relation(fields: [etiquetaId], references: [id])
+
+  @@unique([documentoId, etiquetaId])
+  @@index([etiquetaId])
+  @@map("dfe_documento_etiquetas")
+}
+
+/// Histórico imutável de alterações de etiquetas em documentos fiscais.
+/// Gerado automaticamente em toda operação de associação/desassociação (individual ou em massa).
+/// Sem updatedAt — imutável por design.
+model EtiquetaHistorico {
+  id              String   @id @default(uuid())
+  documentoId     String   @map("documento_id")
+  usuarioId       String?  @map("usuario_id")
+  /// Snapshot das etiquetas antes da alteração (array de {id, nome, cor})
+  etiquetasAntes  Json     @map("etiquetas_antes")
+  /// Snapshot das etiquetas depois da alteração (array de {id, nome, cor})
+  etiquetasDepois Json     @map("etiquetas_depois")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  documento DfeDocumento @relation(fields: [documentoId], references: [id])
+  usuario   Usuario?     @relation(fields: [usuarioId], references: [id])
+
+  @@index([documentoId, criadoEm])
+  @@map("etiqueta_historico")
+}
+
+// ── Manifestação do Destinatário ──────────────────────────────────────────────
+
+enum DfeManifestacaoStatus {
+  /// Aguarda envio à SEFAZ
+  PENDENTE
+  /// Enviado com sucesso (cStat=135)
+  ENVIADO
+  /// Rejeitado pela SEFAZ (cStat de rejeição)
+  REJEITADO
+  /// Falha técnica (rede, timeout) — será retentado
+  ERRO
+}
+
+/// Evento de manifestação do destinatário enviado ao WS NFeRecepcaoEvento.
+/// Cobre os quatro tipos oficiais do MOC 7.0 seção 5.11:
+///   210200 – Ciência da Operação
+///   210210 – Confirmação da Operação
+///   210220 – Operação não Realizada
+///   210240 – Desconhecimento da Operação
+model DfeManifestacao {
+  id           String                 @id @default(uuid())
+  tenantId     String                 @map("tenant_id")
+  cnpj         String
+  documentoId  String                 @map("documento_id")
+  chaveAcesso  String                 @map("chave_acesso") @db.VarChar(44)
+  /// Código do evento conforme MOC (ex: "210200")
+  tpEvento     String                 @map("tp_evento") @db.VarChar(6)
+  /// Descrição textual conforme MOC (ex: "Ciência da Operação")
+  xEvento      String                 @map("x_evento") @db.VarChar(60)
+  /// Sequencial do evento para o mesmo tipo (1 ou 2)
+  nSeqEvento   Int                    @default(1) @map("n_seq_evento")
+  /// Justificativa — obrigatória para tpEvento=210220, mínimo 15 chars
+  xJust        String?                @map("x_just") @db.VarChar(255)
+  status       DfeManifestacaoStatus  @default(PENDENTE)
+  tentativas   Int                    @default(0)
+  /// Número de protocolo retornado pela SEFAZ após sucesso
+  nProt        String?                @map("n_prot") @db.VarChar(15)
+  cStat        String?                @map("c_stat") @db.VarChar(3)
+  xMotivo      String?                @map("x_motivo") @db.VarChar(255)
+  dhRegEvento  DateTime?              @map("dh_reg_evento")
+  /// XML do envelope enviado (armazenado para auditoria e reprocessamento)
+  xmlEnvio     Bytes?                 @map("xml_envio")
+  /// XML da resposta bruta da SEFAZ
+  xmlResposta  Bytes?                 @map("xml_resposta")
+  erroMensagem String?                @map("erro_mensagem") @db.Text
+  criadoEm     DateTime               @default(now()) @map("criado_em")
+  enviadoEm    DateTime?              @map("enviado_em")
+  atualizadoEm DateTime               @updatedAt @map("atualizado_em")
+
+  documento DfeDocumento @relation(fields: [documentoId], references: [id])
+
+  /// Um tipo de evento por chave de acesso por tenant é único (nSeqEvento controla reenvios)
+  @@unique([tenantId, chaveAcesso, tpEvento, nSeqEvento])
+  @@index([tenantId, cnpj, status])
+  @@index([tenantId, chaveAcesso])
+  @@index([status, criadoEm])
+  @@index([documentoId])
+  @@map("dfe_manifestacoes")
+}
+
+// ── Exportação de DANFE ───────────────────────────────────────────────────────
+
+enum DfeExportJobStatus {
+  PENDENTE
+  PROCESSANDO
+  CONCLUIDO
+  ERRO
+}
+
+/// Job de exportação em lote de DANFEs — geração de PDF + ZIP + envio por e-mail
+model DfeExportJob {
+  id              String             @id @default(uuid())
+  tenantId        String             @map("tenant_id")
+  usuarioId       String?            @map("usuario_id")
+  status          DfeExportJobStatus @default(PENDENTE)
+  email           String?
+  documentoIds    String             @map("documento_ids") @db.Text
+  totalDocs       Int                @default(0) @map("total_docs")
+  docsProcessados Int                @default(0) @map("docs_processados")
+  arquivoNome     String?            @map("arquivo_nome")
+  erroMensagem    String?            @map("erro_mensagem") @db.Text
+  criadoEm        DateTime           @default(now()) @map("criado_em")
+  atualizadoEm    DateTime           @updatedAt @map("atualizado_em")
+  expiradoEm      DateTime?          @map("expirado_em")
+
+  @@index([tenantId, status])
+  @@index([tenantId, criadoEm])
+  @@map("dfe_export_jobs")
+}

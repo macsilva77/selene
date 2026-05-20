@@ -1,0 +1,11 @@
+{
+  "InstanceIds": [
+    "i-04479fd577b9a80bf"
+  ],
+  "DocumentName": "AWS-RunShellScript",
+  "Parameters": {
+    "commands": [
+      "printf '%s' 'SU5TRVJUIElOVE8gdXN1YXJpb3MgKGlkLHRlbmFudF9pZCxub21lLGVtYWlsLHNlbmhhX2hhc2gscm9sZSxhdGl2byxjcmlhZG9fZW0sYXR1YWxpemFkb19lbSkgVkFMVUVTICgnNzQzZDJmNGYtZjgyMi00MTFmLTk5ZGQtZjBhN2RiMTg1ZGUxJywnMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxJywnTWljaGFlbCBBbGVzc2FuZGVyJywnbWljaGFlbC5hbGVzc2FuZGVyQGdtYWlsLmNvbScsJyQyYiQxMiRCWjZCdEdablUxWlE1ZVhWaWVKSlIuM1JCd05RWnNWZnNtbGJ0S2dyZDdUREplNUkzZGtUbScsJ0FETUlOJyx0cnVlLG5vdygpLG5vdygpKSBPTiBDT05GTElDVCh0ZW5hbnRfaWQsZW1haWwpIERPIFVQREFURSBTRVQgc2VuaGFfaGFzaD1FWENMVURFRC5zZW5oYV9oYXNoLGF0aXZvPXRydWU7IFNFTEVDVCBpZCxlbWFpbCxhdGl2byxyb2xlOjp0ZXh0IEZST00gdXN1YXJpb3MgV0hFUkUgZW1haWw9J21pY2hhZWwuYWxlc3NhbmRlckBnbWFpbC5jb20nOw==' | base64 -d | PGPASSWORD='T0nOQLhDUVk8juKOj8hGxQ' psql 'postgresql://postgres:T0nOQLhDUVk8juKOj8hGxQ@brsupercarga-db.cyjik0uca89e.us-east-1.rds.amazonaws.com:5432/brsupercarga?sslmode=require'"
+    ]
+  }
+}

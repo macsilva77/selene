@@ -1,0 +1,38 @@
+# Dependências
+node_modules/
+.turbo/
+
+# Build
+dist/
+.next/
+out/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Terraform — estado e credenciais locais
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/terraform.tfvars
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+
+# Certificados e chaves — nunca commitar
+*.pem
+*.pfx
+*.p12
+*.key
+backend/uploads/certificados/

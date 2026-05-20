@@ -1,0 +1,19 @@
+# ── terraform.tfvars ──────────────────────────────────────────────────────────
+# ATENÇÃO: NÃO commite este arquivo com valores reais!
+# Adicione terraform.tfvars ao .gitignore.
+#
+# Como preencher:
+#   1. Crie o projeto GCP em console.cloud.google.com
+#   2. Copie o "ID do projeto" (ex: selene-prod-123456)
+#   3. Escolha uma senha forte para db_password e redis_auth_string
+
+project_id = "SEU-PROJECT-ID-AQUI"
+
+# Região São Paulo (padrão) — troque se necessário
+# region = "southamerica-east1"
+
+# Senha para o usuário 'selene' no Cloud SQL
+db_password = "ESCOLHA-UMA-SENHA-FORTE-AQUI"
+
+# Auth string Redis (mínimo 16 caracteres)
+redis_auth_string = "ESCOLHA-UMA-AUTH-STRING-AQUI-16C"

@@ -1,0 +1,36 @@
+# VCS
+.git
+.gitignore
+
+# Dev configs
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules
+npm-debug.log*
+
+# Build output (recriado no Dockerfile)
+dist
+
+# Test / coverage
+coverage
+test
+**/*.spec.ts
+**/*.e2e-spec.ts
+jest.config.*
+
+# Docs / IDE
+docs
+*.md
+.vscode
+.idea
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma Studio / migrations lock
+prisma/migrations/*/migration_lock.toml

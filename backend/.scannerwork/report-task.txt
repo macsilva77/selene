@@ -1,0 +1,6 @@
+projectKey=sigic-backend
+serverUrl=http://localhost:9090
+serverVersion=26.3.0.120487
+dashboardUrl=http://localhost:9090/dashboard?id=sigic-backend
+ceTaskId=97b018e0-d58c-47f0-9446-c4d5627d57b9
+ceTaskUrl=http://localhost:9090/api/ce/task?id=97b018e0-d58c-47f0-9446-c4d5627d57b9

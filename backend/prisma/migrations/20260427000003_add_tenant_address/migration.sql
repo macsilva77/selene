@@ -1,0 +1,17 @@
+ALTER TABLE "tenants"
+  ADD COLUMN IF NOT EXISTS "nome_fantasia"       TEXT,
+  ADD COLUMN IF NOT EXISTS "email"               TEXT,
+  ADD COLUMN IF NOT EXISTS "telefone"            TEXT,
+  ADD COLUMN IF NOT EXISTS "cep"                 TEXT,
+  ADD COLUMN IF NOT EXISTS "logradouro"          TEXT,
+  ADD COLUMN IF NOT EXISTS "numero"              TEXT,
+  ADD COLUMN IF NOT EXISTS "complemento"         TEXT,
+  ADD COLUMN IF NOT EXISTS "bairro"              TEXT,
+  ADD COLUMN IF NOT EXISTS "municipio"           TEXT,
+  ADD COLUMN IF NOT EXISTS "uf"                  TEXT,
+  ADD COLUMN IF NOT EXISTS "cnae_principal"      TEXT,
+  ADD COLUMN IF NOT EXISTS "inscricao_estadual"  TEXT,
+  ADD COLUMN IF NOT EXISTS "inscricao_municipal" TEXT,
+  ADD COLUMN IF NOT EXISTS "regime_tributario"   TEXT,
+  ADD COLUMN IF NOT EXISTS "situacao_cadastral"  TEXT,
+  ADD COLUMN IF NOT EXISTS "tipo_estabelecimento" TEXT;
