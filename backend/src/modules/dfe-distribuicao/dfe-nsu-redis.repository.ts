@@ -163,7 +163,7 @@ export class DfeNsuRedisRepository implements OnModuleInit, OnModuleDestroy {
     const inicio = Date.now();
 
     while (Date.now() - inicio < this.THROTTLE_MAX_ESPERA_MS) {
-      const ok = await this.redis.set(key, '1', 'NX', 'PX', this.THROTTLE_TTL_MS);
+      const ok = await this.redis.set(key, '1', 'PX', this.THROTTLE_TTL_MS, 'NX');
       if (ok === 'OK') return;
       await new Promise<void>((r) => setTimeout(r, 100));
     }

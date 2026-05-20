@@ -101,11 +101,11 @@ export class DfePubSubService implements OnModuleDestroy {
     const topic = this.topics[tipo];
     if (!topic) return; // tópico não configurado — silencioso
 
-    const evento: DfeEventoBase & object = {
+    const evento = {
       eventId: randomUUID(),
       timestamp: new Date().toISOString(),
       ...dados,
-    };
+    } as DfeEventoBase & Record<string, unknown>;
 
     try {
       const messageId = await topic.publishMessage({
