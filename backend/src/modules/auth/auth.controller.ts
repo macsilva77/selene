@@ -47,7 +47,9 @@ function accessCookieOpts(isProduction: boolean): CookieOptions {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
+    // Em produção: SameSite=None (cross-origin entre selene-api e selene-web).
+    // Em dev: SameSite=Lax (mesmo domínio localhost).
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/',
     maxAge: ACCESS_COOKIE_MAX_AGE_MS,
   };
@@ -57,7 +59,7 @@ function refreshCookieOpts(isProduction: boolean): CookieOptions {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/',
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
   };
