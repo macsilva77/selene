@@ -10,6 +10,7 @@ COPY packages/providers/package.json ./packages/providers/
 COPY packages/trpc/package.json ./packages/trpc/
 COPY backend/package.json ./backend/
 
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN bun install --frozen-lockfile
 
 # ── Stage 2: builder ──────────────────────────────────────────────────────────
