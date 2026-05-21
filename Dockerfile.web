@@ -17,6 +17,14 @@ RUN bun install --frozen-lockfile
 FROM oven/bun:1 AS builder
 WORKDIR /app
 
+# Copiar manifests e lockfile para o builder ter contexto de workspace
+COPY package.json bun.lock ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/providers/package.json ./packages/providers/
+COPY packages/trpc/package.json ./packages/trpc/
+COPY backend/package.json ./backend/
+
 COPY --from=deps /app/node_modules ./node_modules
 
 # Copiar fontes de todos os packages internos
@@ -27,9 +35,9 @@ COPY packages ./packages
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-WORKDIR /app/apps/web
-RUN bun run build
+RUN cd apps/web && ../../node_modules/.bin/next build
 
 # ── Stage 3: runner ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
