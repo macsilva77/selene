@@ -18,7 +18,6 @@ FROM oven/bun:1 AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules 2>/dev/null || true
 
 # Copiar fontes de todos os packages internos
 COPY apps/web ./apps/web
