@@ -7,7 +7,7 @@ export class ForgotPasswordDto {
   @IsNotEmpty()
   email: string;
 
-  @ApiPropertyOptional({ example: 'sigic-default' })
+  @ApiPropertyOptional({ example: 'selene-default' })
   @IsOptional()
   @IsString()
   tenantSlug?: string;

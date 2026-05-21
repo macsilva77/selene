@@ -1203,7 +1203,7 @@ function FiltersBar({
   const configSelecionada = configs.find((c) => c.id === filters.configId);
   const configsFiltradas = configs.filter((c) => {
     const q = empresaBusca.toLowerCase();
-    const nome = c.nomeFantasia ?? c.nome ?? '';
+    const nome = c.nomeFantasia || c.nome || '';
     return c.cnpj.includes(q) || nome.toLowerCase().includes(q);
   });
 
@@ -1229,18 +1229,18 @@ function FiltersBar({
             <button
               type="button"
               onClick={() => { setEmpresaAberta((v) => !v); if (!empresaAberta) setEmpresaBusca(''); }}
-              className={`${inputCls} min-w-52 max-w-72 flex items-center justify-between gap-2`}
+              className={`${inputCls} min-w-64 max-w-xs flex items-center justify-between gap-2`}
             >
               <span className="truncate">
                 {configSelecionada
-                  ? <><span className="font-mono">{maskCnpj(configSelecionada.cnpj)}</span><span className="text-muted-foreground"> — {configSelecionada.nomeFantasia ?? configSelecionada.nome ?? ''}</span></>
+                  ? <><span className="font-mono">{maskCnpj(configSelecionada.cnpj)}</span><span className="text-muted-foreground"> — {configSelecionada.nomeFantasia || configSelecionada.nome || ''}</span></>
                   : <span className="text-muted-foreground">Todas as empresas</span>
                 }
               </span>
               <CaretDownIcon size={12} className={`shrink-0 text-muted-foreground transition-transform ${empresaAberta ? 'rotate-180' : ''}`} />
             </button>
             {empresaAberta && (
-              <div className="absolute z-50 mt-1 w-full min-w-64 rounded-lg border border-border bg-background shadow-lg">
+              <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm rounded-lg border border-border bg-background shadow-lg">
                 <div className="p-2 border-b border-border">
                   <input
                     autoFocus
@@ -1265,7 +1265,7 @@ function FiltersBar({
                         onClick={() => { upd('configId', c.id); setEmpresaAberta(false); setEmpresaBusca(''); }}
                         className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/60 transition-colors flex items-center gap-2 ${filters.configId === c.id ? 'bg-primary/5 font-medium' : ''}`}>
                         <span className="font-mono text-xs text-muted-foreground shrink-0">{maskCnpj(c.cnpj)}</span>
-                        <span className="truncate">{c.nomeFantasia ?? c.nome ?? ''}</span>
+                        <span className="whitespace-nowrap">{c.nomeFantasia || c.nome || ''}</span>
                       </button>
                     </li>
                   ))}

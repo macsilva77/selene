@@ -10,6 +10,7 @@ import { DfeDanfeProcessor } from './dfe-danfe.processor';
 import { DfeDistribuicaoJob } from './dfe-distribuicao.job';
 import { DfeGapRecoveryJob } from './dfe-gap-recovery.job';
 import { DfeVarreduraJob } from './dfe-varredura.job';
+import { DfeDownloadJob } from './dfe-download.job';
 import { DANFE_EXPORT_QUEUE } from './dfe-danfe.service';
 import {
   DFE_RESUMO_QUEUE,
@@ -50,6 +51,7 @@ import {
     DfeDistribuicaoJob,
     DfeGapRecoveryJob,
     DfeVarreduraJob,
+    DfeDownloadJob,
   ],
 })
 export class DfeDistribuicaoWorkerModule {}

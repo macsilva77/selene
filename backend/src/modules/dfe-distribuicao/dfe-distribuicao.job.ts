@@ -71,9 +71,13 @@ export class DfeDistribuicaoJob {
 
     let enfileirados = 0;
     for (const config of elegiveis) {
-      const jobId = dfeJobId.resumo(config.tenantId, config.cnpj);
+      // jobId único por ciclo: inclui timestamp de proximaConsulta (ou "first" na 1ª execução).
+      // Isso elimina conflito com jobs concluídos/falhos de ciclos anteriores — cada ciclo
+      // tem seu próprio ID, sem necessidade de remove() antes do add().
+      const cicloTs = config.controle?.proximaConsulta?.getTime() ?? 'first';
+      const jobId = `${dfeJobId.resumo(config.tenantId, config.cnpj)}:${cicloTs}`;
 
-      // Verifica se já existe job pendente/ativo para esse CNPJ
+      // Garante que não há job waiting/active/delayed para este ciclo exato
       const existente = await this.resumoQueue.getJob(jobId);
       if (existente) {
         const state = await existente.getState();
@@ -86,7 +90,7 @@ export class DfeDistribuicaoJob {
           jobId,
           attempts: 3,
           backoff: { type: 'exponential', delay: 10_000 },
-          removeOnComplete: 100,
+          removeOnComplete: true,
           removeOnFail: 50,
         },
       );

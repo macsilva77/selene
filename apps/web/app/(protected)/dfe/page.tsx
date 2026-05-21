@@ -59,6 +59,8 @@ interface DfeCertificado {
 interface DfeConfig {
   id: string;
   cnpj: string;
+  nome: string | null;
+  nomeFantasia: string | null;
   cUf: number;
   tpAmb: 1 | 2;
   ativo: boolean;
@@ -629,7 +631,7 @@ function NovaConfigModal({ empresas, certificados, onClose, onSave, saving }: Re
     const q = busca.toLowerCase();
     return (
       e.cnpj.includes(q) ||
-      (e.nomeFantasia ?? e.nome).toLowerCase().includes(q)
+      (e.nomeFantasia || e.nome).toLowerCase().includes(q)
     );
   });
 
@@ -682,7 +684,7 @@ function NovaConfigModal({ empresas, certificados, onClose, onSave, saving }: Re
                 {empresaSelecionada ? (
                   <span>
                     <span className="font-mono">{maskCnpj(empresaSelecionada.cnpj)}</span>
-                    <span className="text-muted-foreground"> — {empresaSelecionada.nomeFantasia ?? empresaSelecionada.nome}</span>
+                    <span className="text-muted-foreground"> — {empresaSelecionada.nomeFantasia || empresaSelecionada.nome}</span>
                   </span>
                 ) : (
                   <span className="text-muted-foreground">Selecione uma empresa…</span>
@@ -713,7 +715,7 @@ function NovaConfigModal({ empresas, certificados, onClose, onSave, saving }: Re
                           className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/60 transition-colors flex items-center gap-2 ${form.cnpj === e.cnpj ? 'bg-primary/5 font-medium' : ''}`}
                         >
                           <span className="font-mono text-xs text-muted-foreground shrink-0">{maskCnpj(e.cnpj)}</span>
-                          <span className="truncate">{e.nomeFantasia ?? e.nome}</span>
+                          <span className="truncate">{e.nomeFantasia || e.nome}</span>
                           {e.uf ? <span className="ml-auto text-xs text-muted-foreground shrink-0">({e.uf})</span> : null}
                         </button>
                       </li>
@@ -901,26 +903,28 @@ export default function DfePage() {
   const handleSave = useCallback(async (form: FormState) => {
     setSaving(true);
     try {
-      const res = await api.post('/dfe/configurar', {
+      await api.post('/dfe/configurar', {
         cnpj: form.cnpj.replace(/[.\-\/\s]/g, '').toUpperCase(),
         tpAmb: Number(form.tpAmb) as 1 | 2,
         certificadoId: form.certificadoId,
         horarioCaptura: form.horarioCaptura,
         intervaloMinutos: Number(form.intervaloMinutos),
       });
-      setConfigs((prev) => [...prev, res.data as DfeConfig]);
       setShowModal(false);
       success('Monitoramento DFe configurado com sucesso');
+      await carregar();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toastError(msg ?? 'Erro ao salvar configuração');
     } finally { setSaving(false); }
-  }, [success, toastError]);
+  }, [carregar, success, toastError]);
 
   const configsFiltradas = configs.filter((c) => {
+    const q = busca.toLowerCase();
     const cnpjMatch = busca.trim() === '' ||
       c.cnpj.replace(/\D/g, '').includes(busca.replace(/\D/g, '')) ||
-      maskCnpj(c.cnpj).toLowerCase().includes(busca.toLowerCase());
+      maskCnpj(c.cnpj).toLowerCase().includes(q) ||
+      (c.nomeFantasia || c.nome || '').toLowerCase().includes(q);
     const statusMatch = filtroStatus === 'todos' || (filtroStatus === 'ativos' ? c.ativo : !c.ativo);
     return cnpjMatch && statusMatch;
   });
@@ -994,7 +998,7 @@ export default function DfePage() {
           <DataTable<DfeConfig>
             columns={[
               {
-                key: 'cnpj', header: 'CNPJ',
+                key: 'cnpj', header: 'Empresa',
                 render: (row) => (
                   <div className="flex items-center gap-2.5">
                     <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -1002,7 +1006,14 @@ export default function DfePage() {
                         ? <WifiHighIcon size={13} className="text-primary" weight="fill" />
                         : <WifiSlashIcon size={13} className="text-muted-foreground" weight="fill" />}
                     </div>
-                    <span className="font-mono font-medium text-foreground whitespace-nowrap">{maskCnpj(row.cnpj)}</span>
+                    <div className="flex flex-col leading-tight">
+                      {(row.nomeFantasia || row.nome) && (
+                        <span className="text-sm font-medium text-foreground truncate max-w-52">
+                          {row.nomeFantasia || row.nome}
+                        </span>
+                      )}
+                      <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">{maskCnpj(row.cnpj)}</span>
+                    </div>
                   </div>
                 ),
               },

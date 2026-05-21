@@ -29,13 +29,13 @@ variable "redis_auth_string" {
 variable "api_image" {
   description = "Docker image full URI para o serviço API"
   type        = string
-  default     = "southamerica-east1-docker.pkg.dev/PLACEHOLDER/selene/api:latest"
+  default     = "us-docker.pkg.dev/cloudrun/container/hello:latest"
 }
 
 variable "worker_image" {
   description = "Docker image full URI para o serviço Worker"
   type        = string
-  default     = "southamerica-east1-docker.pkg.dev/PLACEHOLDER/selene/worker:latest"
+  default     = "us-docker.pkg.dev/cloudrun/container/hello:latest"
 }
 
 # ── Tamanho das instâncias ────────────────────────────────────────────────────

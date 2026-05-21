@@ -26,7 +26,7 @@ export class MailService {
       await this.transporter.sendMail({
         from: this.from,
         to,
-        subject: '[SIGIC] Redefinição de senha solicitada',
+        subject: '[Selene] Redefinição de senha solicitada',
         html: this.buildResetSenhaHtml(nome, link),
       });
       this.logger.log(`E-mail de reset de senha enviado para ${to}`);
@@ -49,14 +49,14 @@ export class MailService {
       await this.transporter.sendMail({
         from: this.from,
         to,
-        subject: `[SIGIC] Nova demanda: [${tipo}] ${evento.titulo}`,
+        subject: `[Selene] Nova demanda: [${tipo}] ${evento.titulo}`,
         html: `<p>Uma nova demanda foi registrada e sincronizada com seu <strong>${label}</strong>.</p>
                <p><strong>[${tipo}] ${evento.titulo}</strong></p>
                <p>Prazo/Limite: <strong>${prazo}</strong></p>
                ${evento.responsavel ? `<p>Responsável: ${evento.responsavel}</p>` : ''}
                <p><em>Importe o arquivo .ics anexado para adicionar ao seu calendário.</em></p>`,
         attachments: [{
-          filename: 'sigic-evento.ics',
+          filename: 'selene-evento.ics',
           content: icsContent,
           contentType: 'text/calendar;method=PUBLISH;charset=utf-8',
         }],
@@ -73,7 +73,7 @@ export class MailService {
       await this.transporter.sendMail({
         from: this.from,
         to,
-        subject: '[SIGIC] Bem-vindo! Crie sua senha de acesso',
+        subject: '[Selene] Bem-vindo! Crie sua senha de acesso',
         html: this.buildBoasVindasHtml(nome, link),
       });
       this.logger.log(`E-mail de boas-vindas enviado para ${to}`);
@@ -94,15 +94,15 @@ export class MailService {
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
         <tr>
           <td style="background:#FF5100;padding:32px 40px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">SIGIC</h1>
-            <p style="margin:4px 0 0;color:#ffd9cc;font-size:13px;">Sistema de Gestão de Iniciativas e Contratos</p>
+            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Selene</h1>
+            <p style="margin:4px 0 0;color:#ffd9cc;font-size:13px;">Plataforma de Gestão Empresarial</p>
           </td>
         </tr>
         <tr>
           <td style="padding:40px;">
             <p style="margin:0 0 16px;font-size:16px;color:#1a202c;">Olá, <strong>${nome}</strong>!</p>
             <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6;">
-              Recebemos uma solicitação de redefinição de senha para sua conta no SIGIC.
+              Recebemos uma solicitação de redefinição de senha para sua conta no Selene.
             </p>
             <p style="margin:0 0 8px;font-size:14px;color:#4a5568;">O link abaixo é válido por <strong>2 horas</strong>:</p>
             <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
@@ -149,8 +149,8 @@ export class MailService {
         <!-- Header -->
         <tr>
           <td style="background:#FF5100;padding:32px 40px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">SIGIC</h1>
-            <p style="margin:4px 0 0;color:#ffd9cc;font-size:13px;">Sistema de Gestão de Iniciativas e Contratos</p>
+            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Selene</h1>
+            <p style="margin:4px 0 0;color:#ffd9cc;font-size:13px;">Plataforma de Gestão Empresarial</p>
           </td>
         </tr>
         <!-- Body -->
@@ -158,7 +158,7 @@ export class MailService {
           <td style="padding:40px;">
             <p style="margin:0 0 16px;font-size:16px;color:#1a202c;">Olá, <strong>${nome}</strong>!</p>
             <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6;">
-              Sua conta no SIGIC foi criada com sucesso. Para acessar o sistema, você precisa criar sua senha pessoal.
+              Sua conta no Selene foi criada com sucesso. Para acessar o sistema, você precisa criar sua senha pessoal.
             </p>
             <p style="margin:0 0 8px;font-size:14px;color:#4a5568;">O link abaixo é válido por <strong>24 horas</strong>:</p>
             <table cellpadding="0" cellspacing="0" style="margin:24px 0;">

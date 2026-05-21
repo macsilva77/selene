@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bull';
 import configuration from './config/configuration';
 import { AppConfigModule } from './config/app-config.module';
 import { PrismaModule } from './database/prisma.module';
+import { RedisCacheModule } from './modules/cache/cache.module';
 import { DfeDistribuicaoWorkerModule } from './modules/dfe-distribuicao/dfe-distribuicao-worker.module';
 
 /**
@@ -26,6 +27,7 @@ import { DfeDistribuicaoWorkerModule } from './modules/dfe-distribuicao/dfe-dist
       envFilePath: ['.env'],
     }),
     AppConfigModule,
+    RedisCacheModule,
     ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       inject: [ConfigService],

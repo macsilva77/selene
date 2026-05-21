@@ -2,7 +2,7 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-vali
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LoginDto {
-  @ApiProperty({ example: 'gestor@sigic.gov.br' })
+  @ApiProperty({ example: 'gestor@selene.gov.br' })
   @IsEmail({}, { message: 'E-mail inválido' })
   @IsNotEmpty()
   email: string;
@@ -13,7 +13,7 @@ export class LoginDto {
   @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
   senha: string;
 
-  @ApiPropertyOptional({ example: 'sigic-default', description: 'Slug do tenant (obrigatório em ambientes multi-tenant)' })
+  @ApiPropertyOptional({ example: 'selene-default', description: 'Slug do tenant (obrigatório em ambientes multi-tenant)' })
   @IsOptional()
   @IsString()
   tenantSlug?: string;

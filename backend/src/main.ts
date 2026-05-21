@@ -50,8 +50,8 @@ async function bootstrap() {
   // Swagger — disponível em todos os ambientes
   if (true) {
     const swaggerConfig = new DocumentBuilder()
-      .setTitle('SIGIC API')
-      .setDescription('Sistema de Gestão de Iniciativas e Contratos — API REST')
+      .setTitle('Selene API')
+      .setDescription('Selene — Plataforma de Gestão Empresarial — API REST')
       .setVersion('1.0')
       .addBearerAuth()
       .addTag('Auth')
@@ -75,7 +75,7 @@ async function bootstrap() {
   const port = config.get<number>('port') || 3000;
   await app.listen(port);
 
-  Logger.log(`SIGIC Backend rodando na porta ${port}`, 'Bootstrap');
+  Logger.log(`Selene Backend rodando na porta ${port}`, 'Bootstrap');
   Logger.log(`Ambiente: ${config.get<string>('nodeEnv')}`, 'Bootstrap');
 }
 

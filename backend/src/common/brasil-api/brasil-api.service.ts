@@ -33,7 +33,7 @@ export interface BrasilApiCepData {
   street?: string;
 }
 
-const USER_AGENT = 'SIGIC-System/1.0 (NestJS backend)';
+const USER_AGENT = 'Selene-System/1.0 (NestJS backend)';
 const BASE_URL = 'https://brasilapi.com.br/api';
 
 @Injectable()

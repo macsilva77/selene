@@ -1,9 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { TagIcon, PlusIcon, PencilSimpleIcon, TrashIcon, StarIcon, CheckIcon, XIcon } from '@phosphor-icons/react';
+import {
+  TagIcon, PlusIcon, PencilSimpleIcon, TrashIcon,
+  StarIcon, CheckIcon, ArrowClockwiseIcon, MagnifyingGlassIcon,
+} from '@phosphor-icons/react';
 import { Modal } from '@/components/ui/modal';
 import { useToast, ToastContainer } from '@/components/ui/toast';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { api } from '@/lib/api';
 
 /* ─────────────────────────────────────────────────────────────────── */
@@ -67,6 +71,10 @@ function EtiquetaBadge({ nome, cor }: { nome: string; cor: string }) {
   );
 }
 
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 /* ─────────────────────────────────────────────────────────────────── */
 /* Color Picker                                                        */
 /* ─────────────────────────────────────────────────────────────────── */
@@ -75,12 +83,10 @@ function ColorPicker({
   value,
   onChange,
   usedColors,
-  excludeId,
 }: {
   value: string;
   onChange: (cor: string) => void;
   usedColors: string[];
-  excludeId?: string | null;
 }) {
   const [hex, setHex] = useState(value);
 
@@ -145,16 +151,7 @@ function ColorPicker({
 /* ─────────────────────────────────────────────────────────────────── */
 
 function EtiquetaFormModal({
-  isOpen,
-  editando,
-  form,
-  setForm,
-  onClose,
-  onSave,
-  salvando,
-  erroForm,
-  usedColors,
-  usedNomes,
+  isOpen, editando, form, setForm, onClose, onSave, salvando, erroForm, usedColors, usedNomes,
 }: {
   isOpen: boolean;
   editando: Etiqueta | null;
@@ -173,14 +170,8 @@ function EtiquetaFormModal({
   const canSave = form.nome.trim() && !hexInvalido && !nomeConflito && !corConflito && !salvando;
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={editando ? 'Editar etiqueta' : 'Nova etiqueta'}
-      size="sm"
-    >
+    <Modal isOpen={isOpen} onClose={onClose} title={editando ? 'Editar etiqueta' : 'Nova etiqueta'} size="sm">
       <div className="space-y-4">
-        {/* Nome */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
             Nome <span className="text-destructive">*</span>
@@ -196,34 +187,22 @@ function EtiquetaFormModal({
               nomeConflito ? 'border-destructive' : 'border-input',
             ].join(' ')}
           />
-          {nomeConflito && (
-            <p className="mt-1 text-xs text-destructive">Já existe uma etiqueta com este nome</p>
-          )}
+          {nomeConflito && <p className="mt-1 text-xs text-destructive">Já existe uma etiqueta com este nome</p>}
         </div>
 
-        {/* Cor */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
             Cor <span className="text-destructive">*</span>
           </label>
-          <ColorPicker
-            value={form.cor}
-            onChange={(cor) => setForm((f) => ({ ...f, cor }))}
-            usedColors={usedColors}
-            excludeId={editando?.id}
-          />
-          {corConflito && (
-            <p className="mt-1 text-xs text-destructive">Esta cor já está em uso</p>
-          )}
+          <ColorPicker value={form.cor} onChange={(cor) => setForm((f) => ({ ...f, cor }))} usedColors={usedColors} />
+          {corConflito && <p className="mt-1 text-xs text-destructive">Esta cor já está em uso</p>}
         </div>
 
-        {/* Pré-visualização */}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Pré-visualização:</span>
           <EtiquetaBadge nome={form.nome || 'Nome da etiqueta'} cor={form.cor} />
         </div>
 
-        {/* Padrão */}
         <label className="flex items-center gap-2.5 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -244,19 +223,12 @@ function EtiquetaFormModal({
         )}
 
         <div className="flex justify-end gap-2 pt-2 border-t border-border">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
-          >
+          <button type="button" onClick={onClose}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={!canSave}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
+          <button type="button" onClick={onSave} disabled={!canSave}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
             {salvando ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
@@ -270,11 +242,7 @@ function EtiquetaFormModal({
 /* ─────────────────────────────────────────────────────────────────── */
 
 function ConfirmDeleteModal({
-  isOpen,
-  etiqueta,
-  onClose,
-  onConfirm,
-  excluindo,
+  isOpen, etiqueta, onClose, onConfirm, excluindo,
 }: {
   isOpen: boolean;
   etiqueta: Etiqueta | null;
@@ -296,19 +264,13 @@ function ConfirmDeleteModal({
           </div>
         )}
         <div className="flex justify-end gap-2 pt-2 border-t border-border">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors"
-          >
+          <button type="button" onClick={onClose}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
+          <button type="button" onClick={onConfirm}
             disabled={excluindo || etiqueta._count.documentos > 0}
-            className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
+            className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
             {excluindo ? 'Excluindo…' : 'Excluir'}
           </button>
         </div>
@@ -326,6 +288,7 @@ export default function EtiquetasPage() {
 
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState('');
 
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState<Etiqueta | null>(null);
@@ -383,8 +346,8 @@ export default function EtiquetasPage() {
       }
       fecharModal();
       void carregar();
-    } catch (err: any) {
-      const msg: string = err?.response?.data?.message ?? 'Erro ao salvar etiqueta';
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message ?? 'Erro ao salvar etiqueta';
       setErroForm(Array.isArray(msg) ? msg.join('; ') : String(msg));
     } finally {
       setSalvando(false);
@@ -399,8 +362,8 @@ export default function EtiquetasPage() {
       success(`Etiqueta "${confirmDelete.nome}" excluída`);
       setConfirmDelete(null);
       void carregar();
-    } catch (err: any) {
-      const msg: string = err?.response?.data?.message ?? 'Erro ao excluir etiqueta';
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message ?? 'Erro ao excluir etiqueta';
       toastError(Array.isArray(msg) ? msg.join('; ') : String(msg));
       setConfirmDelete(null);
     } finally {
@@ -408,125 +371,156 @@ export default function EtiquetasPage() {
     }
   };
 
-  const usedColors = etiquetas
-    .filter((e) => !editando || e.id !== editando.id)
-    .map((e) => e.cor);
-  const usedNomes = etiquetas
-    .filter((e) => !editando || e.id !== editando.id)
-    .map((e) => e.nome);
+  const usedColors = etiquetas.filter((e) => !editando || e.id !== editando.id).map((e) => e.cor);
+  const usedNomes = etiquetas.filter((e) => !editando || e.id !== editando.id).map((e) => e.nome);
+
+  const etiquetasFiltradas = etiquetas.filter((e) => {
+    const q = busca.toLowerCase();
+    return !q || e.nome.toLowerCase().includes(q) || e.cor.toLowerCase().includes(q);
+  });
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 flex-1 min-h-0 h-full overflow-y-auto pb-4">
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <TagIcon size={22} weight="duotone" className="text-primary" />
-            Etiquetas
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Classifique documentos fiscais com etiquetas coloridas
-          </p>
+          <h1 className="text-2xl font-semibold text-foreground">Etiquetas</h1>
+          <p className="text-sm text-muted-foreground mt-1">Classifique documentos fiscais com etiquetas coloridas</p>
         </div>
-        <button
-          type="button"
-          onClick={abrirNova}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          <PlusIcon size={16} />
-          Nova etiqueta
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => { void carregar(); }} disabled={loading} title="Atualizar"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+            <ArrowClockwiseIcon size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button type="button" onClick={abrirNova}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
+            <PlusIcon size={16} />Nova etiqueta
+          </button>
+        </div>
       </div>
 
-      {/* List */}
-      <div className="rounded-xl border border-border bg-card">
-        {loading ? (
-          <div className="divide-y divide-border">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-5 py-4 animate-pulse">
-                <div className="h-6 w-20 rounded-full bg-muted" />
-                <div className="h-4 w-32 rounded bg-muted" />
-                <div className="ml-auto h-4 w-16 rounded bg-muted" />
-              </div>
-            ))}
+      {/* Card principal */}
+      <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden flex-1 min-h-0 flex flex-col">
+        {/* Card header */}
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0">
+          <div>
+            <p className="font-semibold text-foreground">Etiquetas cadastradas</p>
+            <p className="text-xs text-muted-foreground">{etiquetas.length} etiqueta{etiquetas.length !== 1 ? 's' : ''}</p>
           </div>
-        ) : etiquetas.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <TagIcon size={40} className="text-muted-foreground/40" weight="duotone" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Nenhuma etiqueta cadastrada</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Crie etiquetas para classificar seus documentos fiscais
-              </p>
+          <div className="relative">
+            <MagnifyingGlassIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="pl-8 pr-3 py-2 text-sm border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary w-44 bg-background"
+              placeholder="Buscar etiqueta…"
+              value={busca}
+              onChange={(e) => { setBusca(e.target.value); }}
+            />
+          </div>
+        </div>
+
+        {/* Tabela */}
+        <div className="flex-1 min-h-0 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-40 text-muted-foreground gap-2">
+              <ArrowClockwiseIcon size={18} className="animate-spin" />
+              <span className="text-sm">Carregando etiquetas…</span>
             </div>
-            <button
-              type="button"
-              onClick={abrirNova}
-              className="mt-1 flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <PlusIcon size={13} />
-              Criar primeira etiqueta
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {etiquetas.map((e) => (
-              <div
-                key={e.id}
-                className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/30 transition-colors"
-              >
-                {/* Badge */}
-                <EtiquetaBadge nome={e.nome} cor={e.cor} />
-
-                {/* Padrão */}
-                {e.padrao && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">
-                    <StarIcon size={10} weight="fill" />
-                    Padrão
-                  </span>
-                )}
-
-                {/* Contagem de documentos */}
-                <span className="text-xs text-muted-foreground">
-                  {e._count.documentos} documento{e._count.documentos !== 1 ? 's' : ''}
-                </span>
-
-                {/* Hex preview */}
-                <span className="text-xs font-mono text-muted-foreground">{e.cor}</span>
-
-                {/* Actions */}
-                <div className="ml-auto flex items-center gap-1">
-                  <button
-                    type="button"
-                    title="Editar"
-                    onClick={() => abrirEditar(e)}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  >
-                    <PencilSimpleIcon size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    title="Excluir"
-                    onClick={() => setConfirmDelete(e)}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                  >
-                    <TrashIcon size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+          ) : etiquetasFiltradas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-60 text-center">
+              <TagIcon size={48} className="text-muted-foreground/20 mb-4" weight="duotone" />
+              <p className="text-foreground font-medium mb-1">
+                {busca ? 'Nenhuma etiqueta encontrada' : 'Nenhuma etiqueta cadastrada'}
+              </p>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                {busca
+                  ? 'Tente ajustar o termo de busca.'
+                  : 'Crie etiquetas para classificar seus documentos fiscais.'}
+              </p>
+              {!busca && (
+                <button type="button" onClick={abrirNova}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                  <PlusIcon size={13} />Criar primeira etiqueta
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border overflow-hidden mx-5 my-4">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableHead>Etiqueta</TableHead>
+                    <TableHead>Cor</TableHead>
+                    <TableHead>Documentos</TableHead>
+                    <TableHead>Padrão</TableHead>
+                    <TableHead>Criação</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {etiquetasFiltradas.map((e) => (
+                    <TableRow key={e.id} className="hover:bg-muted/30">
+                      <TableCell>
+                        <EtiquetaBadge nome={e.nome} cor={e.cor} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-4 h-4 rounded-md border border-border shrink-0"
+                            style={{ backgroundColor: e.cor }}
+                          />
+                          <span className="text-xs font-mono text-muted-foreground">{e.cor}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm font-medium text-foreground">
+                          {e._count.documentos.toLocaleString('pt-BR')}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-1">
+                          doc{e._count.documentos !== 1 ? 's' : ''}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {e.padrao ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">
+                            <StarIcon size={10} weight="fill" />Padrão
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(e.criadoEm)}</span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button type="button" title="Editar" onClick={() => abrirEditar(e)}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                            <PencilSimpleIcon size={14} />
+                          </button>
+                          <button type="button" title="Excluir" onClick={() => setConfirmDelete(e)}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">
+                            <TrashIcon size={14} />
+                          </button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Modals */}
       <EtiquetaFormModal
         isOpen={modalAberto}
         editando={editando}
         form={form}
         setForm={setForm}
         onClose={fecharModal}
-        onSave={salvar}
+        onSave={() => { void salvar(); }}
         salvando={salvando}
         erroForm={erroForm}
         usedColors={usedColors}
@@ -537,11 +531,9 @@ export default function EtiquetasPage() {
         isOpen={confirmDelete !== null}
         etiqueta={confirmDelete}
         onClose={() => setConfirmDelete(null)}
-        onConfirm={excluir}
+        onConfirm={() => { void excluir(); }}
         excluindo={excluindo}
       />
-
-      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

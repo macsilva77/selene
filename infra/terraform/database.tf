@@ -106,7 +106,7 @@ resource "google_redis_instance" "selene_redis" {
   region             = var.region
   redis_version      = "REDIS_7_0"
   authorized_network = google_compute_network.selene_vpc.id
-  connect_mode       = "PRIVATE_SERVICE_ACCESS"
+  connect_mode       = "DIRECT_PEERING"
 
   auth_enabled = true
 

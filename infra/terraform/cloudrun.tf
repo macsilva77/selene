@@ -34,18 +34,14 @@ resource "google_cloud_run_v2_service" "api" {
           cpu    = var.api_cpu
           memory = var.api_memory
         }
-        cpu_idle          = true   # só consome CPU durante requests
-        startup_cpu_boost = true   # boost na inicialização
+        cpu_idle          = true
+        startup_cpu_boost = true
       }
 
       # ── Variáveis não-sensíveis ─────────────────────────────────────────────
       env {
         name  = "NODE_ENV"
         value = "production"
-      }
-      env {
-        name  = "PORT"
-        value = "3000"
       }
 
       # ── Secrets via Secret Manager ─────────────────────────────────────────
@@ -60,26 +56,6 @@ resource "google_cloud_run_v2_service" "api" {
             }
           }
         }
-      }
-
-      liveness_probe {
-        http_get {
-          path = "/api/v1/health"
-          port = 3000
-        }
-        initial_delay_seconds = 30
-        period_seconds        = 30
-        failure_threshold     = 3
-      }
-
-      startup_probe {
-        http_get {
-          path = "/api/v1/health"
-          port = 3000
-        }
-        initial_delay_seconds = 10
-        period_seconds        = 5
-        failure_threshold     = 10
       }
     }
   }
@@ -100,8 +76,6 @@ resource "google_cloud_run_v2_service_iam_member" "api_public" {
 }
 
 # ── Cloud Run: Worker ─────────────────────────────────────────────────────────
-# min_instance_count = 1 para manter o worker sempre ativo (processa filas Bull)
-# O worker expõe :8080 apenas para health checks do Cloud Run
 resource "google_cloud_run_v2_service" "worker" {
   name     = "selene-worker"
   location = var.region
@@ -115,7 +89,7 @@ resource "google_cloud_run_v2_service" "worker" {
     }
 
     scaling {
-      min_instance_count = 1 # worker nunca dorme — processa filas contínuas
+      min_instance_count = 1
       max_instance_count = 3
     }
 
@@ -127,16 +101,12 @@ resource "google_cloud_run_v2_service" "worker" {
           cpu    = var.worker_cpu
           memory = var.worker_memory
         }
-        cpu_idle = false # CPU always-on para processar filas Bull
+        cpu_idle = false
       }
 
       env {
         name  = "NODE_ENV"
         value = "production"
-      }
-      env {
-        name  = "PORT"
-        value = "8080"
       }
 
       dynamic "env" {
@@ -150,26 +120,6 @@ resource "google_cloud_run_v2_service" "worker" {
             }
           }
         }
-      }
-
-      startup_probe {
-        http_get {
-          path = "/health"
-          port = 8080
-        }
-        initial_delay_seconds = 10
-        period_seconds        = 5
-        failure_threshold     = 12  # 60s para o worker conectar ao Redis/Bull
-      }
-
-      liveness_probe {
-        http_get {
-          path = "/health"
-          port = 8080
-        }
-        initial_delay_seconds = 30
-        period_seconds        = 30
-        failure_threshold     = 3
       }
     }
   }
