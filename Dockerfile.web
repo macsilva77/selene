@@ -36,8 +36,10 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PATH="/app/node_modules/.bin:${PATH}"
 
-RUN cd apps/web && bunx --bun next build
+WORKDIR /app/apps/web
+RUN bun /app/node_modules/next/dist/bin/next build
 
 # ── Stage 3: runner ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
