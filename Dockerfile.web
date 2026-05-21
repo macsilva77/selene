@@ -1,0 +1,51 @@
+# ── Stage 1: deps ─────────────────────────────────────────────────────────────
+FROM oven/bun:1 AS deps
+WORKDIR /app
+
+# Copiar manifests de todo o workspace (necessário para resolver workspace:*)
+COPY package.json bun.lock ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/providers/package.json ./packages/providers/
+COPY packages/trpc/package.json ./packages/trpc/
+
+RUN bun install --frozen-lockfile
+
+# ── Stage 2: builder ──────────────────────────────────────────────────────────
+FROM oven/bun:1 AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules 2>/dev/null || true
+
+# Copiar fontes de todos os packages internos
+COPY apps/web ./apps/web
+COPY packages ./packages
+
+# NEXT_PUBLIC_* precisam estar disponíveis no build time
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app/apps/web
+RUN bun run build
+
+# ── Stage 3: runner ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+
+# standalone output — contém apenas o necessário para rodar
+COPY --from=builder --chown=nextjs:nextjs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nextjs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nextjs /app/apps/web/public ./apps/web/public
+
+USER nextjs
+EXPOSE 3000
+ENV HOSTNAME=0.0.0.0
+
+CMD ["node", "apps/web/server.js"]

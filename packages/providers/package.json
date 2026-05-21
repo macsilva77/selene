@@ -8,7 +8,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@selene/trpc": "workspace:*",
+    "@selene/trpc": "*",
     "@trpc/client": "^11.1.3",
     "@trpc/react-query": "^11.1.3",
     "@tanstack/react-query": "^5.75.5"

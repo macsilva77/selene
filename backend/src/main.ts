@@ -47,8 +47,8 @@ async function bootstrap() {
   // Global guards aplicados via providers no AppModule
   // JWT e Roles guards são configurados por módulo quando necessário
 
-  // Swagger — restrito exclusivamente ao ambiente de desenvolvimento local
-  if (config.get<string>('nodeEnv') === 'development') {
+  // Swagger — disponível em todos os ambientes
+  if (true) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('SIGIC API')
       .setDescription('Sistema de Gestão de Iniciativas e Contratos — API REST')
