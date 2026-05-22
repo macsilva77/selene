@@ -414,6 +414,9 @@ export class DfeDistribuicaoService {
         await this.nsuRedisRepo.salvarNsu(config.tenantId, config.cnpj, ultimoNsu, maxNsu);
         await this.nsuRedisRepo.liberarLock(config.tenantId, config.cnpj, lockId);
         await this.nsuRepo.atualizarStats(controle.id, { ultimoNsu, maxNsu, erro: msg });
+        // Agenda próxima tentativa respeitando o intervalo configurado (não deixa proximaConsulta null)
+        const intervaloErroMs = Math.max(config.intervaloMinutos * 60_000, HORARIO_MIN_RECHECK_MS);
+        await this.nsuRepo.agendarProximaConsulta(controle.id, new Date(Date.now() + intervaloErroMs));
       } catch (lockErr) {
         this.logger.error('Falha ao liberar lock após erro:', lockErr);
       }
