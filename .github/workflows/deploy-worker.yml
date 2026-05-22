@@ -61,6 +61,8 @@ jobs:
           service: selene-worker
           region: ${{ env.GCP_REGION }}
           image: ${{ steps.tag.outputs.IMAGE_TAG }}
+          secrets: |
+            CERT_ENCRYPTION_KEY=selene-cert-encryption-key:latest
 
       - name: Confirm Worker is running
         run: |
