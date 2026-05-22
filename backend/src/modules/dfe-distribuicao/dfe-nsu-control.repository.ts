@@ -197,6 +197,19 @@ export class DfeNsuControlRepository {
     this.logger.log(`Controle ${controleId}: NSU zerado, cooldown liberado — recuperação dos 90 dias iniciará no próximo ciclo`);
   }
 
+  /** Reseta apenas os contadores de erro, sem alterar NSU. */
+  async resetarErros(controleId: string): Promise<void> {
+    await this.prisma.dfeNsuControle.update({
+      where: { id: controleId },
+      data: {
+        errosConsecutivos: 0,
+        ultimoErro: null,
+        ultimoErroEm: null,
+      },
+    });
+    this.logger.log(`Controle ${controleId}: circuit breaker resetado pelo usuário`);
+  }
+
   /** Atualiza a próxima data de consulta (scheduling). */
   async agendarProximaConsulta(controleId: string, proximaConsulta: Date): Promise<void> {
     await this.prisma.dfeNsuControle.update({

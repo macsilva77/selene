@@ -314,10 +314,17 @@ export class DfeDistribuicaoService {
 
     // Verifica circuit breaker por erros consecutivos
     if (controle.errosConsecutivos >= DFE_WORKER_DEFAULTS.maxErrosConsecutivos) {
-      this.logger.warn(
-        `CNPJ ${config.cnpj} pausado por ${controle.errosConsecutivos} erros consecutivos`,
+      if (!force) {
+        this.logger.warn(
+          `CNPJ ${config.cnpj} pausado por ${controle.errosConsecutivos} erros consecutivos`,
+        );
+        return;
+      }
+      // force=true: sync manual pelo usuário — reseta circuit breaker
+      this.logger.log(
+        `CNPJ ${config.cnpj}: sync forçado pelo usuário — resetando circuit breaker (${controle.errosConsecutivos} erros)`,
       );
-      return;
+      await this.nsuRepo.resetarErros(controle.id);
     }
 
     // Adquire lock via Redis (atômico, TTL automático)
