@@ -17,3 +17,24 @@ db_password = "ESCOLHA-UMA-SENHA-FORTE-AQUI"
 
 # Auth string Redis (mínimo 16 caracteres)
 redis_auth_string = "ESCOLHA-UMA-AUTH-STRING-AQUI-16C"
+
+# Chave AES-256 para criptografia de certificados A1 no banco (OBRIGATÓRIO)
+# Gere com: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+cert_encryption_key = "GERE-COM-O-COMANDO-ACIMA-64-CHARS-HEX"
+
+# URL pública do frontend — usada pelo CORS da API
+app_url = "https://SEU-FRONTEND.a.run.app"
+
+# JWT secrets — gere com: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+jwt_secret         = "GERE-64-CHARS-HEX"
+jwt_refresh_secret = "GERE-64-CHARS-HEX-DIFERENTE"
+
+# SMTP (ex: Brevo, SendGrid, Gmail)
+smtp_host = "smtp.brevo.com"
+smtp_port = "587"
+smtp_user = "SEU-EMAIL@dominio.com"
+smtp_pass = "SUA-SENHA-SMTP"
+smtp_from = "Selene <noreply@seudominio.com.br>"
+
+# Senha do certificado PFX A1 (não obrigatório no setup inicial — pode deixar vazio)
+sefaz_cert_password = ""

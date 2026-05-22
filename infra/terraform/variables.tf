@@ -108,3 +108,14 @@ variable "sefaz_cert_password" {
   type        = string
   sensitive   = true
 }
+
+variable "cert_encryption_key" {
+  description = "Chave AES-256 para criptografar certificados A1 no banco (exatamente 64 chars hex). Gere com: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+  type        = string
+  sensitive   = true
+}
+
+variable "app_url" {
+  description = "URL pública do frontend (ex: https://selene-web-xxx.a.run.app). Usada pelo CORS da API."
+  type        = string
+}

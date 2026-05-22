@@ -16,8 +16,10 @@ locals {
     "SMTP_USER"          = var.smtp_user
     "SMTP_PASS"          = var.smtp_pass
     "SMTP_FROM"          = var.smtp_from
-    "SEFAZ_CERT_PASSWORD" = var.sefaz_cert_password
-    "SEFAZ_ENVIRONMENT"  = "producao"
+    "SEFAZ_CERT_PASSWORD"  = var.sefaz_cert_password
+    "SEFAZ_ENVIRONMENT"   = "producao"
+    "CERT_ENCRYPTION_KEY" = var.cert_encryption_key
+    "APP_URL"             = var.app_url
   }
 }
 
