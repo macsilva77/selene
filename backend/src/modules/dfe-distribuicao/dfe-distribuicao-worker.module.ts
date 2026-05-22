@@ -3,7 +3,6 @@ import { BullModule } from '@nestjs/bull';
 import { DfeDistribuicaoModule } from './dfe-distribuicao.module';
 import { DfeResumoWorker } from './dfe-resumo.worker';
 import { DfeCienciaWorker } from './dfe-ciencia.worker';
-import { DfeDownloadWorker } from './dfe-download.worker';
 import { DfeGapWorker } from './dfe-gap.worker';
 import { DfeVarreduraWorker } from './dfe-varredura.worker';
 import { DfeDanfeProcessor } from './dfe-danfe.processor';
@@ -15,7 +14,6 @@ import { DANFE_EXPORT_QUEUE } from './dfe-danfe.service';
 import {
   DFE_RESUMO_QUEUE,
   DFE_CIENCIA_QUEUE,
-  DFE_DOWNLOAD_QUEUE,
   DFE_GAP_QUEUE,
   DFE_VARREDURA_QUEUE,
 } from './dfe-queue.constants';
@@ -35,7 +33,6 @@ import {
     BullModule.registerQueue({ name: DANFE_EXPORT_QUEUE }),
     BullModule.registerQueue({ name: DFE_RESUMO_QUEUE }),
     BullModule.registerQueue({ name: DFE_CIENCIA_QUEUE }),
-    BullModule.registerQueue({ name: DFE_DOWNLOAD_QUEUE }),
     BullModule.registerQueue({ name: DFE_GAP_QUEUE }),
     BullModule.registerQueue({ name: DFE_VARREDURA_QUEUE }),
   ],
@@ -43,7 +40,6 @@ import {
     // @Processor workers — processam jobs das filas Bull
     DfeResumoWorker,
     DfeCienciaWorker,
-    DfeDownloadWorker,
     DfeGapWorker,
     DfeVarreduraWorker,
     DfeDanfeProcessor,

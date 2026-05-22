@@ -63,7 +63,6 @@ import {
   exports: [
     DfeDistribuicaoService,
     DfeManifestacaoService,
-    DfeDownloadService,
     DfeCertLoaderService,
     DfeSoapClientService,
     DfeXmlProcessorService,

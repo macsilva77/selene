@@ -13,6 +13,7 @@ import { DfeDistribuicaoWorkerModule } from './modules/dfe-distribuicao/dfe-dist
  *
  * Contém apenas infraestrutura necessária para os workers DFe:
  *   - ConfigModule / ScheduleModule / BullModule (mesma config do AppModule)
+ *   - RedisCacheModule (CACHE_MANAGER global — exigido por PermissionsGuard via AuditoriaModule)
  *   - PrismaModule (acesso ao banco)
  *   - DfeDistribuicaoWorkerModule (@Processor + @Cron do DFe)
  *
@@ -36,7 +37,6 @@ import { DfeDistribuicaoWorkerModule } from './modules/dfe-distribuicao/dfe-dist
           host: config.get<string>('redis.host'),
           port: config.get<number>('redis.port'),
           password: config.get<string>('redis.password') || undefined,
-          lazyConnect: true,
           retryStrategy: (times: number) =>
             times > 6 ? null : Math.min(times * 2000, 10_000),
         },

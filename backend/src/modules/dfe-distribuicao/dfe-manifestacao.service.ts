@@ -182,6 +182,21 @@ export class DfeManifestacaoService {
       this.logger.debug(
         `Manifestação ${dto.tpEvento} já ENVIADA para chave ...${documento.chaveAcesso.slice(-6)} — retornando existente`,
       );
+      // Re-vincula ao PROC_NFE se a manifestação ainda apontava para o RES_NFE.
+      // Ocorre quando Ciência foi enviada antes do PROC_NFE chegar via distNSU.
+      const atual = await this.prisma.dfeManifestacao.findUnique({
+        where: { id: jaEnviado.id },
+        select: { documentoId: true },
+      });
+      if (atual && atual.documentoId !== manifestacaoDocumentoId) {
+        await this.prisma.dfeManifestacao.update({
+          where: { id: jaEnviado.id },
+          data: { documentoId: manifestacaoDocumentoId },
+        });
+        this.logger.debug(
+          `Manifestação ${jaEnviado.id} re-vinculada ao PROC_NFE ${manifestacaoDocumentoId}`,
+        );
+      }
       return this.prisma.dfeManifestacao.findUniqueOrThrow({ where: { id: jaEnviado.id } });
     }
 

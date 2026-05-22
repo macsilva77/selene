@@ -8,7 +8,7 @@ async function bootstrap(): Promise<void> {
 
   // Cloud Run exige que o container responda HTTP para health checks.
   // Este servidor mínimo não processa lógica de negócio — apenas sinaliza
-  // que o processo está vivo. A porta é injetada pelo Cloud Run via PORT.
+  // que o processo está vivo. A porta é injetada via WORKER_PORT (padrão: 8080).
   const port = process.env.WORKER_PORT ? Number.parseInt(process.env.WORKER_PORT, 10) : 8080;
   const server = http.createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
