@@ -719,10 +719,15 @@ export class DfeDistribuicaoService {
     if (params.cnpjTransportador) {
       const base = params.cnpjTransportador.replace(/\D/g, '');
       where['nfeTransportadorCnpj'] = params.raizCnpj ? { startsWith: base.slice(0, 8) } : base;
+      // Exclui documentos em que este CNPJ é o destinatário principal — esses pertencem a "recebidas"
+      where['NOT'] = { cnpjDestinatario: params.raizCnpj ? { startsWith: base.slice(0, 8) } : base };
     }
 
     if (params.cnpjAutXml) {
-      where['nfeAutXmlCnpjs'] = { contains: params.cnpjAutXml.replace(/\D/g, '') };
+      const base = params.cnpjAutXml.replace(/\D/g, '');
+      where['nfeAutXmlCnpjs'] = { contains: base };
+      // Exclui documentos em que este CNPJ é o destinatário principal — esses pertencem a "recebidas"
+      where['NOT'] = { cnpjDestinatario: base };
     }
 
     if (params.tipo) where['tipoDocumento'] = params.tipo;
