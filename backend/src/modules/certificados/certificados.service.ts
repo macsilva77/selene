@@ -548,6 +548,37 @@ export class CertificadosService extends AuditableService {
     return { message: 'Certificado revogado com sucesso.' };
   }
 
+  // ── Excluir (hard delete) ────────────────────────────────────────────────────
+
+  async excluir(id: string, usuarioId: string, ip: string) {
+    const tenantId = requireTenantId();
+    const cert = await this.prisma.certificadoDigital.findFirst({ where: { id, tenantId } });
+    if (!cert) throw new NotFoundException('Certificado não encontrado.');
+
+    const dfeUsando = await this.prisma.dfeConfig.count({ where: { certificadoId: id } });
+    if (dfeUsando > 0) {
+      throw new ConflictException(
+        'Certificado está vinculado a uma configuração DFe ativa. Remova o vínculo antes de excluir.',
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.certificadoLog.deleteMany({ where: { certificadoId: id } }),
+      this.prisma.certificadoEmpresa.deleteMany({ where: { certificadoId: id } }),
+      this.prisma.procuracaoEletronica.deleteMany({ where: { certificadoId: id } }),
+      this.prisma.certificadoDigital.delete({ where: { id } }),
+    ]);
+
+    await this.audit('CertificadoDigital', id, AuditAcao.INATIVAR, {
+      usuarioId,
+      antes: { razaoSocial: cert.razaoSocial, cnpjCert: cert.cnpjCert, thumbprint: cert.thumbprint },
+      depois: null,
+      ipOrigem: ip,
+    });
+
+    return { message: 'Certificado excluído com sucesso.' };
+  }
+
   // ── Logs ─────────────────────────────────────────────────────────────────────
 
   async buscarLogs(id: string) {

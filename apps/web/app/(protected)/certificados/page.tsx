@@ -16,6 +16,7 @@ import {
   EyeSlash,
   FileArrowUp,
   Buildings,
+  Trash,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
@@ -529,7 +530,20 @@ function WizardModal({ onClose, onSuccess }: WizardModalProps) {
 /* Detail Panel                                                         */
 /* ------------------------------------------------------------------ */
 
-function CertDetalhe({ cert, onClose }: { cert: Certificado; onClose: () => void }) {
+function CertDetalhe({ cert, onClose, onDelete }: { cert: Certificado; onClose: () => void; onDelete: (id: string) => Promise<void> }) {
+  const [confirmar, setConfirmar] = React.useState(false);
+  const [excluindo, setExcluindo] = React.useState(false);
+
+  async function handleExcluir() {
+    setExcluindo(true);
+    try {
+      await onDelete(cert.id);
+    } finally {
+      setExcluindo(false);
+      setConfirmar(false);
+    }
+  }
+
   return (
     <div className="bg-card rounded-lg border border-input p-6 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
@@ -569,6 +583,42 @@ function CertDetalhe({ cert, onClose }: { cert: Certificado; onClose: () => void
           {cert.createdAt && <Row label="Importado em" value={formatDate(cert.createdAt)} />}
         </div>
       </div>
+
+      {/* Excluir */}
+      <div className="mt-4 pt-4 border-t border-border">
+        {!confirmar ? (
+          <button
+            type="button"
+            onClick={() => setConfirmar(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 text-xs font-medium transition-colors w-full justify-center"
+          >
+            <Trash size={13} />
+            Excluir certificado
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-red-700 font-medium text-center">Confirmar exclusão permanente?</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmar(false)}
+                disabled={excluindo}
+                className="flex-1 px-3 py-2 rounded-lg border border-input text-muted-foreground text-xs font-medium hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExcluir}
+                disabled={excluindo}
+                className="flex-1 px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {excluindo ? 'Excluindo…' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -598,6 +648,19 @@ export default function CertificadosPage() {
   const [showWizard, setShowWizard] = useState(false);
   const [selected, setSelected] = useState<Certificado | null>(null);
   const { toasts, success, error: toastError, dismiss } = useToast();
+
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await api.delete(`/certificados/${id}`);
+      success('Certificado excluído com sucesso');
+      setSelected(null);
+      setCerts((prev) => prev.filter((c) => c.id !== id));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toastError(msg ?? 'Erro ao excluir certificado');
+      throw err;
+    }
+  }, [success, toastError]);
 
   const loadCerts = useCallback(async () => {
     setLoading(true);
@@ -875,7 +938,7 @@ export default function CertificadosPage() {
         {/* Right: detail panel */}
         {selected && (
           <div className="w-80 shrink-0">
-            <CertDetalhe cert={selected} onClose={() => setSelected(null)} />
+            <CertDetalhe cert={selected} onClose={() => setSelected(null)} onDelete={handleDelete} />
           </div>
         )}
       </div>

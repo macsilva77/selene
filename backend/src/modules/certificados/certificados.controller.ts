@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -122,6 +123,20 @@ export class CertificadosController {
     @Req() req: Request,
   ) {
     return this.service.revogar(id, usuarioId, req.ip ?? '');
+  }
+
+  // ── DELETE /certificados/:id ─────────────────────────────────────────────────
+
+  @Delete(':id')
+  @RequiresPermission('certificados.delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Excluir permanentemente um certificado digital' })
+  excluir(
+    @Param('id') id: string,
+    @CurrentUser('sub') usuarioId: string,
+    @Req() req: Request,
+  ) {
+    return this.service.excluir(id, usuarioId, req.ip ?? '');
   }
 
   // ── GET /certificados/:id/logs ───────────────────────────────────────────────
