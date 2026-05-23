@@ -94,7 +94,8 @@ export class DfeDanfeService {
   private async htmlParaPdf(html: string): Promise<Buffer> {
     // Importação dinâmica para não bloquear o startup caso chromium não esteja disponível
     const puppeteer = await import('puppeteer');
-    const executablePath = process.env['CHROMIUM_PATH'];
+    // CHROMIUM_PATH (legado) ou PUPPETEER_EXECUTABLE_PATH (definido no Dockerfile via apk chromium)
+    const executablePath = process.env['CHROMIUM_PATH'] ?? process.env['PUPPETEER_EXECUTABLE_PATH'];
 
     const browser = await puppeteer.default.launch({
       headless: true,
