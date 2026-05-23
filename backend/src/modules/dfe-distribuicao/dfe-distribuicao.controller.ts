@@ -61,6 +61,8 @@ class DocumentosQueryDto {
   @IsOptional() @IsString() nNF?: string;
   /** IDs de etiquetas separados por vírgula (OR lógico) */
   @IsOptional() @IsString() etiquetaIds?: string;
+  /** Aba Recebidas: exclui docs onde o CNPJ monitorado aparece como emitente/transportador/autXML */
+  @IsOptional() @IsString() excluirOutrosPapeis?: string;
 }
 
 @ApiTags('DF-e Distribuição')
@@ -238,7 +240,7 @@ export class DfeDistribuicaoController {
     @CurrentUser('tenantId') tenantId: string,
     @Query() query: DocumentosQueryDto,
   ) {
-    const { page, limit, cnpj, cnpjEmitente, cnpjTransportador, cnpjAutXml, tipo, dataInicio, dataFim, chaveAcesso, valorMin, valorMax, configId, raizCnpj, nNF, etiquetaIds } = query;
+    const { page, limit, cnpj, cnpjEmitente, cnpjTransportador, cnpjAutXml, tipo, dataInicio, dataFim, chaveAcesso, valorMin, valorMax, configId, raizCnpj, nNF, etiquetaIds, excluirOutrosPapeis } = query;
     return this.service.listarDocumentos(tenantId, {
       page: page ? Number.parseInt(page, 10) : undefined,
       limit: limit ? Number.parseInt(limit, 10) : undefined,
@@ -256,6 +258,7 @@ export class DfeDistribuicaoController {
       raizCnpj: raizCnpj === 'true',
       nNF,
       etiquetaIds: etiquetaIds ? etiquetaIds.split(',').filter(Boolean) : undefined,
+      excluirOutrosPapeis: excluirOutrosPapeis === 'true',
     });
   }
 
@@ -274,7 +277,7 @@ export class DfeDistribuicaoController {
     @Query() query: DocumentosQueryDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { cnpj, cnpjEmitente, cnpjTransportador, cnpjAutXml, tipo, dataInicio, dataFim, chaveAcesso, valorMin, valorMax, configId, raizCnpj, nNF, etiquetaIds } = query;
+    const { cnpj, cnpjEmitente, cnpjTransportador, cnpjAutXml, tipo, dataInicio, dataFim, chaveAcesso, valorMin, valorMax, configId, raizCnpj, nNF, etiquetaIds, excluirOutrosPapeis } = query;
     const buffer = await this.service.exportarDocumentos(tenantId, {
       cnpj,
       cnpjEmitente,
@@ -290,6 +293,7 @@ export class DfeDistribuicaoController {
       raizCnpj: raizCnpj === 'true',
       nNF,
       etiquetaIds: etiquetaIds ? etiquetaIds.split(',').filter(Boolean) : undefined,
+      excluirOutrosPapeis: excluirOutrosPapeis === 'true',
     });
     const filename = `nf-es-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

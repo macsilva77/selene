@@ -691,6 +691,7 @@ export class DfeDistribuicaoService {
       raizCnpj?: boolean;
       nNF?: string;
       etiquetaIds?: string[];
+      excluirOutrosPapeis?: boolean;
     },
   ): Promise<Record<string, unknown>> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -701,13 +702,41 @@ export class DfeDistribuicaoService {
         where: { id: params.configId, tenantId },
         select: { cnpj: true },
       });
-      if (config) where['cnpjDestinatario'] = config.cnpj;
+      if (config) {
+        where['cnpjDestinatario'] = config.cnpj;
+        // Aba "Recebidas": exclui docs onde o CNPJ monitorado aparece em outro papel.
+        // cnpjDestinatario armazena o CNPJ monitorado (config), não o destinatário real do XML.
+        // Docs onde o CNPJ é emitente/transportador/autXML pertencem a outras abas.
+        if (params.excluirOutrosPapeis) {
+          const base = config.cnpj;
+          where['NOT'] = { OR: [
+            { nfeEmitenteCnpj: base },
+            { nfeTransportadorCnpj: base },
+            { nfeAutXmlCnpjs: { contains: base } },
+          ] };
+        }
+      }
     } else if (params.cnpj) {
       if (params.raizCnpj) {
         const base = params.cnpj.replace(/\D/g, '').slice(0, 8);
         where['cnpjDestinatario'] = { startsWith: base };
+        if (params.excluirOutrosPapeis) {
+          where['NOT'] = { OR: [
+            { nfeEmitenteCnpj: { startsWith: base } },
+            { nfeTransportadorCnpj: { startsWith: base } },
+            { nfeAutXmlCnpjs: { contains: base } },
+          ] };
+        }
       } else {
-        where['cnpjDestinatario'] = params.cnpj.replace(/\D/g, '');
+        const base = params.cnpj.replace(/\D/g, '');
+        where['cnpjDestinatario'] = base;
+        if (params.excluirOutrosPapeis) {
+          where['NOT'] = { OR: [
+            { nfeEmitenteCnpj: base },
+            { nfeTransportadorCnpj: base },
+            { nfeAutXmlCnpjs: { contains: base } },
+          ] };
+        }
       }
     }
 
@@ -719,15 +748,11 @@ export class DfeDistribuicaoService {
     if (params.cnpjTransportador) {
       const base = params.cnpjTransportador.replace(/\D/g, '');
       where['nfeTransportadorCnpj'] = params.raizCnpj ? { startsWith: base.slice(0, 8) } : base;
-      // Exclui documentos em que este CNPJ é o destinatário principal — esses pertencem a "recebidas"
-      where['NOT'] = { cnpjDestinatario: params.raizCnpj ? { startsWith: base.slice(0, 8) } : base };
     }
 
     if (params.cnpjAutXml) {
       const base = params.cnpjAutXml.replace(/\D/g, '');
       where['nfeAutXmlCnpjs'] = { contains: base };
-      // Exclui documentos em que este CNPJ é o destinatário principal — esses pertencem a "recebidas"
-      where['NOT'] = { cnpjDestinatario: base };
     }
 
     if (params.tipo) where['tipoDocumento'] = params.tipo;
@@ -776,6 +801,7 @@ export class DfeDistribuicaoService {
       raizCnpj?: boolean;
       nNF?: string;
       etiquetaIds?: string[];
+      excluirOutrosPapeis?: boolean;
     },
   ) {
     const { page, limit, skip } = parsePagination(params);
@@ -856,6 +882,7 @@ export class DfeDistribuicaoService {
       raizCnpj?: boolean;
       nNF?: string;
       etiquetaIds?: string[];
+      excluirOutrosPapeis?: boolean;
     },
   ): Promise<Buffer> {
     const where = await this.buildDocumentosWhere(tenantId, params);

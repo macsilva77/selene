@@ -1538,7 +1538,8 @@ export default function DfeDocumentosPage() {
       } else if (t === 'citadas') {
         if (cnpjMonitorado) params.set('cnpjAutXml', cnpjMonitorado);
       } else {
-        // recebidas — comportamento padrão
+        // recebidas: exclui docs onde o CNPJ monitorado aparece em outro papel (emitente/transportador/autXML)
+        params.set('excluirOutrosPapeis', 'true');
         if (f.cnpj) params.set('cnpj', f.cnpj.replace(/\D/g, ''));
         if (f.cnpjEmitente) params.set('cnpjEmitente', f.cnpjEmitente.replace(/\D/g, ''));
         if (f.tipo) params.set('tipo', f.tipo);
@@ -1638,6 +1639,8 @@ export default function DfeDocumentosPage() {
         if (cnpjMonitorado) params.set('cnpjTransportador', cnpjMonitorado);
       } else if (tab === 'citadas') {
         if (cnpjMonitorado) params.set('cnpjAutXml', cnpjMonitorado);
+      } else {
+        params.set('excluirOutrosPapeis', 'true');
       }
 
       const res = await api.get(`/dfe/documentos/exportar?${params.toString()}`, { responseType: 'blob' });
