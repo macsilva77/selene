@@ -572,7 +572,7 @@ export class CertificadosService extends AuditableService {
     await this.audit('CertificadoDigital', id, AuditAcao.INATIVAR, {
       usuarioId,
       antes: { razaoSocial: cert.razaoSocial, cnpjCert: cert.cnpjCert, thumbprint: cert.thumbprint },
-      depois: null,
+      depois: undefined,
       ipOrigem: ip,
     });
 
