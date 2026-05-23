@@ -209,6 +209,54 @@ export class DfeDistribuicaoService {
     return updated;
   }
 
+  /**
+   * Exclui permanentemente uma configuração DFe e todos os dados relacionados:
+   * lotes, documentos fiscais, manifestações, varredura e controle de NSU.
+   */
+  async excluirConfig(tenantId: string, configId: string): Promise<{ message: string }> {
+    const config = await this.assertConfigBelongsToTenant(configId, tenantId);
+
+    const controle = await this.prisma.dfeNsuControle.findUnique({
+      where: { configId },
+      select: { id: true },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      if (controle) {
+        const loteIds = (
+          await tx.dfeLote.findMany({ where: { controleId: controle.id }, select: { id: true } })
+        ).map((l) => l.id);
+
+        if (loteIds.length > 0) {
+          const docIds = (
+            await tx.dfeDocumento.findMany({ where: { loteId: { in: loteIds } }, select: { id: true } })
+          ).map((d) => d.id);
+
+          if (docIds.length > 0) {
+            await tx.dfeManifestacao.deleteMany({ where: { documentoId: { in: docIds } } });
+          }
+          await tx.dfeDocumento.deleteMany({ where: { loteId: { in: loteIds } } });
+        }
+
+        await tx.dfeLote.deleteMany({ where: { controleId: controle.id } });
+      }
+
+      await tx.dfeGapNsu.deleteMany({ where: { configId } });
+      await tx.dfeVarreduraNsu.deleteMany({ where: { configId } });
+
+      if (controle) {
+        await tx.dfeNsuControle.delete({ where: { id: controle.id } });
+      }
+
+      await tx.dfeConfig.delete({ where: { id: configId } });
+    });
+
+    this.certLoader.invalidate(tenantId, configId);
+    this.logger.log(`DfeConfig excluída: id=${configId} cnpj=${config.cnpj} tenant=${tenantId}`);
+
+    return { message: 'Configuração DFe excluída com sucesso.' };
+  }
+
   async getStatus(tenantId: string) {
     const configs = await this.prisma.dfeConfig.findMany({
       where: { tenantId },

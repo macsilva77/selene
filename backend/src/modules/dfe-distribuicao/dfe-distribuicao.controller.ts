@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -135,6 +136,23 @@ export class DfeDistribuicaoController {
     @CurrentUser('tenantId') tenantId: string,
   ) {
     return this.service.toggleAtivo(tenantId, configId);
+  }
+
+  /**
+   * DELETE /dfe/:configId
+   *
+   * Exclui permanentemente uma configuração DFe e todos os dados relacionados
+   * (lotes, documentos, manifestações, varredura, controle NSU).
+   */
+  @Delete(':configId')
+  @RequiresPermission('dfe.manage')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Excluir permanentemente uma configuração DFe' })
+  excluir(
+    @Param('configId', ParseUUIDPipe) configId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    return this.service.excluirConfig(tenantId, configId);
   }
 
   /**

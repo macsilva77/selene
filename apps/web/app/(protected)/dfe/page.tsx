@@ -22,6 +22,7 @@ import {
   GearIcon,
   ChartLineUpIcon,
   CaretDownIcon,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { DataTable } from '@/components/ui/table';
@@ -206,6 +207,7 @@ function ConfigDrawer({
   onToggle,
   onSync,
   onDownload,
+  onDelete,
   syncingId,
   downloadingId,
 }: Readonly<{
@@ -214,6 +216,7 @@ function ConfigDrawer({
   onToggle: (id: string) => void;
   onSync: (id: string) => void;
   onDownload: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   syncingId: string | null;
   downloadingId: string | null;
 }>) {
@@ -222,6 +225,8 @@ function ConfigDrawer({
   const [hasMore, setHasMore] = useState(false);
   const [lotePage, setLotePage] = useState(1);
   const [varredura, setVarredura] = useState<DfeVarredura | null | 'loading'>('loading');
+  const [confirmarExcluir, setConfirmarExcluir] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
   const LIMIT = 15;
 
   const c = config.controle;
@@ -567,37 +572,70 @@ function ConfigDrawer({
         </div>
 
         {/* ── Footer com ações ── */}
-        <div className="px-6 py-4 border-t border-border bg-muted/30 flex items-center gap-2 shrink-0">
-          <button type="button"
-            disabled={downloadingId === config.id || !config.ativo}
-            onClick={() => { onDownload(config.id); }}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-sm font-medium hover:bg-sky-100 disabled:opacity-40 transition-colors">
-            <CloudArrowDownIcon size={14} className={downloadingId === config.id ? 'animate-pulse' : ''} />
-            Baixar NF-e
-          </button>
-          <button type="button"
-            disabled={syncingId === config.id || !config.ativo}
-            onClick={() => { onSync(config.id); }}
-            className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted disabled:opacity-40 transition-colors">
-            <ArrowsClockwiseIcon size={14} className={syncingId === config.id ? 'animate-spin' : ''} />
-            Sincronizar
-          </button>
-          <div className="flex-1" />
-          <button type="button"
-            onClick={() => { onToggle(config.id); }}
-            className={[
-              'inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-medium transition-colors border',
-              config.ativo
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                : 'bg-muted text-muted-foreground border-input hover:bg-muted/80',
-            ].join(' ')}>
-            {config.ativo ? <ToggleRightIcon size={16} weight="fill" /> : <ToggleLeftIcon size={16} />}
-            {config.ativo ? 'Ativo' : 'Inativo'}
-          </button>
-          <button type="button" onClick={onClose}
-            className="inline-flex items-center whitespace-nowrap px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
-            Fechar
-          </button>
+        <div className="px-6 py-4 border-t border-border bg-muted/30 flex flex-col gap-2 shrink-0">
+          {/* Linha principal de ações */}
+          <div className="flex items-center gap-2">
+            <button type="button"
+              disabled={downloadingId === config.id || !config.ativo}
+              onClick={() => { onDownload(config.id); }}
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-sm font-medium hover:bg-sky-100 disabled:opacity-40 transition-colors">
+              <CloudArrowDownIcon size={14} className={downloadingId === config.id ? 'animate-pulse' : ''} />
+              Baixar NF-e
+            </button>
+            <button type="button"
+              disabled={syncingId === config.id || !config.ativo}
+              onClick={() => { onSync(config.id); }}
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted disabled:opacity-40 transition-colors">
+              <ArrowsClockwiseIcon size={14} className={syncingId === config.id ? 'animate-spin' : ''} />
+              Sincronizar
+            </button>
+            <div className="flex-1" />
+            <button type="button"
+              onClick={() => { onToggle(config.id); }}
+              className={[
+                'inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-medium transition-colors border',
+                config.ativo
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-muted text-muted-foreground border-input hover:bg-muted/80',
+              ].join(' ')}>
+              {config.ativo ? <ToggleRightIcon size={16} weight="fill" /> : <ToggleLeftIcon size={16} />}
+              {config.ativo ? 'Ativo' : 'Inativo'}
+            </button>
+            <button type="button" onClick={onClose}
+              className="inline-flex items-center whitespace-nowrap px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
+              Fechar
+            </button>
+          </div>
+          {/* Linha de exclusão */}
+          {!confirmarExcluir ? (
+            <button type="button"
+              onClick={() => { setConfirmarExcluir(true); }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-600 bg-red-50 text-sm font-medium hover:bg-red-100 transition-colors w-full justify-center">
+              <TrashIcon size={14} />
+              Excluir configuração
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <WarningIcon size={14} className="text-red-600 shrink-0" />
+              <span className="text-xs text-red-700 flex-1">Excluir também apaga todos os documentos capturados. Confirmar?</span>
+              <button type="button"
+                onClick={() => { setConfirmarExcluir(false); }}
+                disabled={excluindo}
+                className="px-2 py-1 rounded text-xs border border-input bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-50">
+                Cancelar
+              </button>
+              <button type="button"
+                disabled={excluindo}
+                onClick={async () => {
+                  setExcluindo(true);
+                  try { await onDelete(config.id); }
+                  finally { setExcluindo(false); setConfirmarExcluir(false); }
+                }}
+                className="px-2 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50">
+                {excluindo ? 'Excluindo…' : 'Excluir'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -890,6 +928,19 @@ export default function DfePage() {
     finally { setSyncingId(null); }
   }, [carregar, success, toastError]);
 
+  const handleDelete = useCallback(async (configId: string) => {
+    try {
+      await api.delete(`/dfe/${configId}`);
+      success('Configuração DFe excluída com sucesso');
+      setSelectedId(null);
+      setConfigs((prev) => prev.filter((c) => c.id !== configId));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toastError(msg ?? 'Erro ao excluir configuração DFe');
+      throw err;
+    }
+  }, [success, toastError]);
+
   const handleDownload = useCallback(async (configId: string) => {
     setDownloadingId(configId);
     try {
@@ -1141,6 +1192,7 @@ export default function DfePage() {
           onToggle={(id) => { void handleToggle(id); }}
           onSync={(id) => { void handleSync(id); }}
           onDownload={(id) => { void handleDownload(id); }}
+          onDelete={handleDelete}
           syncingId={syncingId}
           downloadingId={downloadingId}
         />
