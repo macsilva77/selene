@@ -47,7 +47,7 @@ const ROLE_BADGE_CLS: Record<Role, string> = {
 
 
 interface NovoUsuarioForm {
-  nome: string; email: string; perfilId: string; senha: string;
+  nome: string; email: string; perfilId: string;
   cpf: string; telefone: string; cep: string; logradouro: string;
   numero: string; complemento: string; bairro: string; municipio: string; uf: string;
 }
@@ -59,7 +59,7 @@ interface EditUsuarioForm {
 }
 
 const FORM_INITIAL: NovoUsuarioForm = {
-  nome: '', email: '', perfilId: '', senha: '',
+  nome: '', email: '', perfilId: '',
   cpf: '', telefone: '', cep: '', logradouro: '', numero: '',
   complemento: '', bairro: '', municipio: '', uf: '',
 };
@@ -180,11 +180,10 @@ export default function UsuariosPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.senha.length < 10) { toastError('Senha deve ter no mínimo 10 caracteres.'); return; }
     setSaving(true);
     try {
       await api.post('/auth/usuarios', {
-        nome: form.nome, email: form.email, perfilId: form.perfilId, senha: form.senha,
+        nome: form.nome, email: form.email, perfilId: form.perfilId,
         cpf: form.cpf || undefined, telefone: form.telefone || undefined,
         cep: form.cep || undefined, logradouro: form.logradouro || undefined,
         numero: form.numero || undefined, complemento: form.complemento || undefined,
@@ -195,8 +194,10 @@ export default function UsuariosPage() {
       setShowForm(false);
       setForm(FORM_INITIAL);
       void load();
-    } catch {
-      toastError('Erro ao criar usuário. Verifique se o e-mail já está em uso.');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string; errors?: string[] } } })?.response?.data;
+      const detail = msg?.errors?.join(', ') ?? msg?.message ?? 'Erro ao criar usuário.';
+      toastError(detail);
     } finally {
       setSaving(false);
     }
@@ -439,16 +440,12 @@ export default function UsuariosPage() {
                 <label htmlFor="novo-email" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">E-mail</label>
                 <Input id="novo-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="email@exemplo.com" required />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label htmlFor="novo-role" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Perfil</label>
                 <select id="novo-perfil" aria-label="Perfil" value={form.perfilId} onChange={(e) => setForm((f) => ({ ...f, perfilId: e.target.value }))} className={selectCls} required>
                   <option value="" disabled>Selecione um perfil</option>
                   {perfis.map((p) => (<option key={p.id} value={p.id}>{p.nome}</option>))}
                 </select>
-              </div>
-              <div>
-                <label htmlFor="novo-senha" className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Senha (mín. 10 car.)</label>
-                <Input id="novo-senha" type="password" value={form.senha} onChange={(e) => setForm((f) => ({ ...f, senha: e.target.value }))} placeholder="Mín. 10 caracteres" required minLength={10} />
               </div>
             </div>
           </div>
