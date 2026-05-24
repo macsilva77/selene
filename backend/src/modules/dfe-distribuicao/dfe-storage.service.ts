@@ -5,7 +5,7 @@ import { Storage } from '@google-cloud/storage';
 /**
  * Serviço de armazenamento de XMLs DFe no Google Cloud Storage.
  *
- * Quando GCS_BUCKET_NAME não está configurado (ambiente local sem GCS),
+ * Quando GCS_BUCKET_NAME (ou GCS_BUCKET) não está configurado (ambiente local sem GCS),
  * o serviço opera em modo desabilitado — `resolverXml` usa o fallback do
  * campo `xmlOriginal` no banco, sem lançar erro.
  *

@@ -34,7 +34,7 @@ function loadConfiguration() {
 
     gcs: {
       projectId: process.env['GCS_PROJECT_ID'] || '',
-      bucketName: process.env['GCS_BUCKET_NAME'] || '',
+      bucketName: process.env['GCS_BUCKET_NAME'] || process.env['GCS_BUCKET'] || '',
     },
 
     pubsub: {
