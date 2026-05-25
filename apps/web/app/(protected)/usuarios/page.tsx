@@ -1,6 +1,6 @@
 ﻿'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { PlusIcon, ArrowClockwiseIcon, UserMinusIcon, PencilSimpleIcon, TrashIcon, ClockIcon } from '@phosphor-icons/react';
+import { PlusIcon, ArrowClockwiseIcon, UserMinusIcon, UserPlusIcon, PencilSimpleIcon, TrashIcon, ClockIcon } from '@phosphor-icons/react';
 import { Pagination } from '@/components/ui/pagination';
 import { ActionsMenu } from '@/components/ui/actions-menu';
 import { DataTable } from '@/components/ui/table';
@@ -89,6 +89,7 @@ export default function UsuariosPage() {
   const [showForm, setShowForm] = useState(false);
   const [inativarTarget, setInativarTarget] = useState<Usuario | null>(null);
   const [excluirTarget, setExcluirTarget] = useState<Usuario | null>(null);
+  const [reativarTarget, setReativarTarget] = useState<Usuario | null>(null);
   const [form, setForm] = useState<NovoUsuarioForm>(FORM_INITIAL);
   const [saving, setSaving] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
@@ -272,6 +273,19 @@ export default function UsuariosPage() {
     }
   };
 
+  const handleReativar = async () => {
+    if (!reativarTarget) return;
+    try {
+      await api.patch(`/auth/usuarios/${reativarTarget.id}/reativar`);
+      success('Usuário reativado.');
+      setReativarTarget(null);
+      void load();
+    } catch (e: any) {
+      toastError(e?.response?.data?.message ?? 'Erro ao reativar usuário.');
+      setReativarTarget(null);
+    }
+  };
+
   const columns = [
     {
       key: 'nome',
@@ -317,6 +331,7 @@ export default function UsuariosPage() {
         <ActionsMenu actions={[
           { label: 'Editar', icon: <PencilSimpleIcon size={14} />, onClick: () => openEdit(u), hidden: !isAdmin },
           { label: 'Inativar', icon: <UserMinusIcon size={14} />, onClick: () => setInativarTarget(u), variant: 'danger', hidden: !isAdmin || !u.ativo },
+          { label: 'Reativar', icon: <UserPlusIcon size={14} />, onClick: () => setReativarTarget(u), hidden: !isAdmin || u.ativo },
           { label: 'Excluir', icon: <TrashIcon size={14} />, onClick: () => setExcluirTarget(u), variant: 'danger', hidden: !isAdmin },
         ]} />
       ),
@@ -638,6 +653,15 @@ export default function UsuariosPage() {
         confirmLabel="Sim, excluir"
         onConfirm={() => void handleExcluir()}
         onCancel={() => setExcluirTarget(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={!!reativarTarget}
+        title="Reativar Usuário"
+        message={`Deseja reativar "${reativarTarget?.nome}"? O usuário voltará a ter acesso ao sistema.`}
+        confirmLabel="Sim, reativar"
+        onConfirm={() => void handleReativar()}
+        onCancel={() => setReativarTarget(null)}
       />
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />

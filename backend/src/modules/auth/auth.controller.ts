@@ -180,6 +180,16 @@ export class AuthController {
     return this.userService.excluirUsuario(id);
   }
 
+  @Patch('usuarios/:id/reativar')
+  @RequiresPermission('usuarios.edit')
+  @HttpCode(HttpStatus.OK)
+  @Audit(AuditAcao.UPDATE, 'Usuario')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Reativar usuário inativo (ADMIN)' })
+  reativarUsuario(@Param('id') id: string) {
+    return this.userService.reativarUsuario(id);
+  }
+
   @Patch('usuarios/:id')
   @RequiresPermission('usuarios.edit')
   @ApiBearerAuth()

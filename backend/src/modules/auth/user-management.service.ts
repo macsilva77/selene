@@ -222,6 +222,20 @@ export class UserManagementService {
     return { message: 'Usuário inativado com sucesso' };
   }
 
+  async reativarUsuario(userId: string) {
+    const tenantId = requireTenantId();
+    const user = await this.prisma.usuario.findFirst({ where: { id: userId, tenantId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (user.ativo) throw new ConflictException('Usuário já está ativo');
+
+    await this.prisma.usuario.update({
+      where: { id: userId },
+      data: { ativo: true },
+    });
+
+    return { message: 'Usuário reativado com sucesso' };
+  }
+
   async excluirUsuario(userId: string) {
     const tenantId = requireTenantId();
     const user = await this.prisma.usuario.findFirst({ where: { id: userId, tenantId } });
