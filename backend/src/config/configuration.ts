@@ -47,7 +47,7 @@ function loadConfiguration() {
 
     storage: {
       endpoint: process.env['STORAGE_ENDPOINT'] || 'http://localhost:9000',
-      bucket: process.env['STORAGE_BUCKET'] || 'sigic-documents',
+      bucket: process.env['STORAGE_BUCKET'] || 'selene-documents',
       accessKey: process.env['STORAGE_ACCESS_KEY'] || '',
       secretKey: process.env['STORAGE_SECRET_KEY'] || '',
       region: process.env['STORAGE_REGION'] || 'us-east-1',

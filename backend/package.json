@@ -2,7 +2,7 @@
   "name": "selene-backend",
   "version": "1.0.0",
   "description": "Selene — Backend API",
-  "author": "SIGIC Team",
+  "author": "Selene Team",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
