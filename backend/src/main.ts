@@ -47,8 +47,8 @@ async function bootstrap() {
   // Global guards aplicados via providers no AppModule
   // JWT e Roles guards são configurados por módulo quando necessário
 
-  // Swagger — disponível em todos os ambientes
-  if (true) {
+  // Swagger — desabilitado em produção por padrão
+  if (isDev || process.env['SWAGGER_ENABLED'] === 'true') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Selene API')
       .setDescription('Selene — Plataforma de Gestão Empresarial — API REST')

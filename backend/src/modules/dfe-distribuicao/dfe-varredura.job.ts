@@ -33,6 +33,7 @@ export class DfeVarreduraJob {
       where: {
         status: DfeVarreduraStatus.PAUSADA,
         pausadoEm: { lte: new Date(Date.now() - cooldownMs) },
+        config: { ativo: true },
       },
       select: { configId: true },
     });

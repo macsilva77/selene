@@ -50,7 +50,7 @@ jobs:
             --tag ${{ env.IMAGE_NAME }}:latest \
             --cache-from ${{ env.IMAGE_NAME }}:latest \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            --build-arg NEXT_PUBLIC_API_URL=https://selene-api-5vpzlvjslq-rj.a.run.app \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
             .
 
       - name: Push to Artifact Registry
