@@ -67,6 +67,9 @@ export class DfeVarreduraJob {
       if (existente) {
         const state = await existente.getState();
         if (state === 'waiting' || state === 'active' || state === 'delayed') continue;
+        // completed/failed: remove para liberar o jobId no Redis (SETNX),
+        // caso contrário queue.add() com mesmo jobId é silenciosamente ignorado.
+        await existente.remove();
       }
 
       await this.varreduraQueue.add(
