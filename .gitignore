@@ -36,3 +36,10 @@ coverage/
 *.p12
 *.key
 backend/uploads/certificados/
+
+# Claude Code — configurações locais com permissões e histórico de comandos
+.claude/settings.json
+.claude/settings.local.json
+
+# Scripts temporários de manutenção
+backend/_tmp_*.mjs
