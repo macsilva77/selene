@@ -202,6 +202,9 @@ export class DfeXmlProcessorService {
         .filter(Boolean)
         .join(',') || undefined;
 
+      const dest = infNFe?.dest ?? {};
+      const nfeDestinatarioCnpj = String(dest.CNPJ ?? dest.CPF ?? '').replace(/\D/g, '') || undefined;
+
       return {
         chaveAcesso: chaveAcesso || undefined,
         nfeEmitenteCnpj: String(emit.CNPJ ?? emit.CPF ?? '').replace(/\D/g, '') || undefined,
@@ -211,6 +214,7 @@ export class DfeXmlProcessorService {
         nfeSituacao: String(prot.cStat ?? '') || undefined,
         nfeTransportadorCnpj,
         nfeAutXmlCnpjs,
+        nfeDestinatarioCnpj,
       };
     } catch (err) {
       this.logger.warn(`Falha ao extrair campos procNFe: ${(err as Error).message}`);
@@ -332,6 +336,7 @@ export class DfeXmlProcessorService {
           eventoDescricao: params.campos.eventoDescricao,
           nfeTransportadorCnpj: params.campos.nfeTransportadorCnpj,
           nfeAutXmlCnpjs: params.campos.nfeAutXmlCnpjs,
+          nfeDestinatarioCnpj: params.campos.nfeDestinatarioCnpj,
         },
         select: { id: true },
       });

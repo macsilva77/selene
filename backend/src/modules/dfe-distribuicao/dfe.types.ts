@@ -354,6 +354,7 @@ export interface DfeDocumentoProcessado {
   eventoDescricao?: string;
   nfeTransportadorCnpj?: string;
   nfeAutXmlCnpjs?: string; // CSV de CNPJs/CPFs da tag autXML
+  nfeDestinatarioCnpj?: string;
 }
 
 // ─── Resultado de um ciclo de distribuição ───────────────────────────────────

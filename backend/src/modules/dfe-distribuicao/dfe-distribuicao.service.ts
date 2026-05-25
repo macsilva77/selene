@@ -674,6 +674,28 @@ export class DfeDistribuicaoService {
   // Filtros compartilhados — listagem e exportação
   // ────────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Regras das 4 abas de documentos fiscais
+   * ─────────────────────────────────────────────────────────────────────────
+   * RECEBIDAS   Docs onde o CNPJ X é o destinatário real da NF-e.
+   *             Critério de inclusão: cnpjDestinatario = X  (capturado monit. X)
+   *                               OU nfeDestinatarioCnpj = X (X é o dest. no XML)
+   *             Critério de exclusão: X é emitente  (nfeEmitenteCnpj = X)
+   *                               OU X é transportador (nfeTransportadorCnpj = X)
+   *                               OU X está em autXML  (nfeAutXmlCnpjs CONTAINS X)
+   *             ⚠ NULL-safe: "campo != X" é NULL quando campo é NULL em SQL →
+   *               usar "campo IS NULL OR campo != X" em cada condição de exclusão.
+   *
+   * EMITIDAS    Docs onde o CNPJ X é o emitente da NF-e.
+   *             Filtro: nfeEmitenteCnpj = X  (positivo, tipo = PROC_NFE)
+   *
+   * TRANSPORTADOR Docs onde o CNPJ X é o transportador da NF-e.
+   *             Filtro: nfeTransportadorCnpj = X  (positivo, tipo = PROC_NFE)
+   *
+   * CITADAS     Docs onde o CNPJ X aparece na lista autXML da NF-e.
+   *             Filtro: nfeAutXmlCnpjs CONTAINS X  (positivo, qualquer tipo)
+   * ─────────────────────────────────────────────────────────────────────────
+   */
   private async buildDocumentosWhere(
     tenantId: string,
     params: {
@@ -703,39 +725,55 @@ export class DfeDistribuicaoService {
         select: { cnpj: true },
       });
       if (config) {
-        where['cnpjDestinatario'] = config.cnpj;
-        // Aba "Recebidas": exclui docs onde o CNPJ monitorado aparece em outro papel.
-        // cnpjDestinatario armazena o CNPJ monitorado (config), não o destinatário real do XML.
-        // Docs onde o CNPJ é emitente/transportador/autXML pertencem a outras abas.
+        const base = config.cnpj;
+        // Inclui docs onde o CNPJ monitorado é o destinatário (cnpjDestinatario) OU
+        // onde o CNPJ do XML é o destinatário real (nfeDestinatarioCnpj).
+        where['AND'] = [
+          ...(where['AND'] ?? []),
+          { OR: [{ cnpjDestinatario: base }, { nfeDestinatarioCnpj: base }] },
+        ];
         if (params.excluirOutrosPapeis) {
-          const base = config.cnpj;
-          where['NOT'] = { OR: [
-            { nfeEmitenteCnpj: base },
-            { nfeTransportadorCnpj: base },
-            { nfeAutXmlCnpjs: { contains: base } },
-          ] };
+          // Null-safe: NOT (field = base) falha quando field é NULL em SQL.
+          // Usar OR [field IS NULL, field != base] garante que nulls passem.
+          where['AND'] = [
+            ...(where['AND'] ?? []),
+            { OR: [{ nfeEmitenteCnpj: null }, { nfeEmitenteCnpj: { not: base } }] },
+            { OR: [{ nfeTransportadorCnpj: null }, { nfeTransportadorCnpj: { not: base } }] },
+            { OR: [{ nfeAutXmlCnpjs: null }, { nfeAutXmlCnpjs: { not: { contains: base } } }] },
+          ];
         }
       }
     } else if (params.cnpj) {
       if (params.raizCnpj) {
         const base = params.cnpj.replace(/\D/g, '').slice(0, 8);
-        where['cnpjDestinatario'] = { startsWith: base };
+        where['AND'] = [
+          ...(where['AND'] ?? []),
+          { OR: [
+            { cnpjDestinatario: { startsWith: base } },
+            { nfeDestinatarioCnpj: { startsWith: base } },
+          ]},
+        ];
         if (params.excluirOutrosPapeis) {
-          where['NOT'] = { OR: [
-            { nfeEmitenteCnpj: { startsWith: base } },
-            { nfeTransportadorCnpj: { startsWith: base } },
-            { nfeAutXmlCnpjs: { contains: base } },
-          ] };
+          where['AND'] = [
+            ...(where['AND'] ?? []),
+            { OR: [{ nfeEmitenteCnpj: null }, { nfeEmitenteCnpj: { not: { startsWith: base } } }] },
+            { OR: [{ nfeTransportadorCnpj: null }, { nfeTransportadorCnpj: { not: { startsWith: base } } }] },
+            { OR: [{ nfeAutXmlCnpjs: null }, { nfeAutXmlCnpjs: { not: { contains: base } } }] },
+          ];
         }
       } else {
         const base = params.cnpj.replace(/\D/g, '');
-        where['cnpjDestinatario'] = base;
+        where['AND'] = [
+          ...(where['AND'] ?? []),
+          { OR: [{ cnpjDestinatario: base }, { nfeDestinatarioCnpj: base }] },
+        ];
         if (params.excluirOutrosPapeis) {
-          where['NOT'] = { OR: [
-            { nfeEmitenteCnpj: base },
-            { nfeTransportadorCnpj: base },
-            { nfeAutXmlCnpjs: { contains: base } },
-          ] };
+          where['AND'] = [
+            ...(where['AND'] ?? []),
+            { OR: [{ nfeEmitenteCnpj: null }, { nfeEmitenteCnpj: { not: base } }] },
+            { OR: [{ nfeTransportadorCnpj: null }, { nfeTransportadorCnpj: { not: base } }] },
+            { OR: [{ nfeAutXmlCnpjs: null }, { nfeAutXmlCnpjs: { not: { contains: base } } }] },
+          ];
         }
       }
     }

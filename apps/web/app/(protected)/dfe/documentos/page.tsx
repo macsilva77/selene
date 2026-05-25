@@ -1529,6 +1529,12 @@ export default function DfeDocumentosPage() {
         ? configsRef.current.find((c) => c.id === f.configId)?.cnpj
         : f.cnpj ? f.cnpj.replace(/\D/g, '') : undefined;
 
+      // Regras das 4 abas:
+      // EMITIDAS    → nfeEmitenteCnpj = X  (X emitiu a NF-e, tipo PROC_NFE)
+      // TRANSPORTADOR → nfeTransportadorCnpj = X  (X transportou, tipo PROC_NFE)
+      // CITADAS     → nfeAutXmlCnpjs CONTAINS X  (X autorizado a baixar o XML)
+      // RECEBIDAS   → (cnpjDestinatario = X OR nfeDestinatarioCnpj = X)
+      //               AND X não é emitente, não é transportador, não está em autXML
       if (t === 'emitidas') {
         params.set('tipo', 'PROC_NFE');
         if (cnpjMonitorado) params.set('cnpjEmitente', cnpjMonitorado);
@@ -1538,7 +1544,7 @@ export default function DfeDocumentosPage() {
       } else if (t === 'citadas') {
         if (cnpjMonitorado) params.set('cnpjAutXml', cnpjMonitorado);
       } else {
-        // recebidas: exclui docs onde o CNPJ monitorado aparece em outro papel (emitente/transportador/autXML)
+        // recebidas
         params.set('excluirOutrosPapeis', 'true');
         if (f.cnpj) params.set('cnpj', f.cnpj.replace(/\D/g, ''));
         if (f.cnpjEmitente) params.set('cnpjEmitente', f.cnpjEmitente.replace(/\D/g, ''));

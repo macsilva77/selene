@@ -1164,6 +1164,7 @@ model DfeDocumento {
   eventoDescricao       String?          @map("evento_descricao")
   nfeTransportadorCnpj  String?          @map("nfe_transportador_cnpj")
   nfeAutXmlCnpjs        String?          @map("nfe_autxml_cnpjs")
+  nfeDestinatarioCnpj   String?          @map("nfe_destinatario_cnpj")
   processado       Boolean          @default(false)
   processadoEm     DateTime?        @map("processado_em")
   erroProcessamento String?         @map("erro_processamento")
@@ -1178,6 +1179,7 @@ model DfeDocumento {
   /// Idempotência: mesmo NSU nunca é inserido duas vezes por tenant
   @@unique([tenantId, nsu])
   @@index([tenantId, cnpjDestinatario])
+  @@index([tenantId, nfeDestinatarioCnpj])
   @@index([tenantId, chaveAcesso])
   @@index([tenantId, tipoDocumento])
   @@index([tenantId, processado])
