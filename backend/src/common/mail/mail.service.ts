@@ -7,10 +7,12 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: nodemailer.Transporter;
   private readonly from: string;
+  private readonly logoUrl: string;
 
   constructor(private readonly config: AppConfigService) {
     const smtp = this.config.smtp;
     this.from = smtp.from;
+    this.logoUrl = `${this.config.frontendUrl}/logo-positivo.png`;
     this.transporter = nodemailer.createTransport({
       host: smtp.host,
       port: smtp.port,
@@ -27,7 +29,7 @@ export class MailService {
         from: this.from,
         to,
         subject: '[Selene] Redefinição de senha solicitada',
-        html: this.buildResetSenhaHtml(nome, link),
+        html: this.buildResetSenhaHtml(nome, link, this.logoUrl),
       });
       this.logger.log(`E-mail de reset de senha enviado para ${to}`);
     } catch (err) {
@@ -74,7 +76,7 @@ export class MailService {
         from: this.from,
         to,
         subject: '[Selene] Bem-vindo! Crie sua senha de acesso',
-        html: this.buildBoasVindasHtml(nome, link),
+        html: this.buildBoasVindasHtml(nome, link, this.logoUrl),
       });
       this.logger.log(`E-mail de boas-vindas enviado para ${to}`);
     } catch (err) {
@@ -83,50 +85,55 @@ export class MailService {
     }
   }
 
-  private buildResetSenhaHtml(nome: string, link: string): string {
+  private buildResetSenhaHtml(nome: string, link: string, logoUrl: string): string {
     return `
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+<body style="margin:0;padding:0;background:#eef0f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#eef0f8;padding:40px 0;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(46,58,124,0.10);">
+        <!-- Header -->
         <tr>
-          <td style="background:#FF5100;padding:32px 40px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Selene</h1>
-            <p style="margin:4px 0 0;color:#ffd9cc;font-size:13px;">Plataforma de Gestão Empresarial</p>
+          <td style="background:#2E3A7C;padding:32px 40px;">
+            <img src="${logoUrl}" alt="Selene" height="40" style="display:block;border:0;" />
+            <p style="margin:10px 0 0;color:#C8CDED;font-size:13px;letter-spacing:0.5px;">Plataforma de Gestão Empresarial</p>
           </td>
         </tr>
+        <!-- Body -->
         <tr>
           <td style="padding:40px;">
-            <p style="margin:0 0 16px;font-size:16px;color:#1a202c;">Olá, <strong>${nome}</strong>!</p>
-            <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6;">
-              Recebemos uma solicitação de redefinição de senha para sua conta no Selene.
+            <p style="margin:0 0 16px;font-size:17px;color:#1E2A5E;font-weight:600;">Olá, ${nome}!</p>
+            <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.7;">
+              Recebemos uma solicitação de <strong>redefinição de senha</strong> para sua conta no Selene.
             </p>
             <p style="margin:0 0 8px;font-size:14px;color:#4a5568;">O link abaixo é válido por <strong>2 horas</strong>:</p>
-            <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+            <table cellpadding="0" cellspacing="0" style="margin:28px 0;">
               <tr>
-                <td style="background:#FF5100;border-radius:8px;">
-                  <a href="${link}" style="display:inline-block;padding:14px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">
+                <td style="background:#2E3A7C;border-radius:10px;">
+                  <a href="${link}" style="display:inline-block;padding:14px 36px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:0.3px;">
                     Redefinir minha senha
                   </a>
                 </td>
               </tr>
             </table>
-            <p style="margin:16px 0 0;font-size:12px;color:#718096;">
-              Se o botão não funcionar, copie e cole este link no navegador:<br>
-              <a href="${link}" style="color:#FF5100;word-break:break-all;">${link}</a>
+            <p style="margin:0 0 8px;font-size:12px;color:#718096;">
+              Se o botão não funcionar, copie e cole este link no navegador:
             </p>
-            <p style="margin:16px 0 0;font-size:12px;color:#e53e3e;">
+            <p style="margin:0 0 16px;font-size:12px;">
+              <a href="${link}" style="color:#2E3A7C;word-break:break-all;">${link}</a>
+            </p>
+            <p style="margin:24px 0 0;padding:16px;background:#fff5f5;border-left:4px solid #e53e3e;border-radius:4px;font-size:12px;color:#c53030;">
               Se você não solicitou a redefinição de senha, ignore este e-mail. Sua senha permanecerá inalterada.
             </p>
           </td>
         </tr>
+        <!-- Footer -->
         <tr>
-          <td style="background:#f7fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;font-size:11px;color:#a0aec0;text-align:center;">
-              Este é um e-mail automático. Por favor, não responda.
+          <td style="background:#f0f2fa;padding:20px 40px;border-top:1px solid #dde1f0;">
+            <p style="margin:0;font-size:11px;color:#8892b0;text-align:center;">
+              Este é um e-mail automático enviado pelo Selene. Por favor, não responda.
             </p>
           </td>
         </tr>
@@ -137,50 +144,60 @@ export class MailService {
 </html>`;
   }
 
-  private buildBoasVindasHtml(nome: string, link: string): string {
+  private buildBoasVindasHtml(nome: string, link: string, logoUrl: string): string {
     return `
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+<body style="margin:0;padding:0;background:#eef0f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#eef0f8;padding:40px 0;">
     <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(46,58,124,0.10);">
         <!-- Header -->
         <tr>
-          <td style="background:#FF5100;padding:32px 40px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Selene</h1>
-            <p style="margin:4px 0 0;color:#ffd9cc;font-size:13px;">Plataforma de Gestão Empresarial</p>
+          <td style="background:#2E3A7C;padding:32px 40px;">
+            <img src="${logoUrl}" alt="Selene" height="40" style="display:block;border:0;" />
+            <p style="margin:10px 0 0;color:#C8CDED;font-size:13px;letter-spacing:0.5px;">Plataforma de Gestão Empresarial</p>
+          </td>
+        </tr>
+        <!-- Banner de boas-vindas -->
+        <tr>
+          <td style="background:#1E2A5E;padding:20px 40px;">
+            <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:0.3px;">Bem-vindo ao Selene!</p>
           </td>
         </tr>
         <!-- Body -->
         <tr>
           <td style="padding:40px;">
-            <p style="margin:0 0 16px;font-size:16px;color:#1a202c;">Olá, <strong>${nome}</strong>!</p>
-            <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6;">
-              Sua conta no Selene foi criada com sucesso. Para acessar o sistema, você precisa criar sua senha pessoal.
+            <p style="margin:0 0 16px;font-size:17px;color:#1E2A5E;font-weight:600;">Olá, ${nome}!</p>
+            <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.7;">
+              Sua conta no <strong>Selene</strong> foi criada com sucesso. Para acessar o sistema pela primeira vez, clique no botão abaixo e crie sua senha pessoal.
             </p>
-            <p style="margin:0 0 8px;font-size:14px;color:#4a5568;">O link abaixo é válido por <strong>24 horas</strong>:</p>
-            <table cellpadding="0" cellspacing="0" style="margin:24px 0;">
+            <p style="margin:0 0 8px;font-size:14px;color:#4a5568;">
+              O link é válido por <strong>24 horas</strong>.
+            </p>
+            <table cellpadding="0" cellspacing="0" style="margin:28px 0;">
               <tr>
-                <td style="background:#FF5100;border-radius:8px;">
-                  <a href="${link}" style="display:inline-block;padding:14px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">
+                <td style="background:#2E3A7C;border-radius:10px;">
+                  <a href="${link}" style="display:inline-block;padding:14px 36px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:0.3px;">
                     Criar minha senha
                   </a>
                 </td>
               </tr>
             </table>
-            <p style="margin:16px 0 0;font-size:12px;color:#718096;">
-              Se o botão não funcionar, copie e cole este link no navegador:<br>
-              <a href="${link}" style="color:#FF5100;word-break:break-all;">${link}</a>
+            <p style="margin:0 0 8px;font-size:12px;color:#718096;">
+              Se o botão não funcionar, copie e cole este link no navegador:
+            </p>
+            <p style="margin:0 0 0;font-size:12px;">
+              <a href="${link}" style="color:#2E3A7C;word-break:break-all;">${link}</a>
             </p>
           </td>
         </tr>
         <!-- Footer -->
         <tr>
-          <td style="background:#f7fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;font-size:11px;color:#a0aec0;text-align:center;">
-              Este é um e-mail automático. Por favor, não responda.<br>
+          <td style="background:#f0f2fa;padding:20px 40px;border-top:1px solid #dde1f0;">
+            <p style="margin:0;font-size:11px;color:#8892b0;text-align:center;">
+              Este é um e-mail automático enviado pelo Selene. Por favor, não responda.<br>
               Se você não solicitou este acesso, ignore este e-mail.
             </p>
           </td>
