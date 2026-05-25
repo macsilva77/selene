@@ -19,7 +19,7 @@ export class CreateEmpresaDto {
   @Transform(({ value }: { value: unknown }) => {
     // Remove pontuação (./- e espaços) mantendo letras e números
     if (typeof value !== 'string') return value;
-    return value.replace(/[.\-\/\s]/g, '').toUpperCase();
+    return value.replace(/[.\-/\s]/g, '').toUpperCase();
   })
   @Matches(/^[A-Z0-9]{14}$/, { message: 'CNPJ deve ter exatamente 14 caracteres alfanuméricos' })
   cnpj: string;

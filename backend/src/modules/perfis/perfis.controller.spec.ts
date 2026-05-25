@@ -11,7 +11,7 @@ const mockPerfisService = {
 
 describe('PerfisController', () => {
   let controller: PerfisController;
-  let service: PerfisService;
+  let _service: PerfisService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -22,7 +22,7 @@ describe('PerfisController', () => {
     }).compile();
 
     controller = module.get<PerfisController>(PerfisController);
-    service = module.get<PerfisService>(PerfisService);
+    _service = module.get<PerfisService>(PerfisService);
   });
 
   it('deve ser definido', () => {

@@ -131,7 +131,7 @@ const EVENTOS: { codigo: TpEvento; label: string; shortLabel: string; exigeJust:
 
 function maskCnpj(v: string | null) {
   if (!v) return '—';
-  const raw = v.replace(/[.\-\/\s]/g, '').slice(0, 14);
+  const raw = v.replace(/[.\-/\s]/g, '').slice(0, 14);
   return /^\d{14}$/.test(raw)
     ? `${raw.slice(0, 2)}.${raw.slice(2, 5)}.${raw.slice(5, 8)}/${raw.slice(8, 12)}-${raw.slice(12)}`
     : raw;
@@ -1148,7 +1148,6 @@ function EtiquetaMultiSelect({
                 ].join(' ')}>
                   {selected.includes(et.id) && <CheckCircleIcon size={8} weight="bold" className="text-primary-foreground" />}
                 </span>
-                {/* eslint-disable-next-line react/forbid-dom-props */}
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: et.cor }} />
                 <span className="text-foreground">{et.nome}</span>
               </button>

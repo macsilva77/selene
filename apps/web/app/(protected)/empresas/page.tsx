@@ -1,16 +1,12 @@
 ﻿'use client';
 import { useEffect, useState } from 'react';
-import { BuildingsIcon, PlusIcon, MagnifyingGlassIcon, XIcon, PencilSimpleIcon, InfoIcon, MapPinIcon, SealCheckIcon, EnvelopeSimpleIcon } from '@phosphor-icons/react';
+import { PlusIcon, MagnifyingGlassIcon, XIcon, PencilSimpleIcon, InfoIcon, MapPinIcon, SealCheckIcon, EnvelopeSimpleIcon } from '@phosphor-icons/react';
 import { DataTable } from '@/components/ui/table';
 import { Modal } from '@/components/ui/modal';
 import { Pagination } from '@/components/ui/pagination';
 import { useToast, ToastContainer } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-
-const PLANO_LABEL: Record<string, string> = {
-  free: 'Gratuito', starter: 'Starter', professional: 'Profissional', enterprise: 'Enterprise',
-};
 
 interface Empresa {
   id: string;
@@ -76,12 +72,12 @@ const EMPTY_FORM: EmpForm = {
 
 function getRaiz(cnpj?: string | null) {
   // Remove pontuação, pega os 8 primeiros chars (raiz do CNPJ)
-  return (cnpj ?? '').replace(/[.\-\/\s]/g, '').slice(0, 8);
+  return (cnpj ?? '').replace(/[.\-/\s]/g, '').slice(0, 8);
 }
 
 function displayCnpj(cnpj?: string | null) {
   if (!cnpj) return '—';
-  const raw = cnpj.replace(/[.\-\/\s]/g, '');
+  const raw = cnpj.replace(/[.\-/\s]/g, '');
   // Formata apenas se forem 14 dígitos numéricos (CNPJ tradicional)
   if (/^\d{14}$/.test(raw)) {
     return `${raw.slice(0, 2)}.${raw.slice(2, 5)}.${raw.slice(5, 8)}/${raw.slice(8, 12)}-${raw.slice(12)}`;
@@ -117,14 +113,14 @@ export default function EmpresasPage() {
 
   const { toasts, success, error: toastError, dismiss } = useToast();
 
-  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [_tenant, setTenant] = useState<Tenant | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [total, setTotal] = useState(0);
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
   const [search, setSearch] = useState('');
   const [empPage, setEmpPage] = useState(1);
   const EMP_PAGE_SIZE = 10;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, _setSelectedId] = useState<string | null>(null);
   const [searchCnpj, setSearchCnpj] = useState('');
   const [detalheEmpresa, setDetalheEmpresa] = useState<Empresa | null>(null);
   const [showDetalheModal, setShowDetalheModal] = useState(false);
@@ -152,7 +148,7 @@ export default function EmpresasPage() {
     try {
       const params = new URLSearchParams();
       if (q) params.set('search', q);
-      if (cnpj) params.set('cnpj', cnpj.replace(/[.\-\/\s]/g, ''));
+      if (cnpj) params.set('cnpj', cnpj.replace(/[.\-/\s]/g, ''));
       const res = await api.get(`/empresas?${params}`);
       const d = res.data;
       setEmpresas(d.data ?? d ?? []);
@@ -190,12 +186,6 @@ export default function EmpresasPage() {
     void carregarEmpresas();
     void carregarCerts();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const abrirTenantModal = () => {
-    if (!tenant) return;
-    setTenantForm({ ...tenant });
-    setShowTenantModal(true);
-  };
 
   const buscarCepTenant = async () => {
     const cep = tenantForm.cep;
@@ -248,7 +238,7 @@ export default function EmpresasPage() {
     if (!empForm.cnpj) return;
     setBuscandoCnpjEmp(true);
     try {
-      const digits = empForm.cnpj.replace(/[.\-\/\s]/g, '');
+      const digits = empForm.cnpj.replace(/[.\-/\s]/g, '');
       const res = await api.get(`/fornecedores/cnpj-lookup/${digits}`).catch(() => api.get(`/empresas/cnpj-lookup/${digits}`));
       const d = res.data;
       setEmpForm((prev) => ({
@@ -290,7 +280,7 @@ export default function EmpresasPage() {
     if (!empForm.cnpj || !empForm.nome) { toastError('CNPJ e Razão Social são obrigatórios'); return; }
     setSavingEmp(true);
     try {
-      const cnpjRaw = empForm.cnpj.replace(/[.\-\/\s]/g, '').toUpperCase();
+      const cnpjRaw = empForm.cnpj.replace(/[.\-/\s]/g, '').toUpperCase();
       if (editEmpresa) {
         const { cnpj: _c, ...rest } = empForm; void _c;
         const res = await api.patch(`/empresas/${editEmpresa.id}`, rest);
@@ -306,15 +296,6 @@ export default function EmpresasPage() {
     } catch (err: any) {
       toastError(err?.response?.data?.message ?? 'Erro ao salvar empresa');
     } finally { setSavingEmp(false); }
-  };
-
-  const inativarEmpresa = async (emp: Empresa) => {
-    if (!confirm(`Inativar a empresa "${emp.nome}"?`)) return;
-    try {
-      await api.patch(`/empresas/${emp.id}`, { ativo: false });
-      setEmpresas((prev) => prev.map((e) => e.id === emp.id ? { ...e, ativo: false } : e));
-      success('Empresa inativada');
-    } catch { toastError('Erro ao inativar empresa'); }
   };
 
   const renderCertBadge = (cnpj?: string | null) => {
@@ -341,12 +322,6 @@ export default function EmpresasPage() {
   const pagedEmpresas = empresas.slice((empPage - 1) * EMP_PAGE_SIZE, empPage * EMP_PAGE_SIZE);
   const empTotalPages = Math.max(1, Math.ceil(empresas.length / EMP_PAGE_SIZE));
 
-  const Field = ({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) => (
-    <div>
-      <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
-      <p className={`text-sm text-foreground ${mono ? 'font-mono' : 'font-medium'}`}>{value || '—'}</p>
-    </div>
-  );
 
   const fCls = 'w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors placeholder:text-muted-foreground/50';
   const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (

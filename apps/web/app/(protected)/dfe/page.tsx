@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowClockwiseIcon,
   PlusIcon,
@@ -160,7 +160,7 @@ function cstatBadge(cStat: string): { label: string; descricao: string; cls: str
 }
 
 function maskCnpj(v: string | null | undefined) {
-  const raw = (v ?? '').replace(/[.\-\/\s]/g, '').slice(0, 14);
+  const raw = (v ?? '').replace(/[.\-/\s]/g, '').slice(0, 14);
   if (/^\d{14}$/.test(raw))
     return `${raw.slice(0, 2)}.${raw.slice(2, 5)}.${raw.slice(5, 8)}/${raw.slice(8, 12)}-${raw.slice(12)}`;
   return raw;
@@ -974,7 +974,7 @@ export default function DfePage() {
     setSaving(true);
     try {
       await api.post('/dfe/configurar', {
-        cnpj: form.cnpj.replace(/[.\-\/\s]/g, '').toUpperCase(),
+        cnpj: form.cnpj.replace(/[.\-/\s]/g, '').toUpperCase(),
         tpAmb: Number(form.tpAmb) as 1 | 2,
         certificadoId: form.certificadoId,
         horarioCaptura: form.horarioCaptura,

@@ -1,6 +1,9 @@
 import { NestFactory } from '@nestjs/core';
+import { Logger } from '@nestjs/common';
 import * as http from 'http';
 import { WorkerAppModule } from './worker-app.module';
+
+const logger = new Logger('WorkerBoot');
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.createApplicationContext(WorkerAppModule);
@@ -21,11 +24,11 @@ async function bootstrap(): Promise<void> {
   });
 
   server.listen(port, () => {
-    console.log(`[worker] health server ouvindo na porta ${port}`);
+    logger.log(`health server ouvindo na porta ${port}`);
   });
 }
 
-bootstrap().catch((err) => {
-  console.error('[worker] falha ao iniciar:', err);
+bootstrap().catch((err: unknown) => {
+  logger.error('falha ao iniciar', err);
   process.exit(1);
 });

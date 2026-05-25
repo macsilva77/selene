@@ -217,10 +217,6 @@ function fmtValor(v: any, decimais = 2): string {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: decimais, maximumFractionDigits: decimais });
 }
 
-function fmtChave(chave: string): string {
-  return chave.replace(/(\d{4})/g, '$1 ').trim();
-}
-
 function fmtChaveComTracos(chave: string): string {
   // Formata em grupos de 4 dígitos
   return chave.match(/.{1,4}/g)?.join(' ') ?? chave;

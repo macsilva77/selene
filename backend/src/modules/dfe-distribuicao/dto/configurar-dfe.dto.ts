@@ -16,7 +16,7 @@ export class ConfigurarDfeDto {
   @IsNotEmpty()
   @Transform(({ value }: { value: unknown }) => {
     if (typeof value !== 'string') return value;
-    return value.replace(/[.\-\/\s]/g, '').toUpperCase();
+    return value.replace(/[.\-/\s]/g, '').toUpperCase();
   })
   @Matches(/^[A-Z0-9]{14}$/, { message: 'CNPJ deve ter exatamente 14 caracteres alfanuméricos' })
   cnpj: string;

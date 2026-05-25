@@ -338,7 +338,6 @@ export default function UsuariosPage() {
     },
   ];
 
-  const inputCls = 'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors';
   const selectCls = 'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors';
 
   return (

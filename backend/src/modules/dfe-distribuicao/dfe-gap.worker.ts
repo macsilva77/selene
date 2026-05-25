@@ -75,7 +75,7 @@ export class DfeGapWorker {
     try {
       await this.nsuRepo.aguardarRateLimit(tenantId, config.cnpj);
     } catch (err) {
-      throw new Error((err as Error).message); // BullMQ retenta com backoff
+      throw new Error((err as Error).message, { cause: err }); // BullMQ retenta com backoff
     }
 
     let ret: Awaited<ReturnType<typeof this.soapClient.consultarNSU>>;

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Buildings, CaretRight, CaretDown, Plus, PencilSimple, UserMinus,
-  Users, ArrowClockwise, ShieldCheck, ToggleLeft, MagnifyingGlass, X, Eye, Trash,
+  Users, ArrowClockwise, ShieldCheck, ToggleLeft, MagnifyingGlass, X,
 } from '@phosphor-icons/react';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';

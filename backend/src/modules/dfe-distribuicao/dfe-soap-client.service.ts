@@ -290,7 +290,7 @@ export class DfeSoapClientService {
     try {
       parsed = parser.parse(xml);
     } catch (err) {
-      throw new Error(`Falha ao parsear resposta NFeRecepcaoEvento: ${(err as Error).message}`);
+      throw new Error(`Falha ao parsear resposta NFeRecepcaoEvento: ${(err as Error).message}`, { cause: err });
     }
 
     const body = parsed?.Envelope?.Body ?? {};
@@ -502,7 +502,7 @@ export class DfeSoapClientService {
     try {
       parsed = parser.parse(xml);
     } catch (err) {
-      throw new Error(`Falha ao parsear XML da SEFAZ: ${(err as Error).message}`);
+      throw new Error(`Falha ao parsear XML da SEFAZ: ${(err as Error).message}`, { cause: err });
     }
 
     // Navega na árvore SOAP até retDistDFeInt

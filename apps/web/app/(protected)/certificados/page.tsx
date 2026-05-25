@@ -15,7 +15,6 @@ import {
   Eye,
   EyeSlash,
   FileArrowUp,
-  Buildings,
   Trash,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
@@ -127,9 +126,9 @@ function WizardModal({ onClose, onSuccess }: WizardModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [certPreview, setCertPreview] = useState<{ subject?: string; issuer?: string; validade?: string } | null>(null);
+  const [certPreview, _setCertPreview] = useState<{ subject?: string; issuer?: string; validade?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { success, error: toastError, toasts, dismiss } = useToast();
+  const { success } = useToast();
 
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
@@ -216,12 +215,6 @@ function WizardModal({ onClose, onSuccess }: WizardModalProps) {
       setUploading(false);
     }
   }
-
-  const stepLabels: Record<WizardStep, string> = {
-    1: 'Selecionar arquivo',
-    2: 'Informar senha',
-    3: 'Confirmar importação',
-  };
 
   const STEPS = [
     { n: 1 as WizardStep, label: 'Selecionar arquivo', sub: 'Arquivo .pfx ou .p12' },
@@ -319,7 +312,7 @@ function WizardModal({ onClose, onSuccess }: WizardModalProps) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setFile(null); fileInputRef.current && (fileInputRef.current.value = ''); }}
+                    onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
                     className="shrink-0 p-1.5 rounded-lg text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
                     title="Remover arquivo"
                   >

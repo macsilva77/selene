@@ -39,7 +39,7 @@ export class DfeDownloadWorker {
     try {
       await this.nsuRepo.aguardarRateLimit(tenantId, cnpj);
     } catch (err) {
-      throw new Error((err as Error).message);
+      throw new Error((err as Error).message, { cause: err });
     }
 
     const resultado = await this.downloadService.executarDownload({

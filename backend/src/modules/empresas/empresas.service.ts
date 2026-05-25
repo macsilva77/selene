@@ -63,7 +63,7 @@ export class EmpresasService extends AuditableService {
   }
 
   async buscarCnpj(cnpj: string) {
-    const digits = cnpj.replace(/[.\-\/\s]/g, '').toUpperCase();
+    const digits = cnpj.replace(/[.\-/\s]/g, '').toUpperCase();
     if (digits.length !== 14) throw new BadRequestException('CNPJ deve ter 14 caracteres');
 
     const data = await this.brasilApi.buscarCnpj(digits);
