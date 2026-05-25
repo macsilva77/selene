@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -17,6 +18,8 @@ import { BCRYPT_SALT_ROUNDS, RESET_TOKEN_TTL_MS } from '../../common/constants';
 
 @Injectable()
 export class UserManagementService {
+  private readonly logger = new Logger(UserManagementService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly appConfig: AppConfigService,
@@ -72,7 +75,11 @@ export class UserManagementService {
     const frontendUrl = this.appConfig.frontendUrl;
     const link = `${frontendUrl}/set-password?token=${rawToken}`;
 
-    await this.mailService.enviarBoasVindas(dto.email, dto.nome, link);
+    try {
+      await this.mailService.enviarBoasVindas(dto.email, dto.nome, link);
+    } catch (err) {
+      this.logger.error(`Falha ao enviar e-mail de boas-vindas para ${dto.email}: ${(err as Error).message}`);
+    }
 
     return user;
   }
