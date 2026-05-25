@@ -429,7 +429,7 @@ function ConfigDrawer({
                     varredura.status === 'ATIVA' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                     varredura.status === 'CONCLUIDA' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                     varredura.status === 'ERRO' ? 'bg-red-50 text-red-700 border-red-200' :
-                    'bg-muted text-muted-foreground border-border'
+                    'bg-amber-50 text-amber-700 border-amber-200'
                   }`}>
                     {varredura.status === 'ATIVA' && <ArrowsClockwiseIcon size={9} className="animate-spin" />}
                     {varredura.status === 'ATIVA' ? 'Em andamento' :
@@ -486,10 +486,29 @@ function ConfigDrawer({
                     ) : null}
                   </div>
                   {varredura.ultimoErro ? (
-                    <div className="mt-3 p-2.5 rounded-lg bg-red-50 border border-red-200">
-                      <p className="text-xs text-red-600">{varredura.ultimoErro}</p>
+                    <div className="mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                      <p className="text-xs text-amber-700">{varredura.ultimoErro}</p>
                     </div>
                   ) : null}
+                  {varredura.status === 'PAUSADA' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await api.post(`/dfe/${config.id}/varredura/retomar`);
+                          setVarredura('loading');
+                          setTimeout(() => {
+                            api.get(`/dfe/${config.id}/varredura`)
+                              .then((res) => setVarredura(res.data as DfeVarredura | null))
+                              .catch(() => setVarredura(null));
+                          }, 800);
+                        } catch { /* silencia */ }
+                      }}
+                      className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-8 rounded-md border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                    >
+                      Retomar varredura agora
+                    </button>
+                  )}
                 </>
               )}
             </div>

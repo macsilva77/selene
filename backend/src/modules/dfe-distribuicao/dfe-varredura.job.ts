@@ -27,6 +27,23 @@ export class DfeVarreduraJob {
 
   @Cron('* * * * *', { name: 'dfe-varredura-scheduler' })
   async executar(): Promise<void> {
+    // Auto-retoma varreduras pausadas por cStat=656 após 1 hora de cooldown
+    const cooldownMs = 60 * 60_000;
+    const pausadasElegiveis = await this.prisma.dfeVarreduraNsu.findMany({
+      where: {
+        status: DfeVarreduraStatus.PAUSADA,
+        pausadoEm: { lte: new Date(Date.now() - cooldownMs) },
+      },
+      select: { configId: true },
+    });
+    if (pausadasElegiveis.length > 0) {
+      await this.prisma.dfeVarreduraNsu.updateMany({
+        where: { configId: { in: pausadasElegiveis.map((v) => v.configId) } },
+        data: { status: DfeVarreduraStatus.ATIVA, pausadoEm: null },
+      });
+      this.logger.log(`${pausadasElegiveis.length} varredura(s) retomada(s) automaticamente após cooldown.`);
+    }
+
     const ativas = await this.prisma.dfeVarreduraNsu.findMany({
       where: { status: DfeVarreduraStatus.ATIVA },
       select: {
