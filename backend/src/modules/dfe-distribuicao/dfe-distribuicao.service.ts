@@ -234,6 +234,8 @@ export class DfeDistribuicaoService {
 
           if (docIds.length > 0) {
             await tx.dfeManifestacao.deleteMany({ where: { documentoId: { in: docIds } } });
+            await tx.dfeDocumentoEtiqueta.deleteMany({ where: { documentoId: { in: docIds } } });
+            await tx.etiquetaHistorico.deleteMany({ where: { documentoId: { in: docIds } } });
           }
           await tx.dfeDocumento.deleteMany({ where: { loteId: { in: loteIds } } });
         }
