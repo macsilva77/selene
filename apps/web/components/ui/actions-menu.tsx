@@ -12,7 +12,7 @@ interface Action {
   hidden?: boolean;
 }
 
-export function ActionsMenu({ actions }: { actions: Action[] }) {
+export function ActionsMenu({ actions }: Readonly<{ actions: Action[] }>) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -35,7 +35,7 @@ export function ActionsMenu({ actions }: { actions: Action[] }) {
     e.stopPropagation();
     if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+      setPos({ top: rect.bottom + 4, right: globalThis.window.innerWidth - rect.right });
     }
     setOpen((o) => !o);
   };
@@ -48,14 +48,14 @@ export function ActionsMenu({ actions }: { actions: Action[] }) {
         ref={btnRef}
         type="button"
         onClick={handleOpen}
+        aria-label="Abrir menu de ações"
         className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
       >
         <DotsThreeVertical size={16} weight="bold" />
       </button>
-      {open && typeof window !== 'undefined' && createPortal(
+      {open && typeof globalThis.window !== 'undefined' && createPortal(
         <div
           ref={menuRef}
-          // eslint-disable-next-line react/forbid-component-props
           style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
           className="w-40 bg-white rounded-xl shadow-lg border border-slate-100 overflow-hidden py-1"
         >
