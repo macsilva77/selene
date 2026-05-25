@@ -234,7 +234,7 @@ export default function UsuariosPage() {
       if (editForm.municipio !== (editTarget.municipio ?? '')) payload.municipio = editForm.municipio;
       if (editForm.uf !== (editTarget.uf ?? '')) payload.uf = editForm.uf;
 
-      await api.patch(`/usuarios/${editTarget.id}`, payload);
+      await api.patch(`/auth/usuarios/${editTarget.id}`, payload);
       success('Usuário atualizado!');
       setEditTarget(null);
       void load();
@@ -250,7 +250,7 @@ export default function UsuariosPage() {
   const handleInativar = async () => {
     if (!inativarTarget) return;
     try {
-      await api.patch(`/usuarios/${inativarTarget.id}`, { ativo: false });
+      await api.delete(`/auth/usuarios/${inativarTarget.id}`);
       success('Usuário inativado.');
       setInativarTarget(null);
       void load();
@@ -262,7 +262,7 @@ export default function UsuariosPage() {
   const handleExcluir = async () => {
     if (!excluirTarget) return;
     try {
-      await api.delete(`/usuarios/${excluirTarget.id}`);
+      await api.delete(`/auth/usuarios/${excluirTarget.id}/remover`);
       success('Usuário excluído permanentemente.');
       setExcluirTarget(null);
       void load();
