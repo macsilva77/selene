@@ -5,7 +5,7 @@ COPY package*.json ./
 # Pula download do Chromium (puppeteer) — Alpine usa chromium via apk em runtime
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 # Instala TODAS as deps (precisa de devDeps para build/prisma generate)
-RUN npm ci && npm cache clean --force
+RUN npm install && npm cache clean --force
 
 # ── Stage 2: builder ─────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
