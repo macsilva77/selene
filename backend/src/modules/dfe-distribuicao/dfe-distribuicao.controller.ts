@@ -557,6 +557,14 @@ export class DfeDistribuicaoController {
     return this.service.recuperarGap(tenantId, gapId);
   }
 
+  @Post('documentos/backfill-destinatario-cnpj')
+  @RequiresPermission('dfe.manage')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reprocessa XMLs existentes para popular nfeDestinatarioCnpj' })
+  backfillDestinatarioCnpj(@CurrentUser('tenantId') tenantId: string) {
+    return this.xmlProcessor.backfillDestinatarioCnpj(tenantId);
+  }
+
   @Post('documentos/backfill-transportador-autxml')
   @RequiresPermission('dfe.manage')
   @HttpCode(HttpStatus.OK)

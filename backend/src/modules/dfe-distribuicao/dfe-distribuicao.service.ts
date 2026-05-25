@@ -690,14 +690,14 @@ export class DfeDistribuicaoService {
    * ─────────────────────────────────────────────────────────────────────────
    */
 
-  private filtroDestinatario(base: string, raizCnpj: boolean): Record<string, unknown>[] {
+  private static filtroDestinatario(base: string, raizCnpj: boolean): Record<string, unknown>[] {
     const match = raizCnpj ? { startsWith: base } : base;
     return [{ OR: [{ cnpjDestinatario: match }, { nfeDestinatarioCnpj: match }] }];
   }
 
   // NULL-safe: "field != base" é NULL em SQL quando field IS NULL,
   // excluindo linhas que deveriam passar. Usar "IS NULL OR != base".
-  private exclusoesOutrosPapeis(base: string, raizCnpj: boolean): Record<string, unknown>[] {
+  private static exclusoesOutrosPapeis(base: string, raizCnpj: boolean): Record<string, unknown>[] {
     const notVal = raizCnpj ? { not: { startsWith: base } } : { not: base };
     return [
       { OR: [{ nfeEmitenteCnpj: null }, { nfeEmitenteCnpj: notVal }] },
@@ -737,8 +737,8 @@ export class DfeDistribuicaoService {
       if (config) {
         where['AND'] = [
           ...(where['AND'] ?? []),
-          ...this.filtroDestinatario(config.cnpj, false),
-          ...(params.excluirOutrosPapeis ? this.exclusoesOutrosPapeis(config.cnpj, false) : []),
+          ...DfeDistribuicaoService.filtroDestinatario(config.cnpj, false),
+          ...(params.excluirOutrosPapeis ? DfeDistribuicaoService.exclusoesOutrosPapeis(config.cnpj, false) : []),
         ];
       }
     } else if (params.cnpj) {
@@ -747,8 +747,8 @@ export class DfeDistribuicaoService {
       const base = raiz ? full.slice(0, 8) : full;
       where['AND'] = [
         ...(where['AND'] ?? []),
-        ...this.filtroDestinatario(base, raiz),
-        ...(params.excluirOutrosPapeis ? this.exclusoesOutrosPapeis(base, raiz) : []),
+        ...DfeDistribuicaoService.filtroDestinatario(base, raiz),
+        ...(params.excluirOutrosPapeis ? DfeDistribuicaoService.exclusoesOutrosPapeis(base, raiz) : []),
       ];
     }
 

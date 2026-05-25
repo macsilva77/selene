@@ -351,8 +351,65 @@ export class DfeXmlProcessorService {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Backfill: popula nfeTransportadorCnpj e nfeAutXmlCnpjs nos docs existentes
+  // Backfills: reprocessam XMLs existentes para popular campos derivados
   // ────────────────────────────────────────────────────────────────────────────
+
+  async backfillDestinatarioCnpj(tenantId?: string): Promise<{ processados: number; atualizados: number; erros: number }> {
+    let processados = 0;
+    let atualizados = 0;
+    let erros = 0;
+    const BATCH = 200;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = { tipoDocumento: 'PROC_NFE', nfeDestinatarioCnpj: null };
+    if (tenantId) where.tenantId = tenantId;
+
+    const total = await this.prisma.dfeDocumento.count({ where });
+    this.logger.log(`Backfill nfeDestinatarioCnpj: ${total} documento(s) PROC_NFE a processar`);
+
+    let cursor: string | undefined;
+
+    for (;;) {
+      const docs = await this.prisma.dfeDocumento.findMany({
+        where,
+        select: { id: true, schema: true, xmlOriginal: true, xmlStoragePath: true },
+        take: BATCH,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: { id: 'asc' },
+      });
+
+      if (docs.length === 0) break;
+      cursor = docs[docs.length - 1].id;
+
+      for (const doc of docs) {
+        processados++;
+        try {
+          const xmlRaw = await this.storageService.resolverXml(doc);
+          let xml: Buffer;
+          try { xml = gunzipSync(xmlRaw); } catch { xml = xmlRaw; }
+
+          const parsed = this.xmlParser.parse(xml.toString('utf8'));
+          const campos = this.extrairProcNfe(parsed);
+
+          if (!campos.nfeDestinatarioCnpj) continue;
+
+          await this.prisma.dfeDocumento.update({
+            where: { id: doc.id },
+            data: { nfeDestinatarioCnpj: campos.nfeDestinatarioCnpj },
+          });
+          atualizados++;
+        } catch (err) {
+          erros++;
+          this.logger.warn(`Backfill destinatário erro doc ${doc.id}: ${(err as Error).message}`);
+        }
+      }
+
+      this.logger.debug(`Backfill progresso: ${processados}/${total} (atualizados=${atualizados} erros=${erros})`);
+    }
+
+    this.logger.log(`Backfill concluído: processados=${processados} atualizados=${atualizados} erros=${erros}`);
+    return { processados, atualizados, erros };
+  }
 
   async backfillTransportadorAutXml(tenantId?: string): Promise<{ processados: number; atualizados: number; erros: number }> {
     let processados = 0;
