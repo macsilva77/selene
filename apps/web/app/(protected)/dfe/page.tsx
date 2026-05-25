@@ -87,20 +87,6 @@ interface DfeLote {
   erroMensagem: string | null;
 }
 
-interface DfeVarredura {
-  status: 'ATIVA' | 'PAUSADA' | 'CONCLUIDA' | 'ERRO';
-  nsuInicio: string;
-  nsuFim: string;
-  nsuAtual: string;
-  totalConsultado: number;
-  totalRecuperado: number;
-  percentual: number;
-  estimativaConclusao: string | null;
-  iniciadoEm: string | null;
-  concluidoEm: string | null;
-  ultimoErro: string | null;
-}
-
 interface Certificado { id: string; cnpj: string; razaoSocial: string; validade: string; status: string; }
 interface Empresa { id: string; cnpj: string; nome: string; nomeFantasia?: string; uf?: string; }
 interface FormState {
@@ -208,8 +194,10 @@ function ConfigDrawer({
   onSync,
   onDownload,
   onDelete,
+  onResetNsu,
   syncingId,
   downloadingId,
+  resettingId,
 }: Readonly<{
   config: DfeConfig;
   onClose: () => void;
@@ -217,14 +205,15 @@ function ConfigDrawer({
   onSync: (id: string) => void;
   onDownload: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
+  onResetNsu: (id: string) => void;
   syncingId: string | null;
   downloadingId: string | null;
+  resettingId: string | null;
 }>) {
   const [lotes, setLotes] = useState<DfeLote[]>([]);
   const [loadingLotes, setLoadingLotes] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const [lotePage, setLotePage] = useState(1);
-  const [varredura, setVarredura] = useState<DfeVarredura | null | 'loading'>('loading');
   const [confirmarExcluir, setConfirmarExcluir] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
   const LIMIT = 15;
@@ -247,33 +236,6 @@ function ConfigDrawer({
   }, [config.id]);
 
   useEffect(() => { void carregarLotes(1); }, [carregarLotes]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const buscar = () => {
-      api.get(`/dfe/${config.id}/varredura`)
-        .then((res) => {
-          if (cancelled) return;
-          const data = res.data as DfeVarredura | null;
-          setVarredura(data);
-          // Repõe polling a cada 10s enquanto ativa
-          if (data?.status === 'ATIVA') {
-            timer = setTimeout(buscar, 10_000);
-          }
-        })
-        .catch(() => { if (!cancelled) setVarredura(null); });
-    };
-
-    setVarredura('loading');
-    buscar();
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [config.id]);
 
   return (
     <>
@@ -418,102 +380,6 @@ function ConfigDrawer({
             ) : null}
           </div>
 
-          {/* Seção: Varredura retroativa */}
-          {varredura !== null && (
-            <div className="px-6 py-5 border-b border-border/60">
-              <div className="flex items-center gap-2 mb-4">
-                <FileMagnifyingGlassIcon size={14} className="text-primary" weight="fill" />
-                <span className="text-[11px] font-bold text-primary uppercase tracking-widest">Varredura retroativa</span>
-                {varredura === 'loading' ? null : (
-                  <span className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
-                    varredura.status === 'ATIVA' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                    varredura.status === 'CONCLUIDA' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    varredura.status === 'ERRO' ? 'bg-red-50 text-red-700 border-red-200' :
-                    'bg-amber-50 text-amber-700 border-amber-200'
-                  }`}>
-                    {varredura.status === 'ATIVA' && <ArrowsClockwiseIcon size={9} className="animate-spin" />}
-                    {varredura.status === 'ATIVA' ? 'Em andamento' :
-                     varredura.status === 'CONCLUIDA' ? 'Concluída' :
-                     varredura.status === 'PAUSADA' ? 'Pausada' : 'Erro'}
-                  </span>
-                )}
-              </div>
-              {varredura === 'loading' ? (
-                <div className="h-20 bg-muted rounded-lg animate-pulse" />
-              ) : (
-                <>
-                  {/* Barra de progresso */}
-                  <div className="mb-3">
-                    <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-                      <span>NSU {nsuInt(varredura.nsuInicio).toLocaleString('pt-BR')} → {nsuInt(varredura.nsuFim).toLocaleString('pt-BR')}</span>
-                      <span className="font-semibold text-foreground">{(varredura.percentual ?? 0).toFixed(1)}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          varredura.status === 'CONCLUIDA' ? 'bg-emerald-500' :
-                          varredura.status === 'ERRO' ? 'bg-red-400' :
-                          varredura.status === 'PAUSADA' ? 'bg-amber-400' : 'bg-primary'
-                        }`}
-                        style={{ width: `${Math.min(100, varredura.percentual ?? 0)}%` }}
-                      />
-                    </div>
-                  </div>
-                  {/* Métricas */}
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">NSU atual</p>
-                      <p className="font-mono font-medium text-foreground">{nsuInt(varredura.nsuAtual).toLocaleString('pt-BR')}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">Documentos recuperados</p>
-                      <p className="font-mono font-medium text-foreground">{(varredura.totalRecuperado ?? 0).toLocaleString('pt-BR')}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">NSUs consultados</p>
-                      <p className="font-mono font-medium text-foreground">{(varredura.totalConsultado ?? 0).toLocaleString('pt-BR')}</p>
-                    </div>
-                    {varredura.status === 'ATIVA' && varredura.estimativaConclusao ? (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-0.5">Estimativa conclusão</p>
-                        <p className="text-xs font-medium text-foreground">{fmtDateTime(varredura.estimativaConclusao)}</p>
-                      </div>
-                    ) : varredura.concluidoEm ? (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-0.5">Concluída em</p>
-                        <p className="text-xs font-medium text-foreground">{fmtDateTime(varredura.concluidoEm)}</p>
-                      </div>
-                    ) : null}
-                  </div>
-                  {varredura.ultimoErro ? (
-                    <div className="mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200">
-                      <p className="text-xs text-amber-700">{varredura.ultimoErro}</p>
-                    </div>
-                  ) : null}
-                  {varredura.status === 'PAUSADA' && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await api.post(`/dfe/${config.id}/varredura/retomar`);
-                          setVarredura('loading');
-                          setTimeout(() => {
-                            api.get(`/dfe/${config.id}/varredura`)
-                              .then((res) => setVarredura(res.data as DfeVarredura | null))
-                              .catch(() => setVarredura(null));
-                          }, 800);
-                        } catch { /* silencia */ }
-                      }}
-                      className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-8 rounded-md border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
-                    >
-                      Retomar varredura agora
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
           {/* Seção: Histórico SEFAZ */}
           <div className="px-6 py-5">
             <div className="flex items-center gap-2 mb-4">
@@ -625,6 +491,14 @@ function ConfigDrawer({
               Fechar
             </button>
           </div>
+          {/* Linha: Recuperar 90 dias */}
+          <button type="button"
+            disabled={resettingId === config.id || !config.ativo}
+            onClick={() => { onResetNsu(config.id); }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 text-sm font-medium hover:bg-amber-100 disabled:opacity-40 transition-colors w-full justify-center">
+            <ClockCounterClockwiseIcon size={14} className={resettingId === config.id ? 'animate-spin' : ''} />
+            {resettingId === config.id ? 'Reiniciando…' : 'Recuperar 90 dias (zerar NSU)'}
+          </button>
           {/* Linha de exclusão */}
           {!confirmarExcluir ? (
             <button type="button"
@@ -891,6 +765,7 @@ export default function DfePage() {
   const [saving, setSaving] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -968,6 +843,16 @@ export default function DfePage() {
       setTimeout(() => { void carregar(); }, 5000);
     } catch { toastError('Erro ao iniciar download'); }
     finally { setDownloadingId(null); }
+  }, [carregar, success, toastError]);
+
+  const handleResetNsu = useCallback(async (configId: string) => {
+    setResettingId(configId);
+    try {
+      await api.post(`/dfe/reset-nsu/${configId}`);
+      success('NSU zerado — recuperação dos 90 dias iniciada');
+      setTimeout(() => { void carregar(); }, 3000);
+    } catch { toastError('Erro ao zerar NSU'); }
+    finally { setResettingId(null); }
   }, [carregar, success, toastError]);
 
   const handleSave = useCallback(async (form: FormState) => {
@@ -1212,8 +1097,10 @@ export default function DfePage() {
           onSync={(id) => { void handleSync(id); }}
           onDownload={(id) => { void handleDownload(id); }}
           onDelete={handleDelete}
+          onResetNsu={(id) => { void handleResetNsu(id); }}
           syncingId={syncingId}
           downloadingId={downloadingId}
+          resettingId={resettingId}
         />
       ) : null}
 

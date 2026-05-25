@@ -14,19 +14,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
-class IniciarVarreduraDto {
-  /** NSU inicial (máx 15 dígitos). Ex.: "000001000000000" */
-  @IsString()
-  @Matches(/^\d{1,15}$/, { message: 'nsuInicio deve conter apenas dígitos (até 15).' })
-  nsuInicio: string;
-
-  /** NSU final (máx 15 dígitos). Ex.: "000002000000000" */
-  @IsString()
-  @Matches(/^\d{1,15}$/, { message: 'nsuFim deve conter apenas dígitos (até 15).' })
-  nsuFim: string;
-}
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -38,7 +27,6 @@ import { DfeDownloadService } from './dfe-download.service';
 import { DfeMetricsService } from './dfe-metrics.service';
 import { DfeXmlProcessorService } from './dfe-xml-processor.service';
 import { DfeDanfeService } from './dfe-danfe.service';
-import { DfeVarreduraService } from './dfe-varredura.service';
 import { ConfigurarDfeDto } from './dto/configurar-dfe.dto';
 import { ManifestarDfeDto } from './dto/manifestar-dfe.dto';
 import { ExportarDanfeDto } from './dto/exportar-danfe.dto';
@@ -77,7 +65,6 @@ export class DfeDistribuicaoController {
     private readonly metricsService: DfeMetricsService,
     private readonly xmlProcessor: DfeXmlProcessorService,
     private readonly danfeService: DfeDanfeService,
-    private readonly varreduraService: DfeVarreduraService,
   ) {}
 
   /**
@@ -573,82 +560,4 @@ export class DfeDistribuicaoController {
     return this.xmlProcessor.backfillTransportadorAutXml(tenantId);
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Varredura retroativa de NSU (consNSU)
-  // ────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * POST /dfe/:configId/varredura/iniciar
-   *
-   * Inicia (ou reinicia) uma varredura retroativa que itera NSU por NSU via
-   * consNSU para recuperar documentos históricos não capturados pelo distNSU.
-   *
-   * Parâmetros:
-   *  - nsuInicio: NSU de partida (string com até 15 dígitos)
-   *  - nsuFim:    NSU final (geralmente o maxNSU atual)
-   *
-   * Taxa: ~30 NSUs/min por CNPJ. Progresso em GET /:configId/varredura.
-   */
-  @Post(':configId/varredura/iniciar')
-  @RequiresPermission('dfe.manage')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: 'Iniciar varredura retroativa NSU (consNSU iterativo)' })
-  async iniciarVarredura(
-    @Param('configId', ParseUUIDPipe) configId: string,
-    @Body() dto: IniciarVarreduraDto,
-    @CurrentUser('tenantId') tenantId: string,
-  ) {
-    await this.varreduraService.iniciarVarredura(tenantId, configId, dto.nsuInicio, dto.nsuFim);
-    return { message: 'Varredura iniciada. Acompanhe o progresso em GET /dfe/:configId/varredura.' };
-  }
-
-  /**
-   * POST /dfe/:configId/varredura/pausar
-   *
-   * Pausa a varredura ativa. O progresso é salvo e pode ser retomado.
-   */
-  @Post(':configId/varredura/pausar')
-  @RequiresPermission('dfe.manage')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Pausar varredura retroativa NSU' })
-  async pausarVarredura(
-    @Param('configId', ParseUUIDPipe) configId: string,
-    @CurrentUser('tenantId') tenantId: string,
-  ) {
-    await this.varreduraService.pausarVarredura(tenantId, configId);
-    return { message: 'Varredura pausada.' };
-  }
-
-  /**
-   * POST /dfe/:configId/varredura/retomar
-   *
-   * Retoma uma varredura pausada do ponto onde parou.
-   */
-  @Post(':configId/varredura/retomar')
-  @RequiresPermission('dfe.manage')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Retomar varredura retroativa NSU pausada' })
-  async retomarVarredura(
-    @Param('configId', ParseUUIDPipe) configId: string,
-    @CurrentUser('tenantId') tenantId: string,
-  ) {
-    await this.varreduraService.retomarVarredura(tenantId, configId);
-    return { message: 'Varredura retomada.' };
-  }
-
-  /**
-   * GET /dfe/:configId/varredura
-   *
-   * Retorna o status atual da varredura: progresso, NSU atual, documentos
-   * recuperados e estimativa de conclusão.
-   */
-  @Get(':configId/varredura')
-  @RequiresPermission('dfe.view')
-  @ApiOperation({ summary: 'Status da varredura retroativa NSU' })
-  statusVarredura(
-    @Param('configId', ParseUUIDPipe) configId: string,
-    @CurrentUser('tenantId') tenantId: string,
-  ) {
-    return this.varreduraService.getStatus(tenantId, configId);
-  }
 }

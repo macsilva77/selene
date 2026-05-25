@@ -14,7 +14,6 @@ import { DfeManifestacaoService } from './dfe-manifestacao.service';
 import { DfeDownloadService } from './dfe-download.service';
 import { DfeMetricsService } from './dfe-metrics.service';
 import { DfeDanfeService, DANFE_EXPORT_QUEUE } from './dfe-danfe.service';
-import { DfeVarreduraService } from './dfe-varredura.service';
 import { DfeStorageService } from './dfe-storage.service';
 import { DfePubSubService } from './dfe-pubsub.service';
 import {
@@ -22,7 +21,6 @@ import {
   DFE_CIENCIA_QUEUE,
   DFE_DOWNLOAD_QUEUE,
   DFE_GAP_QUEUE,
-  DFE_VARREDURA_QUEUE,
 } from './dfe-queue.constants';
 
 /**
@@ -40,7 +38,6 @@ import {
     BullModule.registerQueue({ name: DFE_CIENCIA_QUEUE }),
     BullModule.registerQueue({ name: DFE_DOWNLOAD_QUEUE }),
     BullModule.registerQueue({ name: DFE_GAP_QUEUE }),
-    BullModule.registerQueue({ name: DFE_VARREDURA_QUEUE }),
   ],
   controllers: [DfeDistribuicaoController],
   providers: [
@@ -56,7 +53,6 @@ import {
     DfeXmlSignerService,
     DfeMetricsService,
     DfeDanfeService,
-    DfeVarreduraService,
     DfeStorageService,
     DfePubSubService,
   ],
@@ -70,7 +66,6 @@ import {
     DfeXmlSignerService,
     DfeMetricsService,
     DfeDanfeService,
-    DfeVarreduraService,
     DfeNsuRedisRepository,
     DfeStorageService,
     DfePubSubService,

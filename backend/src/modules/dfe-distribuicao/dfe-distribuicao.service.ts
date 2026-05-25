@@ -15,7 +15,6 @@ import { DfeNsuRedisRepository } from './dfe-nsu-redis.repository';
 import { DfeStorageService } from './dfe-storage.service';
 import { DfeXmlProcessorService } from './dfe-xml-processor.service';
 import { DfeGapDetectorService } from './dfe-gap-detector.service';
-import { DfeVarreduraService } from './dfe-varredura.service';
 import { ConfigurarDfeDto } from './dto/configurar-dfe.dto';
 import { buildMeta, parsePagination } from '../../common/utils/pagination.helper';
 import {
@@ -53,7 +52,6 @@ export class DfeDistribuicaoService {
     private readonly xmlProcessor: DfeXmlProcessorService,
     private readonly gapDetector: DfeGapDetectorService,
     private readonly auditoria: AuditoriaService,
-    private readonly varredura: DfeVarreduraService,
     private readonly storageService: DfeStorageService,
   ) {}
 
@@ -160,27 +158,13 @@ export class DfeDistribuicaoService {
   }
 
   /**
-   * Zera o NSU da configuração e libera o cooldown para recuperação completa dos 90 dias.
-   * Inicia automaticamente a varredura retroativa do intervalo [0, maxNSU] para
-   * recuperar documentos históricos não capturados pelo distNSU.
+   * Zera o NSU da configuração — próximo ciclo distNSU recupera os últimos 90 dias via SEFAZ.
    */
   async resetarNsu(tenantId: string, configId: string): Promise<void> {
     const config = await this.assertConfigBelongsToTenant(configId, tenantId);
     const controle = await this.nsuRepo.obterOuCriarControle(configId, tenantId, config.cnpj);
-
-    // Salva maxNSU antes de zerar — será o limite superior da varredura
-    const maxNsuAtual = controle.maxNsu;
-
     await this.nsuRedisRepo.resetarNsu(tenantId, config.cnpj);
     await this.nsuRepo.resetarNsu(controle.id);
-
-    // Inicia varredura retroativa automaticamente se houver NSUs conhecidos
-    if (maxNsuAtual && maxNsuAtual !== '000000000000000') {
-      this.varredura.iniciarVarredura(tenantId, configId, '0', maxNsuAtual).catch((err) =>
-        this.logger.error(`Falha ao iniciar varredura após reset NSU (configId=${configId}): ${(err as Error).message}`),
-      );
-      this.logger.log(`Reset NSU: varredura retroativa iniciada automaticamente [0 → ${maxNsuAtual}] para CNPJ=${config.cnpj}`);
-    }
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -389,8 +373,6 @@ export class DfeDistribuicaoService {
     let ultimoNsu = nsuState.ultimoNsu;
     let maxNsu = nsuState.maxNsu;
     let ciclosRealizados = 0;
-    // Detecta primeira sincronização (NSU ainda zerado) para disparar varredura ao final
-    const isPrimeiraSinc = nsuState.ultimoNsu === '000000000000000';
 
     try {
       const { pemCert, pemKey } = await this.certLoader.loadCert(config.tenantId, configId);
@@ -443,19 +425,6 @@ export class DfeDistribuicaoService {
 
       await this.nsuRepo.agendarProximaConsulta(controle.id, new Date(Date.now() + proximaConsultaMs));
 
-      // Se o distNSU recebeu 656, pausa também qualquer varredura ativa para que o
-      // CNPJ não continue batendo na SEFAZ durante o cooldown.
-      if (recebeu656) {
-        await this.prisma.dfeVarreduraNsu.updateMany({
-          where: { configId, status: 'ATIVA' },
-          data: {
-            status: 'PAUSADA',
-            pausadoEm: new Date(),
-            ultimoErro: `Consumo Indevido (656) no distNSU — aguardar 1h antes de retomar`,
-          },
-        });
-      }
-
     } catch (err) {
       const msg = (err as Error).message;
       this.logger.error(`Erro na sincronização de ${config.cnpj}: ${msg}`, (err as Error).stack);
@@ -491,15 +460,6 @@ export class DfeDistribuicaoService {
     this.logger.log(
       `Sincronização concluída: CNPJ=${config.cnpj} ciclos=${ciclosRealizados} ultimoNsu=${ultimoNsu}`,
     );
-
-    // Primeira sincronização concluída: agora sabemos o maxNSU — inicia varredura retroativa
-    // para recuperar documentos emitidos antes do CNPJ ser configurado no sistema.
-    if (isPrimeiraSinc && maxNsu && maxNsu !== '000000000000000') {
-      this.varredura.iniciarVarredura(config.tenantId, configId, '0', maxNsu).catch((err) =>
-        this.logger.error(`Falha ao iniciar varredura na primeira sync (configId=${configId}): ${(err as Error).message}`),
-      );
-      this.logger.log(`Primeira sync: varredura retroativa iniciada automaticamente [0 → ${maxNsu}] para CNPJ=${config.cnpj}`);
-    }
   }
 
   // ────────────────────────────────────────────────────────────────────────────
