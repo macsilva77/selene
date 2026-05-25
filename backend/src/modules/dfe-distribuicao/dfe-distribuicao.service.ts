@@ -254,6 +254,7 @@ export class DfeDistribuicaoService {
     });
 
     this.certLoader.invalidate(tenantId, configId);
+    await this.nsuRedisRepo.resetarNsu(tenantId, config.cnpj);
     this.logger.log(`DfeConfig excluída: id=${configId} cnpj=${config.cnpj} tenant=${tenantId}`);
 
     return { message: 'Configuração DFe excluída com sucesso.' };
