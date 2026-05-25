@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Buildings, CaretRight, CaretDown, Plus, PencilSimple, UserMinus,
-  Users, ArrowClockwise, ShieldCheck, ToggleLeft, MagnifyingGlass, X,
+  BuildingsIcon, CaretRightIcon, CaretDownIcon, PlusIcon, PencilSimpleIcon, UserMinusIcon,
+  UsersIcon, ArrowClockwiseIcon, ShieldCheckIcon, ToggleLeftIcon, MagnifyingGlassIcon, XIcon,
 } from '@phosphor-icons/react';
 import { Modal } from '@/components/ui/modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -60,7 +60,7 @@ const FORM_VAZIO: FormState = {
 };
 
 function getUser() {
-  if (typeof window === 'undefined') return null;
+  if (typeof globalThis.window === 'undefined') return null;
   try { return JSON.parse(localStorage.getItem('selene_usuario') ?? 'null'); } catch { return null; }
 }
 
@@ -69,7 +69,7 @@ function fmtDate(d: string | null | undefined) {
   return new Date(d).toLocaleDateString('pt-BR');
 }
 
-function InfoCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function InfoCard({ label, value, sub }: Readonly<{ label: string; value: string; sub?: string }>) {
   return (
     <div className="rounded-lg border border-border bg-muted/50 px-4 py-3">
       <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
@@ -82,13 +82,13 @@ function InfoCard({ label, value, sub }: { label: string; value: string; sub?: s
 const DEPTH_PL = ['pl-2', 'pl-6', 'pl-10', 'pl-14', 'pl-[4.5rem]', 'pl-[5.5rem]'] as const;
 
 interface ArvoreNodeProps {
-  node: UnidadeNode;
-  selectedId?: string;
-  depth: number;
-  onSelect: (u: Unidade) => void;
-  onCriarFilho?: (paiId: string) => void;
-  onEditar?: (u: Unidade) => void;
-  onInativar?: (u: Unidade) => void;
+  readonly node: UnidadeNode;
+  readonly selectedId?: string;
+  readonly depth: number;
+  readonly onSelect: (u: Unidade) => void;
+  readonly onCriarFilho?: (paiId: string) => void;
+  readonly onEditar?: (u: Unidade) => void;
+  readonly onInativar?: (u: Unidade) => void;
 }
 
 function ArvoreNode({ node, selectedId, depth, onSelect, onCriarFilho, onEditar, onInativar }: ArvoreNodeProps) {
@@ -104,13 +104,14 @@ function ArvoreNode({ node, selectedId, depth, onSelect, onCriarFilho, onEditar,
         isSelected ? `${meta.leftBorder} ${meta.selectedBg}` : 'border-l-transparent bg-card hover:bg-muted'
       } ${node.ativo ? '' : 'opacity-50'}`}>
         <button type="button" onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          aria-label={expanded ? 'Recolher' : 'Expandir'}
           className="shrink-0 p-1 text-muted-foreground hover:text-muted-foreground transition-colors">
           {!hasFilhos && <span className="w-3 inline-block" />}
-          {hasFilhos && (expanded ? <CaretDown size={13} /> : <CaretRight size={13} />)}
+          {hasFilhos && (expanded ? <CaretDownIcon size={13} /> : <CaretRightIcon size={13} />)}
         </button>
         <button type="button" onClick={() => onSelect(node)} className="flex-1 flex items-center gap-2.5 py-2.5 min-w-0 text-left focus:outline-none">
           <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${meta.color}`}>
-            <Buildings size={14} />
+            <BuildingsIcon size={14} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -120,7 +121,7 @@ function ArvoreNode({ node, selectedId, depth, onSelect, onCriarFilho, onEditar,
             </div>
             {node.responsavel && <p className="text-xs text-muted-foreground truncate mt-0.5">{node.responsavel.nome}</p>}
             <div className="flex items-center gap-1 mt-1">
-              <Users size={10} className="text-muted-foreground" />
+              <UsersIcon size={10} className="text-muted-foreground" />
               <span className="text-xs text-muted-foreground">{node._count.usuarios} membro(s)</span>
             </div>
           </div>
@@ -128,20 +129,20 @@ function ArvoreNode({ node, selectedId, depth, onSelect, onCriarFilho, onEditar,
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pr-2">
           {onCriarFilho && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onCriarFilho(node.id); }}
-              className="p-1 rounded text-muted-foreground hover:text-emerald-500 hover:bg-emerald-50 transition-colors" title="Adicionar sub-unidade">
-              <Plus size={11} />
+              className="p-1 rounded text-muted-foreground hover:text-emerald-500 hover:bg-emerald-50 transition-colors" title="Adicionar sub-unidade" aria-label="Adicionar sub-unidade">
+              <PlusIcon size={11} />
             </button>
           )}
           {onEditar && node.ativo && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onEditar(node); }}
-              className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Editar">
-              <PencilSimple size={11} />
+              className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Editar" aria-label="Editar unidade">
+              <PencilSimpleIcon size={11} />
             </button>
           )}
           {onInativar && node.ativo && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onInativar(node); }}
-              className="p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors" title="Inativar">
-              <ToggleLeft size={11} />
+              className="p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors" title="Inativar" aria-label="Inativar unidade">
+              <ToggleLeftIcon size={11} />
             </button>
           )}
         </div>
@@ -198,12 +199,10 @@ export default function UnidadesPage() {
       ]);
       const listaData: Unidade[] = listaRes.data?.data ?? listaRes.data ?? [];
       setLista(listaData);
-      // Build tree if not already tree-structured
       const arvData = arvoreRes.data?.data ?? arvoreRes.data ?? [];
       if (Array.isArray(arvData) && arvData.length > 0 && 'filhosArvore' in arvData[0]) {
         setArvore(arvData as UnidadeNode[]);
       } else {
-        // Build tree locally
         const map = new Map<string, UnidadeNode>();
         const allNodes = listaData.map((u) => ({ ...u, filhosArvore: [] as UnidadeNode[] }));
         allNodes.forEach((n) => map.set(n.id, n));
@@ -353,12 +352,13 @@ export default function UnidadesPage() {
           <p className="text-sm text-muted-foreground mt-1">Organograma hierárquico de UA/UG com responsáveis e vigência.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => void carregar()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
-            <ArrowClockwise size={15} />
+          <button type="button" onClick={() => void carregar()} aria-label="Recarregar unidades"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
+            <ArrowClockwiseIcon size={15} />
           </button>
           {podeCriar && (
             <button type="button" onClick={() => abrirCriar()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
-              <Plus size={15} /> Nova Unidade
+              <PlusIcon size={15} /> Nova Unidade
             </button>
           )}
         </div>
@@ -369,12 +369,14 @@ export default function UnidadesPage() {
         <div className="w-80 shrink-0 min-h-0 border-r border-input flex flex-col bg-muted/40">
           <div className="px-3 py-3 border-b border-border space-y-2">
             <div className="relative">
-              <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <MagnifyingGlassIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <input type="search" placeholder="Buscar nome, sigla..." value={filtroTexto} onChange={(e) => setFiltroTexto(e.target.value)}
+                aria-label="Buscar unidades"
                 className="w-full pl-7 pr-7 py-2 text-sm rounded-lg border border-input bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-muted-foreground transition-colors" />
               {filtroTexto && (
-                <button type="button" onClick={() => setFiltroTexto('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground">
-                  <X size={12} />
+                <button type="button" onClick={() => setFiltroTexto('')} aria-label="Limpar busca"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground">
+                  <XIcon size={12} />
                 </button>
               )}
             </div>
@@ -397,7 +399,7 @@ export default function UnidadesPage() {
             ))}
             {!loading && filtroAtivo && listaFiltrada.length === 0 && (
               <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm gap-2">
-                <MagnifyingGlass size={28} className="opacity-20" />Nenhum resultado.
+                <MagnifyingGlassIcon size={28} className="opacity-20" />Nenhum resultado.
               </div>
             )}
             {!loading && filtroAtivo && listaFiltrada.map((u) => {
@@ -408,7 +410,7 @@ export default function UnidadesPage() {
                   className={`group w-full text-left rounded-lg border-l-4 p-3.5 transition-all ${isSelected ? `${meta.leftBorder} ${meta.selectedBg}` : 'border-l-transparent bg-card hover:bg-muted'} ${u.ativo ? '' : 'opacity-50'}`}>
                   <div className="flex items-start gap-3">
                     <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${meta.color}`}>
-                      <Buildings size={15} />
+                      <BuildingsIcon size={15} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -424,7 +426,7 @@ export default function UnidadesPage() {
             })}
             {!loading && !filtroAtivo && arvore.length === 0 && (
               <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm gap-2">
-                <Buildings size={28} className="opacity-20" />Nenhuma unidade cadastrada.
+                <BuildingsIcon size={28} className="opacity-20" />Nenhuma unidade cadastrada.
               </div>
             )}
             {!loading && !filtroAtivo && arvore.map((node) => (
@@ -441,7 +443,7 @@ export default function UnidadesPage() {
             <div className="p-3 border-t border-border">
               <button type="button" onClick={() => abrirCriar()}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-dashed border-input text-sm text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors">
-                <Plus size={14} /> Nova Unidade Raiz
+                <PlusIcon size={14} /> Nova Unidade Raiz
               </button>
             </div>
           )}
@@ -454,7 +456,7 @@ export default function UnidadesPage() {
               <div className="shrink-0 flex items-start justify-between pb-5 border-b border-border mb-6">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${selectedMeta?.color ?? 'bg-muted text-muted-foreground'}`}>
-                    <Buildings size={20} />
+                    <BuildingsIcon size={20} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
@@ -472,11 +474,11 @@ export default function UnidadesPage() {
                   {podeEditar && (
                     <>
                       <button type="button" onClick={() => abrirEditar(selected)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-input text-foreground text-xs font-medium hover:bg-muted transition-colors">
-                        <PencilSimple size={13} /> Editar
+                        <PencilSimpleIcon size={13} /> Editar
                       </button>
                       {selected.ativo && (
                         <button type="button" onClick={() => setInativarTarget(selected)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-input text-foreground text-xs font-medium hover:bg-muted transition-colors">
-                          <ToggleLeft size={13} /> Inativar
+                          <ToggleLeftIcon size={13} /> Inativar
                         </button>
                       )}
                     </>
@@ -497,7 +499,7 @@ export default function UnidadesPage() {
                   <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${selectedMeta?.color ?? 'bg-muted text-muted-foreground'}`}>
-                        <Users size={15} />
+                        <UsersIcon size={15} />
                       </div>
                       <div>
                         <h3 className="text-sm font-semibold text-foreground">Membros</h3>
@@ -507,13 +509,15 @@ export default function UnidadesPage() {
                     {podeEditar && (
                       <div className="flex items-center gap-2">
                         <select value={addMembroId} onChange={(e) => setAddMembroId(e.target.value)}
+                          aria-label="Selecionar membro para adicionar"
                           className="text-sm rounded-lg border border-input px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary max-w-[200px]">
                           <option value="">Adicionar membro...</option>
                           {usuariosDisponiveis.map((u) => (<option key={u.id} value={u.id}>{u.nome}</option>))}
                         </select>
                         <button type="button" disabled={!addMembroId} onClick={() => void handleAdicionarMembro()}
+                          aria-label="Confirmar adição de membro"
                           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50">
-                          <Plus size={13} />
+                          <PlusIcon size={13} />
                         </button>
                       </div>
                     )}
@@ -531,7 +535,7 @@ export default function UnidadesPage() {
                     )}
                     {!loadingDet && (detalhes.usuarios?.length ?? 0) === 0 && (
                       <div className="flex flex-col items-center justify-center py-6 text-muted-foreground gap-2">
-                        <UserMinus size={24} className="opacity-30" />
+                        <UserMinusIcon size={24} className="opacity-30" />
                         <p className="text-sm">Nenhum membro nesta unidade.</p>
                       </div>
                     )}
@@ -543,13 +547,14 @@ export default function UnidadesPage() {
                               {m.usuario.nome.charAt(0).toUpperCase()}
                               {m.principal && (
                                 <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-primary flex items-center justify-center" title="Principal">
-                                  <ShieldCheck size={9} className="text-white" />
+                                  <ShieldCheckIcon size={9} className="text-white" />
                                 </span>
                               )}
                               {podeEditar && (
                                 <button type="button" onClick={() => void handleRemoverMembro(m.usuarioId)}
-                                  className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow" title="Remover">
-                                  <UserMinus size={9} />
+                                  className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow"
+                                  title="Remover membro" aria-label={`Remover ${m.usuario.nome}`}>
+                                  <UserMinusIcon size={9} />
                                 </button>
                               )}
                             </div>
@@ -568,7 +573,7 @@ export default function UnidadesPage() {
                 {(detalhes.filhos?.length ?? 0) > 0 && (
                   <div className="rounded-lg border border-input shadow-sm overflow-hidden">
                     <div className="px-5 py-3 border-b border-border bg-muted/40 flex items-center gap-2">
-                      <Buildings size={14} className="text-muted-foreground" />
+                      <BuildingsIcon size={14} className="text-muted-foreground" />
                       <span className="text-sm font-semibold text-foreground">Sub-unidades diretas ({detalhes.filhos!.length})</span>
                     </div>
                     <div className="divide-y divide-slate-100">
@@ -578,7 +583,7 @@ export default function UnidadesPage() {
                           <button type="button" key={f.id} onClick={() => void selecionarUnidade(f)}
                             className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-muted transition-colors">
                             <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${fm.color}`}>
-                              <Buildings size={14} />
+                              <BuildingsIcon size={14} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5">
@@ -589,7 +594,7 @@ export default function UnidadesPage() {
                               {f.responsavel && <p className="text-xs text-muted-foreground">{f.responsavel.nome}</p>}
                             </div>
                             <span className="text-xs text-muted-foreground">{f._count.usuarios} membro(s)</span>
-                            <CaretRight size={14} className="text-muted-foreground" />
+                            <CaretRightIcon size={14} className="text-muted-foreground" />
                           </button>
                         );
                       })}
@@ -600,7 +605,7 @@ export default function UnidadesPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
-              <Buildings size={48} className="opacity-10" />
+              <BuildingsIcon size={48} className="opacity-10" />
               <div className="text-center">
                 <p className="text-sm font-medium text-muted-foreground">Selecione uma unidade</p>
                 <p className="text-xs text-muted-foreground mt-1">Clique em uma unidade para ver detalhes, membros e sub-unidades</p>

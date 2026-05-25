@@ -94,16 +94,27 @@ function fmtDate(iso?: string | null) {
 
 const inputCls = 'w-full rounded-lg border border-input px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors';
 
-function LabelInput({ id, label, value, onChange, placeholder, type = 'text', maxLength, readOnly }: {
+function LabelInput({ id, label, value, onChange, placeholder, type = 'text', maxLength, readOnly }: Readonly<{
   id: string; label: string; value?: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string; type?: string; maxLength?: number; readOnly?: boolean;
-}) {
+}>) {
   return (
     <div>
       <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{label}</label>
       <input id={id} type={type} value={value ?? ''} onChange={onChange} placeholder={placeholder} maxLength={maxLength} readOnly={readOnly}
         className={`${inputCls} ${readOnly ? 'bg-muted text-muted-foreground' : ''}`} />
+    </div>
+  );
+}
+
+const fCls = 'w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors placeholder:text-muted-foreground/50';
+
+function FormField({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
+      {children}
     </div>
   );
 }
@@ -322,14 +333,6 @@ export default function EmpresasPage() {
   const pagedEmpresas = empresas.slice((empPage - 1) * EMP_PAGE_SIZE, empPage * EMP_PAGE_SIZE);
   const empTotalPages = Math.max(1, Math.ceil(empresas.length / EMP_PAGE_SIZE));
 
-
-  const fCls = 'w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary transition-colors placeholder:text-muted-foreground/50';
-  const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div>
-      <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
-      {children}
-    </div>
-  );
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0 h-full overflow-y-auto pb-4">
