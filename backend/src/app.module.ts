@@ -30,6 +30,7 @@ import { EmpresasModule } from './modules/empresas/empresas.module';
 import { CertificadosModule } from './modules/certificados/certificados.module';
 import { DfeDistribuicaoModule } from './modules/dfe-distribuicao/dfe-distribuicao.module';
 import { EtiquetasModule } from './modules/etiquetas/etiquetas.module';
+import { SpedModule } from './modules/sped/sped.module';
 
 
 @Module({
@@ -113,6 +114,7 @@ import { EtiquetasModule } from './modules/etiquetas/etiquetas.module';
     CertificadosModule,
     DfeDistribuicaoModule,
     EtiquetasModule,
+    SpedModule,
   ],
   providers: [
     // Global exception filter

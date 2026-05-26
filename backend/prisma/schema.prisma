@@ -53,6 +53,7 @@ model Tenant {
   documentosReg        DocumentoReg[]
   dfeConfigs           DfeConfig[]
   etiquetas            Etiqueta[]
+  spedArquivos         SpedArquivo[]
 
   @@map("tenants")
 }
@@ -1446,4 +1447,33 @@ model DfeExportJob {
   @@index([tenantId, status])
   @@index([tenantId, criadoEm])
   @@map("dfe_export_jobs")
+}
+
+// ─── SPED ─────────────────────────────────────────────────────────────────────
+
+enum SpedStatus {
+  DISPONIVEL
+  ERRO
+  INDISPONIVEL
+}
+
+model SpedArquivo {
+  id            String      @id @default(uuid())
+  tenantId      String      @map("tenant_id")
+  cnpj          String
+  tipo          String      // EFD_ICMS | EFD_CONTRIBUICOES | ECD | ECF
+  gcsBucket     String      @map("gcs_bucket")
+  gcsPath       String      @map("gcs_path")
+  nomeArquivo   String      @map("nome_arquivo")
+  dataDocumento DateTime    @map("data_documento")
+  status        SpedStatus
+  mensagemErro  String?     @map("mensagem_erro") @db.Text
+  criadoEm      DateTime    @default(now()) @map("criado_em")
+  atualizadoEm  DateTime    @updatedAt @map("atualizado_em")
+
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, cnpj, tipo, dataDocumento], name: "tenantId_cnpj_tipo_dataDocumento")
+  @@index([tenantId, cnpj])
+  @@map("sped_arquivos")
 }

@@ -38,12 +38,15 @@ function loadConfiguration() {
     },
 
     pubsub: {
-      // Reutiliza GCS_PROJECT_ID se PUBSUB_PROJECT_ID não for definido
-      projectId: process.env['PUBSUB_PROJECT_ID'] || process.env['GCS_PROJECT_ID'] || '',
-      topicNfeRecebida:    process.env['PUBSUB_TOPIC_NFE_RECEBIDA']    || '',
-      topicCienciaEnviada: process.env['PUBSUB_TOPIC_CIENCIA_ENVIADA'] || '',
-      topicNfeBaixada:     process.env['PUBSUB_TOPIC_NFE_BAIXADA']     || '',
+      projectId:                    process.env['PUBSUB_PROJECT_ID'] || process.env['GCS_PROJECT_ID'] || '',
+      topicNfeRecebida:             process.env['PUBSUB_TOPIC_NFE_RECEBIDA']             || '',
+      topicCienciaEnviada:          process.env['PUBSUB_TOPIC_CIENCIA_ENVIADA']          || '',
+      topicNfeBaixada:              process.env['PUBSUB_TOPIC_NFE_BAIXADA']              || '',
+      topicNovoCertificado:         process.env['PUBSUB_TOPIC_NOVO_CERTIFICADO']         || '',
+      subscriptionSpedProcessado:   process.env['PUBSUB_SUBSCRIPTION_SPED_PROCESSADO']  || '',
     },
+
+    internalApiToken: process.env['INTERNAL_API_TOKEN'] || '',
 
     storage: {
       endpoint: process.env['STORAGE_ENDPOINT'] || 'http://localhost:9000',

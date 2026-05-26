@@ -5,9 +5,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppConfigService } from '../../config/app-config.service';
 import { AuditAcao, CertificadoAcao, CertificadoStatus, Prisma } from '@prisma/client';
-import { createCipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import * as forge from 'node-forge';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -15,6 +16,7 @@ import { ArmazenarCertificadoDto } from './dto/armazenar-certificado.dto';
 import { buildMeta, calcSkip } from '../../common/utils/pagination.helper';
 import { AuditableService } from '../../common/services/auditable.service';
 import { requireTenantId } from '../../common/context/tenant-context';
+import { PubSubService } from '../../common/services/pubsub.service';
 
 // ─── Internal types ──────────────────────────────────────────────────────────
 
@@ -55,19 +57,24 @@ export class CertificadosService extends AuditableService {
   private readonly logger = new Logger(CertificadosService.name);
   private readonly encKey: Buffer;
 
+  private readonly topicNovoCertificado: string;
+
   constructor(
     private readonly prisma: PrismaService,
     auditoria: AuditoriaService,
-    private readonly config: AppConfigService,
+    private readonly appConfig: AppConfigService,
+    private readonly configService: ConfigService,
+    private readonly pubSub: PubSubService,
   ) {
     super(auditoria);
-    const hexKey = this.config.certEncryptionKey;
+    const hexKey = this.appConfig.certEncryptionKey;
     if (hexKey.length < 64) {
       this.logger.warn('CERT_ENCRYPTION_KEY ausente/inválida — usando chave padrão (DEV ONLY)');
       this.encKey = Buffer.alloc(32, 0);
     } else {
       this.encKey = Buffer.from(hexKey.slice(0, 64), 'hex');
     }
+    this.topicNovoCertificado = this.configService.get<string>('pubsub.topicNovoCertificado') ?? '';
   }
 
   // ── PFX Parsing ─────────────────────────────────────────────────────────────
@@ -156,7 +163,16 @@ export class CertificadosService extends AuditableService {
     };
   }
 
-  // ── Encryption (AES-256-GCM — modo autenticado AEAD) ────────────────────────
+  // ── Encryption / Decryption (AES-256-GCM) ────────────────────────────────────
+
+  private decryptFile(encrypted: Buffer, storageIv: string): Buffer {
+    const [ivHex, authTagHex] = storageIv.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const decipher = createDecipheriv('aes-256-gcm', this.encKey, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  }
 
   private encryptFile(data: Buffer): { encrypted: Buffer; storageIv: string } {
     const iv = randomBytes(12); // GCM usa IV de 12 bytes
@@ -166,6 +182,32 @@ export class CertificadosService extends AuditableService {
     // Armazena iv:authTag juntos para decriptação posterior
     const storageIv = `${iv.toString('hex')}:${authTag.toString('hex')}`;
     return { encrypted, storageIv };
+  }
+
+  // ── PFX interno (para serviços internos) ─────────────────────────────────────
+
+  private buildPfxFromPem(pemCert: string, pemKey: string): Buffer {
+    const cert = forge.pki.certificateFromPem(pemCert);
+    const key  = forge.pki.privateKeyFromPem(pemKey);
+    const p12Asn1 = forge.pkcs12.toPkcs12Asn1(key, [cert], null, { algorithm: '3des' });
+    return Buffer.from(forge.asn1.toDer(p12Asn1).getBytes(), 'binary');
+  }
+
+  async exportarPfxInterno(cnpj: string): Promise<{ cnpj: string; pfx_base64: string }> {
+    const cert = await this.prisma.certificadoDigital.findFirst({
+      where: { cnpjCert: cnpj, ativo: true, status: { not: CertificadoStatus.REVOGADO } },
+      orderBy: { criadoEm: 'desc' },
+    });
+    if (!cert) throw new NotFoundException(`Certificado ativo não encontrado para CNPJ ${cnpj}`);
+    if (!cert.certPemEnc || !cert.certPemIv || !cert.keyPemEnc || !cert.keyPemIv) {
+      throw new NotFoundException('Certificado não possui dados PEM armazenados');
+    }
+
+    const pemCert = this.decryptFile(cert.certPemEnc, cert.certPemIv).toString('utf8');
+    const pemKey  = this.decryptFile(cert.keyPemEnc,  cert.keyPemIv).toString('utf8');
+    const pfxBuf  = this.buildPfxFromPem(pemCert, pemKey);
+
+    return { cnpj, pfx_base64: pfxBuf.toString('base64') };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -461,6 +503,14 @@ export class CertificadosService extends AuditableService {
     });
 
     await this.audit('CertificadoDigital', cert.id, AuditAcao.CREATE, { usuarioId, depois: { certificadoId: cert.id, empresaIds: dto.empresaIds, comProcuracao: !!dto.procuracao }, ipOrigem: ip });
+
+    // Dispara pipeline de coleta de SPEDs para o CNPJ
+    await this.pubSub.publish(this.topicNovoCertificado, {
+      evento:    'novo_certificado',
+      cnpj:      cert.cnpjCert,
+      tenantId,
+      timestamp: new Date().toISOString(),
+    }).catch((err) => this.logger.error(`Falha ao publicar novo_certificado: ${err}`));
 
     return { success: true, message: 'Certificado armazenado e associado com sucesso.', logs };
   }
