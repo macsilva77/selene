@@ -957,6 +957,9 @@ model CertificadoDigital {
   /// Chave privada em PEM, criptografada AES-256-GCM
   keyPemEnc      Bytes?               @map("key_pem_enc")
   keyPemIv       String?              @map("key_pem_iv")
+  /// Senha do PFX original, criptografada AES-256-GCM (necessário para ReceitaNetBX/JSignNet)
+  senhaEnc       Bytes?               @map("senha_enc")
+  senhaIv        String?              @map("senha_iv")
   nomeArquivo    String?              @map("nome_arquivo")
   ativo          Boolean              @default(true)
   criadoEm      DateTime              @default(now()) @map("criado_em")

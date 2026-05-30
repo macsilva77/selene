@@ -199,17 +199,19 @@ export class CertificadosService extends AuditableService {
       orderBy: { criadoEm: 'desc' },
     });
     if (!cert) throw new NotFoundException(`Certificado ativo não encontrado para CNPJ ${cnpj}`);
-    if (!cert.certPemEnc || !cert.certPemIv || !cert.keyPemEnc || !cert.keyPemIv) {
-      throw new NotFoundException('Certificado não possui dados PEM armazenados');
+
+    // Retorna o PFX original (formato nativo da AC brasileira) + senha original.
+    // O JSignNet exige o PFX no formato da AC — PFX recodificado por forge/openssl falha.
+    if (cert.arquivoEnc && cert.storageIv && cert.senhaEnc && cert.senhaIv) {
+      const pfxBuf = this.decryptFile(cert.arquivoEnc, cert.storageIv);
+      const senha  = this.decryptFile(cert.senhaEnc, cert.senhaIv).toString('utf8');
+      return { cnpj, pfx_base64: pfxBuf.toString('base64'), senha };
     }
 
-    const pemCert = this.decryptFile(cert.certPemEnc, cert.certPemIv).toString('utf8');
-    const pemKey  = this.decryptFile(cert.keyPemEnc,  cert.keyPemIv).toString('utf8');
-    // Usa o CNPJ como senha do PFX exportado — determinístico e único por certificado
-    const senha   = cnpj;
-    const pfxBuf  = this.buildPfxFromPem(pemCert, pemKey, senha);
-
-    return { cnpj, pfx_base64: pfxBuf.toString('base64'), senha };
+    // Fallback para certificados anteriores ao armazenamento da senha
+    throw new NotFoundException(
+      `Certificado para CNPJ ${cnpj} não possui senha armazenada. Re-faça o upload do certificado.`,
+    );
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -264,6 +266,9 @@ export class CertificadosService extends AuditableService {
       ? this.encryptFile(Buffer.from(parsed.pemKey, 'utf8'))
       : null;
 
+    // Criptografa a senha do PFX (necessário para ReceitaNetBX/JSignNet que exige o PFX original)
+    const senhaEncResult = this.encryptFile(Buffer.from(password, 'utf8'));
+
     // Cria o registro (draft que será finalizado em /certificados)
     const cert = await this.prisma.certificadoDigital.create({
       data: {
@@ -284,6 +289,8 @@ export class CertificadosService extends AuditableService {
         certPemIv,
         keyPemEnc: pemKeyEncResult?.encrypted ?? null,
         keyPemIv: pemKeyEncResult?.storageIv ?? null,
+        senhaEnc: senhaEncResult.encrypted,
+        senhaIv: senhaEncResult.storageIv,
         nomeArquivo: file.originalname,
       },
     });
