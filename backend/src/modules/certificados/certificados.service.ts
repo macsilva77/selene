@@ -186,14 +186,14 @@ export class CertificadosService extends AuditableService {
 
   // ── PFX interno (para serviços internos) ─────────────────────────────────────
 
-  private buildPfxFromPem(pemCert: string, pemKey: string): Buffer {
+  private buildPfxFromPem(pemCert: string, pemKey: string, senha: string): Buffer {
     const cert = forge.pki.certificateFromPem(pemCert);
     const key  = forge.pki.privateKeyFromPem(pemKey);
-    const p12Asn1 = forge.pkcs12.toPkcs12Asn1(key, [cert], null, { algorithm: '3des' });
+    const p12Asn1 = forge.pkcs12.toPkcs12Asn1(key, [cert], senha, { algorithm: '3des' });
     return Buffer.from(forge.asn1.toDer(p12Asn1).getBytes(), 'binary');
   }
 
-  async exportarPfxInterno(cnpj: string): Promise<{ cnpj: string; pfx_base64: string }> {
+  async exportarPfxInterno(cnpj: string): Promise<{ cnpj: string; pfx_base64: string; senha: string }> {
     const cert = await this.prisma.certificadoDigital.findFirst({
       where: { cnpjCert: cnpj, ativo: true, status: { not: CertificadoStatus.REVOGADO } },
       orderBy: { criadoEm: 'desc' },
@@ -205,9 +205,11 @@ export class CertificadosService extends AuditableService {
 
     const pemCert = this.decryptFile(cert.certPemEnc, cert.certPemIv).toString('utf8');
     const pemKey  = this.decryptFile(cert.keyPemEnc,  cert.keyPemIv).toString('utf8');
-    const pfxBuf  = this.buildPfxFromPem(pemCert, pemKey);
+    // Usa o CNPJ como senha do PFX exportado — determinístico e único por certificado
+    const senha   = cnpj;
+    const pfxBuf  = this.buildPfxFromPem(pemCert, pemKey, senha);
 
-    return { cnpj, pfx_base64: pfxBuf.toString('base64') };
+    return { cnpj, pfx_base64: pfxBuf.toString('base64'), senha };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
