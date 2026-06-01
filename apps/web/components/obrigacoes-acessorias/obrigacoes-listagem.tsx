@@ -9,6 +9,7 @@ import {
   DownloadSimpleIcon,
   ProhibitIcon,
 } from '@phosphor-icons/react';
+import { ActionsMenu } from '@/components/ui/actions-menu';
 import {
   Table,
   TableBody,
@@ -243,17 +244,17 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
 
       {/* Tabela */}
       <div className="rounded-lg border border-border overflow-hidden">
-        <Table className="table-fixed">
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow className="bg-muted/30">
-              <TableHead className="w-[120px]">CNPJ</TableHead>
-              {showInscricaoEstadual && <TableHead className="w-[100px]">Insc. Estadual</TableHead>}
-              <TableHead className="w-[72px]">Finalidade</TableHead>
-              <TableHead>Hash</TableHead>
-              <TableHead className="w-[85px]">Data Início</TableHead>
-              <TableHead className="w-[85px]">Data Fim</TableHead>
-              <TableHead className="w-[110px]">Data Envio SPED</TableHead>
-              <TableHead className="w-[85px] text-right">Ações</TableHead>
+              <TableHead className="w-[13%]">CNPJ</TableHead>
+              {showInscricaoEstadual && <TableHead className="w-[9%]">Insc. Estadual</TableHead>}
+              <TableHead className="w-[8%]">Finalidade</TableHead>
+              <TableHead className="w-[20%]">Hash</TableHead>
+              <TableHead className="w-[10%]">Data Início</TableHead>
+              <TableHead className="w-[10%]">Data Fim</TableHead>
+              <TableHead className="w-[12%]">Data Envio SPED</TableHead>
+              <TableHead className="w-[5%] text-center">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -276,29 +277,23 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
                   <TableCell className="text-xs">{item.inscricaoEstadual ?? '—'}</TableCell>
                 )}
                 <TableCell className="text-xs">{item.finalidade}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground overflow-hidden" title={item.hash}>
-                  <span className="block truncate">{item.hash}</span>
+                <TableCell className="overflow-hidden" title={item.hash}>
+                  <span className="block truncate font-mono text-xs text-muted-foreground">{item.hash}</span>
                 </TableCell>
-                <TableCell className="text-xs">
-                  {formatarData(item.dataInicial)}
-                </TableCell>
-                <TableCell className="text-xs">
-                  {formatarData(item.dataFinal)}
-                </TableCell>
-                <TableCell className="text-xs">
-                  {formatarData(item.dataEntrega)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {item.statusProcessamento === 'Processado' && (
-                    <button
-                      type="button"
-                      title="Baixar arquivo"
-                      onClick={() => void handleDownload(item)}
-                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs border border-input hover:bg-muted transition-colors">
-                      <DownloadSimpleIcon size={13} />
-                      Download
-                    </button>
-                  )}
+                <TableCell className="text-xs">{formatarData(item.dataInicial)}</TableCell>
+                <TableCell className="text-xs">{formatarData(item.dataFinal)}</TableCell>
+                <TableCell className="text-xs">{formatarData(item.dataEntrega)}</TableCell>
+                <TableCell className="text-center">
+                  <ActionsMenu
+                    actions={[
+                      {
+                        label: 'Download',
+                        icon: <DownloadSimpleIcon size={14} />,
+                        onClick: () => void handleDownload(item),
+                        hidden: item.statusProcessamento !== 'Processado',
+                      },
+                    ]}
+                  />
                 </TableCell>
               </TableRow>
             ))}
