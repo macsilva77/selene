@@ -1225,53 +1225,41 @@ function FiltersBar({
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground">Empresa</label>
           <div ref={empresaComboRef} className="relative">
-            <button
-              type="button"
-              onClick={() => { setEmpresaAberta((v) => !v); if (!empresaAberta) setEmpresaBusca(''); }}
-              className={`${inputCls} min-w-64 max-w-xs flex items-center justify-between gap-2`}
-            >
-              <span className="truncate">
-                {configSelecionada
-                  ? <><span className="font-mono">{maskCnpj(configSelecionada.cnpj)}</span><span className="text-muted-foreground"> — {configSelecionada.nomeFantasia || configSelecionada.nome || ''}</span></>
-                  : <span className="text-muted-foreground">Todas as empresas</span>
-                }
-              </span>
-              <CaretDownIcon size={12} className={`shrink-0 text-muted-foreground transition-transform ${empresaAberta ? 'rotate-180' : ''}`} />
-            </button>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Todas as empresas — pesquise por CNPJ ou nome"
+              className={`${inputCls} w-72 pr-7`}
+              value={empresaAberta
+                ? empresaBusca
+                : configSelecionada
+                  ? `${maskCnpj(configSelecionada.cnpj)} — ${configSelecionada.nomeFantasia || configSelecionada.nome || ''}`
+                  : ''}
+              onChange={(e) => { setEmpresaBusca(e.target.value); setEmpresaAberta(true); }}
+              onFocus={() => { setEmpresaBusca(''); setEmpresaAberta(true); }}
+            />
+            <CaretDownIcon
+              size={12}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
             {empresaAberta && (
-              <div className="absolute z-50 mt-1 min-w-full w-max max-w-sm rounded-lg border border-border bg-background shadow-lg">
-                <div className="p-2 border-b border-border">
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Pesquisar por CNPJ ou nome…"
-                    value={empresaBusca}
-                    onChange={(e) => setEmpresaBusca(e.target.value)}
-                    className="w-full rounded-md border border-input bg-muted/30 px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-                <ul className="max-h-52 overflow-y-auto py-1">
-                  <li>
-                    <button type="button"
-                      onClick={() => { upd('configId', ''); setEmpresaAberta(false); setEmpresaBusca(''); }}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/60 transition-colors text-muted-foreground ${!filters.configId ? 'bg-primary/5 font-medium' : ''}`}>
-                      Todas as empresas
-                    </button>
-                  </li>
-                  {configsFiltradas.map((c) => (
-                    <li key={c.id}>
-                      <button type="button"
-                        onClick={() => { upd('configId', c.id); setEmpresaAberta(false); setEmpresaBusca(''); }}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/60 transition-colors flex items-center gap-2 ${filters.configId === c.id ? 'bg-primary/5 font-medium' : ''}`}>
-                        <span className="font-mono text-xs text-muted-foreground shrink-0">{maskCnpj(c.cnpj)}</span>
-                        <span className="whitespace-nowrap">{c.nomeFantasia || c.nome || ''}</span>
-                      </button>
-                    </li>
-                  ))}
-                  {configsFiltradas.length === 0 && (
-                    <li className="px-3 py-2 text-xs text-muted-foreground">Nenhuma empresa encontrada.</li>
-                  )}
-                </ul>
+              <div className="absolute z-50 mt-1 w-full min-w-[380px] rounded-lg border border-border bg-background shadow-lg max-h-64 overflow-y-auto">
+                <button type="button"
+                  onClick={() => { upd('configId', ''); setEmpresaAberta(false); setEmpresaBusca(''); }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors text-muted-foreground border-b border-border/50 ${!filters.configId ? 'bg-primary/5 font-medium' : ''}`}>
+                  Todas as empresas
+                </button>
+                {configsFiltradas.length === 0 && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">Nenhuma empresa encontrada.</p>
+                )}
+                {configsFiltradas.map((c) => (
+                  <button type="button" key={c.id}
+                    onClick={() => { upd('configId', c.id); setEmpresaAberta(false); setEmpresaBusca(''); }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${filters.configId === c.id ? 'bg-primary/5 font-medium' : ''}`}>
+                    <span className="font-mono text-xs text-muted-foreground shrink-0">{maskCnpj(c.cnpj)}</span>
+                    <span className="text-foreground truncate">{c.nomeFantasia || c.nome || ''}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
