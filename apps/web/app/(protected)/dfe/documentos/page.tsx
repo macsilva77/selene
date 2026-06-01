@@ -1200,11 +1200,16 @@ function FiltersBar({
   const inputCls = 'rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring';
 
   const configSelecionada = configs.find((c) => c.id === filters.configId);
-  const configsFiltradas = configs.filter((c) => {
-    const q = empresaBusca.toLowerCase();
-    const nome = c.nomeFantasia || c.nome || '';
-    return c.cnpj.includes(q) || nome.toLowerCase().includes(q);
-  });
+  // Normaliza: remove ./- para comparar CNPJ sem pontuação; aceita busca por razão social
+  const configsFiltradas = (() => {
+    const termo = empresaBusca.replace(/[.\-/]/g, '').toLowerCase();
+    if (!termo) return configs;
+    return configs.filter((c) => {
+      const cnpjNorm = c.cnpj.replace(/[.\-/]/g, '').toLowerCase();
+      const nome     = (c.nomeFantasia || c.nome || '').toLowerCase();
+      return cnpjNorm.includes(termo) || nome.includes(termo);
+    });
+  })();
 
   React.useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -1218,17 +1223,17 @@ function FiltersBar({
   }, []);
 
   return (
-    <div className="shrink-0 border-b bg-card px-6 py-3 space-y-2">
+    <div className="shrink-0 border-b bg-card px-6 py-3 flex flex-col gap-[10px]">
 
-      {/* Linha 1: Empresa + Raiz CNPJ */}
-      <div className="flex items-end gap-3 w-fit">
-        <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-medium text-muted-foreground">Empresa</label>
-          <div ref={empresaComboRef} className="relative">
+      {/* Linha 1: Empresa / Razão Social — termina alinhada com o botão Filtrar */}
+      <div className="flex items-end gap-[10px]">
+        <div className="flex flex-col gap-1 flex-1 min-w-0" ref={empresaComboRef}>
+          <label className="text-xs text-muted-foreground">Empresa / Razão Social</label>
+          <div className="relative">
             <input
               type="text"
               autoComplete="off"
-              placeholder="Todas as empresas — pesquise por CNPJ ou nome"
+              placeholder="Todas as empresas — pesquise por CNPJ ou razão social"
               className={`${inputCls} w-full pr-7`}
               value={empresaAberta
                 ? empresaBusca
@@ -1238,19 +1243,17 @@ function FiltersBar({
               onChange={(e) => { setEmpresaBusca(e.target.value); setEmpresaAberta(true); }}
               onFocus={() => { setEmpresaBusca(''); setEmpresaAberta(true); }}
             />
-            <CaretDownIcon
-              size={12}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
+            <CaretDownIcon size={12}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             {empresaAberta && (
-              <div className="absolute z-50 mt-1 w-full min-w-[380px] rounded-lg border border-border bg-background shadow-lg max-h-64 overflow-y-auto">
+              <div className="absolute z-50 mt-1 w-full min-w-[400px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
                 <button type="button"
                   onClick={() => { upd('configId', ''); setEmpresaAberta(false); setEmpresaBusca(''); }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors text-muted-foreground border-b border-border/50 ${!filters.configId ? 'bg-primary/5 font-medium' : ''}`}>
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors text-muted-foreground border-b border-input/30 ${!filters.configId ? 'bg-primary/5 font-medium' : ''}`}>
                   Todas as empresas
                 </button>
                 {configsFiltradas.length === 0 && (
-                  <p className="px-3 py-2 text-xs text-muted-foreground">Nenhuma empresa encontrada.</p>
+                  <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada.</p>
                 )}
                 {configsFiltradas.map((c) => (
                   <button type="button" key={c.id}
@@ -1264,62 +1267,63 @@ function FiltersBar({
             )}
           </div>
         </div>
-        <label className="flex items-center gap-1 cursor-pointer pb-2 whitespace-nowrap">
+        {/* Ghost do Limpar — alinha borda direita do campo com o botão Filtrar */}
+        <div aria-hidden="true" className="invisible shrink-0 pointer-events-none">
+          <button type="button" tabIndex={-1}
+            className="flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-sm">
+            <XIcon size={13} />Limpar
+          </button>
+        </div>
+      </div>
+
+      {/* Linha 2: filtros + Raiz CNPJ + botões */}
+      <div className="flex items-end gap-[10px] flex-wrap">
+        <label className="flex items-center gap-1 cursor-pointer pb-[3px] shrink-0">
           <input type="checkbox" checked={filters.raizCnpj}
             onChange={(e) => { upd('raizCnpj', e.target.checked); }}
             className="rounded accent-primary" />
-          <span className="text-xs text-foreground">Raiz CNPJ</span>
+          <span className="text-xs text-foreground whitespace-nowrap">Raiz CNPJ</span>
         </label>
-      </div>
 
-      {/* Linha 2: demais filtros */}
-      <div className="flex items-end gap-2 flex-wrap">
-
-        {/* Número Chave */}
         <div className="flex flex-col gap-1 flex-1 min-w-36">
-          <label htmlFor="f-chave" className="text-xs font-medium text-muted-foreground">Chave NF-e</label>
+          <label htmlFor="f-chave" className="text-xs text-muted-foreground">Chave NF-e</label>
           <input id="f-chave" type="text" placeholder="44 dígitos…" value={filters.chaveAcesso}
             onChange={(e) => { upd('chaveAcesso', e.target.value); }}
             onKeyDown={(e) => { if (e.key === 'Enter') onApply(); }}
             className={`${inputCls} w-full`} />
         </div>
 
-        {/* CNPJ emitente */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="f-cnpj" className="text-xs font-medium text-muted-foreground">CNPJ</label>
+        <div className="flex flex-col gap-1 shrink-0">
+          <label htmlFor="f-cnpj" className="text-xs text-muted-foreground">CNPJ Emitente</label>
           <input id="f-cnpj" type="text" placeholder="00.000.000/0001-00" value={filters.cnpjEmitente}
             onChange={(e) => { upd('cnpjEmitente', e.target.value); }}
             className={`${inputCls} w-40`} />
         </div>
 
-        {/* Número Doc (nNF) */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="f-nnf" className="text-xs font-medium text-muted-foreground">Nº Doc</label>
+        <div className="flex flex-col gap-1 shrink-0">
+          <label htmlFor="f-nnf" className="text-xs text-muted-foreground">Nº Doc</label>
           <input id="f-nnf" type="text" placeholder="519104" value={filters.nNF}
             onChange={(e) => { upd('nNF', e.target.value.replace(/\D/g, '')); }}
             onKeyDown={(e) => { if (e.key === 'Enter') onApply(); }}
             className={`${inputCls} w-24`} />
         </div>
 
-        {/* Emissão de */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="f-di" className="text-xs font-medium text-muted-foreground">Emissão a partir</label>
+        <div className="flex flex-col gap-1 shrink-0">
+          <label htmlFor="f-di" className="text-xs text-muted-foreground">Emissão a partir</label>
           <input id="f-di" type="date" title="Emissão a partir" value={filters.dataInicio}
             onChange={(e) => { upd('dataInicio', e.target.value); }}
             className={inputCls} />
         </div>
 
-        {/* Emissão até */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="f-df" className="text-xs font-medium text-muted-foreground">Emissão até</label>
+        <div className="flex flex-col gap-1 shrink-0">
+          <label htmlFor="f-df" className="text-xs text-muted-foreground">Emissão até</label>
           <input id="f-df" type="date" title="Emissão até" value={filters.dataFim}
             onChange={(e) => { upd('dataFim', e.target.value); }}
             className={inputCls} />
         </div>
 
-        {/* Filtro avançado toggle */}
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground invisible">toggle</span>
+        <div className="flex flex-col gap-1 shrink-0">
+          <span className="text-xs text-muted-foreground invisible">toggle</span>
           <button type="button" onClick={() => { setShowAdvanced((v) => !v); }}
             className={[
               'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm transition-colors whitespace-nowrap',
@@ -1332,10 +1336,9 @@ function FiltersBar({
           </button>
         </div>
 
-        {/* Botões */}
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground invisible">btn</span>
-          <div className="flex items-center gap-1.5">
+        <div className="flex flex-col gap-1 shrink-0">
+          <span className="text-xs text-muted-foreground invisible">btn</span>
+          <div className="flex items-center gap-[10px]">
             <button type="button" onClick={onApply}
               className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
               <FunnelIcon size={14} />Filtrar
@@ -1348,7 +1351,7 @@ function FiltersBar({
             ) : null}
           </div>
         </div>
-      </div>{/* fim linha 2 */}
+      </div>
 
       {/* Linha avançada */}
       {showAdvanced ? (
