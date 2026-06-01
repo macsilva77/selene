@@ -189,12 +189,14 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             <option value="">Todos</option>
             {empresas.map((emp) => {
               const nomeCompleto = emp.nomeFantasia || emp.nome;
-              const nome = nomeCompleto && nomeCompleto.length > 45
-                ? `${nomeCompleto.slice(0, 45)}…`
-                : nomeCompleto;
+              const label = nomeCompleto
+                ? nomeCompleto.length > 50
+                  ? `${nomeCompleto.slice(0, 50)}…`
+                  : nomeCompleto
+                : formatarCnpj(emp.cnpj);
               return (
                 <option key={emp.id} value={emp.cnpj.replace(/\D/g, '')}>
-                  {formatarCnpj(emp.cnpj)}{nome ? ` — ${nome}` : ''}
+                  {label}
                 </option>
               );
             })}
