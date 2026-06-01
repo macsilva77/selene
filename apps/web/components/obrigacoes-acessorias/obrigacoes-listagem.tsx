@@ -193,7 +193,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
 
       {/* Filtros — query params persistidos na URL */}
       <form onSubmit={handleFiltrar}
-        className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3">
+        className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 w-fit">
         {/* Linha 1: CNPJ — combobox pesquisável */}
         {(() => {
           const empSel = cnpj ? empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpj) : null;
@@ -213,13 +213,13 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
               })
             : empresas;
           return (
-            <div className="flex flex-col gap-1 w-96" ref={cnpjRef}>
+            <div className="flex flex-col gap-1 w-full" ref={cnpjRef}>
               <label className="text-xs text-muted-foreground">CNPJ</label>
               <div className="relative">
                 <input
                   type="text"
                   className={`${inputCls} w-full pr-7`}
-                  placeholder="Todos"
+                  placeholder="Todos — pesquise por CNPJ ou razão social"
                   value={cnpjOpen ? cnpjSearch : displaySelecionado}
                   onChange={(e) => { setCnpjSearch(e.target.value); setCnpjOpen(true); }}
                   onFocus={() => { setCnpjSearch(''); setCnpjOpen(true); }}
