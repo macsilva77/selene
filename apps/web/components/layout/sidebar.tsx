@@ -26,6 +26,21 @@ type NavSection = { id: string; label: string; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
   {
+    id: 'configuracoes',
+    label: 'Configurações',
+    items: [
+      { href: '/auditoria',    icon: ClipboardTextIcon,   label: 'Auditoria' },
+      { href: '/certificados', icon: CertificateIcon,     label: 'Certificados A1' },
+      { href: '/dfe',          icon: CloudArrowDownIcon,  label: 'DFe' },
+      { href: '/empresas',     icon: BuildingsIcon,       label: 'Empresas' },
+      { href: '/etiquetas',    icon: TagIcon,             label: 'Etiquetas' },
+      { href: '/fornecedores', icon: TruckIcon,           label: 'Fornecedores' },
+      { href: '/perfis',       icon: UserCircleGearIcon,  label: 'Perfis' },
+      { href: '/unidades',     icon: FingerprintIcon,     label: 'Unid. Administrativas' },
+      { href: '/usuarios',     icon: UsersIcon,           label: 'Usuários' },
+    ],
+  },
+  {
     id: 'documentos',
     label: 'Documentos Eletrônicos',
     items: [
@@ -36,25 +51,10 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'obrigacoes',
     label: 'Obrigações Acessórias',
     items: [
-      { href: '/obrigacoes-acessorias/efd-icms-ipi',     icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
       { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
       { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
       { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
-    ],
-  },
-  {
-    id: 'configuracoes',
-    label: 'Configurações',
-    items: [
-      { href: '/dfe',          icon: CloudArrowDownIcon,  label: 'DFe' },
-      { href: '/certificados', icon: CertificateIcon,     label: 'Certificados A1' },
-      { href: '/usuarios',     icon: UsersIcon,           label: 'Usuários' },
-      { href: '/empresas',     icon: BuildingsIcon,       label: 'Empresas' },
-      { href: '/etiquetas',    icon: TagIcon,             label: 'Etiquetas' },
-      { href: '/auditoria',    icon: ClipboardTextIcon,   label: 'Auditoria' },
-      { href: '/perfis',       icon: UserCircleGearIcon,  label: 'Perfis' },
-      { href: '/fornecedores', icon: TruckIcon,           label: 'Fornecedores' },
-      { href: '/unidades',     icon: FingerprintIcon,     label: 'Unid. Administrativas' },
+      { href: '/obrigacoes-acessorias/efd-icms-ipi',      icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
     ],
   },
 ];
