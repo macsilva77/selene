@@ -1480,3 +1480,39 @@ model SpedArquivo {
   @@index([tenantId, cnpj])
   @@map("sped_arquivos")
 }
+
+// ─── OBRIGAÇÕES ACESSÓRIAS ────────────────────────────────────────────────────
+// Enums gerenciados na camada de aplicação (RN-03). Banco armazena varchar.
+
+model ObrigacaoAcessoria {
+  id                     String              @id @default(uuid())
+  idEvento               String              @unique @map("id_evento") @db.VarChar(255)
+  tipoObrigacao          String              @map("tipo_obrigacao") @db.VarChar(30)
+  cnpj                   String              @db.VarChar(14)
+  inscricaoEstadual      String?             @map("inscricao_estadual") @db.VarChar(20)
+  dataInicial            DateTime            @map("data_inicial") @db.Date
+  dataFinal              DateTime            @map("data_final") @db.Date
+  finalidade             String              @db.VarChar(20)
+  hash                   String              @db.VarChar(64)
+  dataEntrega            DateTime            @map("data_entrega") @db.Timestamptz(6)
+  nomeArquivo            String              @map("nome_arquivo") @db.VarChar(500)
+  caminhoBucket          String              @map("caminho_bucket") @db.VarChar(1000)
+  statusProcessamento    String              @map("status_processamento") @db.VarChar(50)
+  origem                 String              @db.VarChar(20)
+  versao                 Int                 @default(1)
+  versaoAtual            Boolean             @default(true) @map("versao_atual")
+  dataRecebimentoEvento  DateTime            @map("data_recebimento_evento") @db.Timestamptz(6)
+  obrigacaoPaiId         String?             @map("obrigacao_pai_id")
+  criadoEm               DateTime            @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm           DateTime            @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+  atualizadoPor          String              @map("atualizado_por") @db.VarChar(255)
+
+  // RN-11: auto-relacionamento para versões/retificações
+  obrigacaoPai           ObrigacaoAcessoria?  @relation("ObrigacaoVersoes", fields: [obrigacaoPaiId], references: [id])
+  versoes                ObrigacaoAcessoria[] @relation("ObrigacaoVersoes")
+
+  @@index([cnpj, tipoObrigacao, dataInicial, dataFinal])
+  @@index([statusProcessamento])
+  @@index([versaoAtual])
+  @@map("obrigacao_acessoria")
+}

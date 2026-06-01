@@ -15,6 +15,7 @@ import {
   FileMagnifyingGlassIcon,
   SignOutIcon,
   TagIcon,
+  ReceiptIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -32,6 +33,13 @@ const CONFIG_ITEMS = [
   { href: '/etiquetas', icon: TagIcon, label: 'Etiquetas' },
   { href: '/unidades', icon: FingerprintIcon, label: 'Unidades' },
   { href: '/auditoria', icon: ClipboardTextIcon, label: 'Auditoria' },
+] as const;
+
+const OBRIGACOES_ITEMS = [
+  { href: '/obrigacoes-acessorias/efd-icms-ipi',    icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
+  { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
+  { href: '/obrigacoes-acessorias/ecd',             icon: ReceiptIcon, label: 'ECD' },
+  { href: '/obrigacoes-acessorias/ecf',             icon: ReceiptIcon, label: 'ECF' },
 ] as const;
 
 export function SeleneSidebar() {
@@ -91,6 +99,31 @@ export function SeleneSidebar() {
           </p>
         </div>
         {CONFIG_ITEMS.map(({ href, icon: Icon, label }) => {
+          const active = isActive(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={[
+                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                active
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                  : 'text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              ].join(' ')}
+            >
+              <Icon size={18} weight={active ? 'fill' : 'regular'} />
+              {label}
+            </Link>
+          );
+        })}
+
+        {/* Seção Obrigações Acessórias */}
+        <div className="pt-4 pb-1 px-3">
+          <p className="text-xs text-sidebar-foreground/40 font-medium">
+            Obrigações Acessórias
+          </p>
+        </div>
+        {OBRIGACOES_ITEMS.map(({ href, icon: Icon, label }) => {
           const active = isActive(href);
           return (
             <Link

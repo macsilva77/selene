@@ -43,7 +43,8 @@ function loadConfiguration() {
       topicCienciaEnviada:          process.env['PUBSUB_TOPIC_CIENCIA_ENVIADA']          || '',
       topicNfeBaixada:              process.env['PUBSUB_TOPIC_NFE_BAIXADA']              || '',
       topicNovoCertificado:         process.env['PUBSUB_TOPIC_NOVO_CERTIFICADO']         || '',
-      subscriptionSpedProcessado:   process.env['PUBSUB_SUBSCRIPTION_SPED_PROCESSADO']  || '',
+      subscriptionSpedProcessado:        process.env['PUBSUB_SUBSCRIPTION_SPED_PROCESSADO']       || '',
+      subscriptionObrigacaoRecebida:     process.env['PUBSUB_SUBSCRIPTION_OBRIGACAO_RECEBIDA']    || '',
     },
 
     internalApiToken: process.env['INTERNAL_API_TOKEN'] || '',
