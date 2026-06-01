@@ -50,11 +50,11 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   const searchParams = useSearchParams();
   const { toasts, success, error: toastError, dismiss } = useToast();
 
-  // ── Lista de empresas para o select de CNPJ ──
+  // ── Lista de empresas para o combobox de CNPJ ──
   const [empresas, setEmpresas] = useState<{ id: string; cnpj: string; nome: string; nomeFantasia?: string }[]>([]);
 
   useEffect(() => {
-    api.get('/empresas?limit=200&ativo=true')
+    api.get('/empresas?limit=500&ativo=true')
       .then((res) => {
         const list = (res.data?.data ?? res.data ?? []) as { id: string; cnpj: string; nome: string; nomeFantasia?: string }[];
         setEmpresas(list.filter((e) => e.cnpj));
@@ -63,8 +63,8 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   }, []);
 
   // ── Combobox CNPJ ──
-  const [cnpjSearch,  setCnpjSearch]  = useState('');
-  const [cnpjOpen,    setCnpjOpen]    = useState(false);
+  const [cnpjSearch, setCnpjSearch] = useState('');
+  const [cnpjOpen,   setCnpjOpen]   = useState(false);
   const cnpjRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,19 +79,19 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   }, []);
 
   // ── Estado dos filtros (sincronizados com URL) ──
-  const [cnpj,         setCnpj]         = useState(searchParams.get('cnpj') ?? '');
-  const [dataInicial,  setDataInicial]  = useState(searchParams.get('dataInicial') ?? '');
-  const [dataFinal,    setDataFinal]    = useState(searchParams.get('dataFinal') ?? '');
-  const [finalidade,   setFinalidade]   = useState<FinalidadeObrigacao | ''>(
+  const [cnpj,        setCnpj]       = useState(searchParams.get('cnpj') ?? '');
+  const [dataInicial, setDataInicial] = useState(searchParams.get('dataInicial') ?? '');
+  const [dataFinal,   setDataFinal]   = useState(searchParams.get('dataFinal') ?? '');
+  const [finalidade,  setFinalidade]  = useState<FinalidadeObrigacao | ''>(
     (searchParams.get('finalidade') as FinalidadeObrigacao) ?? '',
   );
-  const [page,         setPage]         = useState(Number(searchParams.get('page') ?? 1));
+  const [page, setPage] = useState(Number(searchParams.get('page') ?? 1));
 
   // ── Estado de dados ──
-  const [items,        setItems]        = useState<ObrigacaoAcessoria[]>([]);
-  const [total,        setTotal]        = useState(0);
-  const [totalPages,   setTotalPages]   = useState(1);
-  const [carregando,   setCarregando]   = useState(false);
+  const [items,      setItems]      = useState<ObrigacaoAcessoria[]>([]);
+  const [total,      setTotal]      = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [carregando, setCarregando] = useState(false);
 
   // ── Modal de upload ──
   const [uploadAberto, setUploadAberto] = useState(false);
@@ -112,12 +112,12 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     try {
       const resp = await obrigacoesApi.listar({
         tipoObrigacao,
-        cnpj:         cnpj.replace(/\D/g, '') || undefined,
-        dataInicial:  dataInicial || undefined,
-        dataFinal:    dataFinal   || undefined,
-        finalidade:   finalidade  || undefined,
-        page:         pg,
-        size:         PAGE_SIZE,
+        cnpj:        cnpj.replace(/\D/g, '') || undefined,
+        dataInicial: dataInicial || undefined,
+        dataFinal:   dataFinal   || undefined,
+        finalidade:  finalidade  || undefined,
+        page:        pg,
+        size:        PAGE_SIZE,
       });
       setItems(resp.items);
       setTotal(resp.total);
@@ -129,7 +129,6 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     }
   }, [tipoObrigacao, cnpj, dataInicial, dataFinal, finalidade, page, toastError]);
 
-  // Carrega na montagem e quando a página muda
   useEffect(() => { void buscar(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleFiltrar(e: React.FormEvent) {
@@ -147,7 +146,6 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     void buscar(1);
   }
 
-  // ── Download via proxy (sem Signed URL) ──
   async function handleDownload(item: ObrigacaoAcessoria) {
     try {
       await obrigacoesApi.baixarArquivo(item.id, item.nomeArquivo);
@@ -156,18 +154,29 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     }
   }
 
-  // ── Paginação ──
   function irPagina(pg: number) {
     setPage(pg);
     pushParams({ page: pg });
   }
 
-  // ── Row style para erros (RN-17) ──
   function rowCls(item: ObrigacaoAcessoria) {
     return item.statusProcessamento.startsWith('Erro_')
       ? 'bg-destructive/5 hover:bg-destructive/10'
       : '';
   }
+
+  // ── Filtro do combobox ──
+  const empSel     = cnpj ? empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpj) : null;
+  const nomeSel    = empSel ? (empSel.nomeFantasia || empSel.nome || '') : '';
+  const displaySel = empSel ? `${formatarCnpj(empSel.cnpj)} — ${nomeSel}` : '';
+  const termo      = cnpjSearch.replace(/[.\-/]/g, '').toLowerCase();
+  const empsFiltradas = termo
+    ? empresas.filter((e) => {
+        const cnpjNorm = e.cnpj.replace(/[.\-/]/g, '').toLowerCase();
+        const nome     = (e.nomeFantasia || e.nome || '').toLowerCase();
+        return cnpjNorm.includes(termo) || nome.includes(termo);
+      })
+    : empresas;
 
   return (
     <div className="space-y-4">
@@ -191,109 +200,94 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         </div>
       </div>
 
-      {/* Filtros */}
-      {(() => {
-        const empSel      = cnpj ? empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpj) : null;
-        const nomeSel     = empSel ? (empSel.nomeFantasia || empSel.nome || '') : '';
-        const displaySel  = empSel ? `${formatarCnpj(empSel.cnpj)} — ${nomeSel}` : '';
-        // Normalização per spec: remove . - / , lowercase
-        const termo = cnpjSearch.replace(/[.\-/]/g, '').toLowerCase();
-        const empsFiltradas = termo
-          ? empresas.filter((e) => {
-              const cnpjNorm = e.cnpj.replace(/[.\-/]/g, '').toLowerCase();
-              const nome     = (e.nomeFantasia || e.nome || '').toLowerCase();
-              return cnpjNorm.includes(termo) || nome.includes(termo);
-            })
-          : empresas;
-
-        return (
-          /* card w-full — campos internos têm largura fixa via inline-flex */
-          <form onSubmit={handleFiltrar}
-            className="w-full rounded-lg border border-border bg-card px-4 py-3">
-            <div className="inline-flex flex-col gap-[10px]">
-
-            {/* Linha 1: CNPJ / Razão Social — borda direita alinhada com Filtrar */}
-            <div className="flex items-end gap-[10px]">
-              <div className="flex flex-col gap-1 min-w-[420px]" ref={cnpjRef}>
-                <label className="text-xs text-muted-foreground">CNPJ / Razão Social</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    placeholder="Todos — pesquise por CNPJ ou razão social"
-                    className={`${inputCls} w-full pr-7`}
-                    value={cnpjOpen ? cnpjSearch : displaySel}
-                    onChange={(e) => { setCnpjSearch(e.target.value); setCnpjOpen(true); }}
-                    onFocus={() => { setCnpjSearch(''); setCnpjOpen(true); }}
-                  />
-                  <CaretDownIcon size={13}
-                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  {cnpjOpen && (
-                    <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[400px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
-                      <button type="button"
-                        className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors border-b border-input/30"
-                        onClick={() => { setCnpj(''); setCnpjSearch(''); setCnpjOpen(false); }}>
-                        Todos
-                      </button>
-                      {empsFiltradas.length === 0 && (
-                        <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
-                      )}
-                      {empsFiltradas.map((emp) => {
-                        const nome = emp.nomeFantasia || emp.nome;
-                        return (
-                          <button type="button" key={emp.id}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj.replace(/\D/g, '') ? 'bg-primary/5 font-medium' : ''}`}
-                            onClick={() => { setCnpj(emp.cnpj.replace(/\D/g, '')); setCnpjSearch(''); setCnpjOpen(false); }}>
-                            <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
-                            {nome && <span className="text-foreground truncate">{nome}</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
+      {/*
+        FILTROS
+        ───────
+        Card: w-full (100% da tela)
+        Grid interno: 5 colunas fixas — 130px | 130px | 160px | auto(Filtrar) | auto(Limpar)
+        Linha 1: CNPJ abrange cols 1–4  →  borda direita = borda direita do Filtrar
+        Linha 2: Data Inicial | Data Final | Finalidade | Filtrar | Limpar
+        Nenhum campo usa flex:1
+      */}
+      <form onSubmit={handleFiltrar}
+        className="w-full rounded-lg border border-border bg-card px-4 py-3">
+        <div
+          className="inline-grid gap-[10px] grid-cols-[130px_130px_160px_auto_auto]"
+        >
+          {/* ── Linha 1: CNPJ / Razão Social (cols 1–4) ── */}
+          <div className="flex flex-col gap-1 col-span-4" ref={cnpjRef}>
+            <label className="text-xs text-muted-foreground">CNPJ / Razão Social</label>
+            <div className="relative">
+              <input
+                type="text"
+                autoComplete="off"
+                placeholder="Todos — pesquise por CNPJ ou razão social"
+                className={`${inputCls} w-full pr-7`}
+                value={cnpjOpen ? cnpjSearch : displaySel}
+                onChange={(e) => { setCnpjSearch(e.target.value); setCnpjOpen(true); }}
+                onFocus={() => { setCnpjSearch(''); setCnpjOpen(true); }}
+              />
+              <CaretDownIcon size={13}
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              {cnpjOpen && (
+                <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[420px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
+                  <button type="button"
+                    className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors border-b border-input/30"
+                    onClick={() => { setCnpj(''); setCnpjSearch(''); setCnpjOpen(false); }}>
+                    Todos
+                  </button>
+                  {empsFiltradas.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
                   )}
+                  {empsFiltradas.map((emp) => {
+                    const nome = emp.nomeFantasia || emp.nome;
+                    return (
+                      <button type="button" key={emp.id}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj.replace(/\D/g, '') ? 'bg-primary/5 font-medium' : ''}`}
+                        onClick={() => { setCnpj(emp.cnpj.replace(/\D/g, '')); setCnpjSearch(''); setCnpjOpen(false); }}>
+                        <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
+                        {nome && <span className="text-foreground truncate">{nome}</span>}
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-              {/* Ghost do botão Limpar — reserva espaço para alinhar borda direita do CNPJ com o Filtrar */}
-              <div aria-hidden="true" className="invisible shrink-0 pointer-events-none">
-                <button type="button" tabIndex={-1} className="h-8 rounded-md border border-input px-3 text-sm">Limpar</button>
-              </div>
+              )}
             </div>
+          </div>
+          {/* col 5 da linha 1: ghost invisível do Limpar — alinha borda direita */}
+          <div aria-hidden="true" className="invisible pointer-events-none self-end">
+            <button type="button" tabIndex={-1}
+              className="h-8 rounded-md border border-input px-3 text-sm">Limpar</button>
+          </div>
 
-            {/* Linha 2: campos largura fixa | Filtrar | Limpar */}
-            <div className="flex items-end gap-[10px]">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted-foreground">Data Inicial</label>
-                <input type="date" title="Data inicial" className={`${inputCls} w-[130px]`}
-                  value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted-foreground">Data Final</label>
-                <input type="date" title="Data final" className={`${inputCls} w-[130px]`}
-                  value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted-foreground">Finalidade</label>
-                <select title="Filtrar por finalidade" className={`${selectCls} w-[160px]`} value={finalidade}
-                  onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
-                  <option value="">Todas</option>
-                  <option value="Original">Original</option>
-                  <option value="Retificacao">Retificação</option>
-                </select>
-              </div>
-              <button type="submit"
-                className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors shrink-0">
-                Filtrar
-              </button>
-              <button type="button" onClick={handleLimpar}
-                className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors shrink-0">
-                Limpar
-              </button>
-            </div>
-
-            </div>{/* end inline-flex */}
-          </form>
-        );
-      })()}
+          {/* ── Linha 2: campos + botões (cada um em sua coluna) ── */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Data Inicial</label>
+            <input type="date" title="Data inicial" className={`${inputCls} w-full`}
+              value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Data Final</label>
+            <input type="date" title="Data final" className={`${inputCls} w-full`}
+              value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Finalidade</label>
+            <select title="Filtrar por finalidade" className={`${selectCls} w-full`} value={finalidade}
+              onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
+              <option value="">Todas</option>
+              <option value="Original">Original</option>
+              <option value="Retificacao">Retificação</option>
+            </select>
+          </div>
+          <button type="submit" className="self-end h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors">
+            Filtrar
+          </button>
+          <button type="button" onClick={handleLimpar} className="self-end h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors">
+            Limpar
+          </button>
+        </div>
+      </form>
 
       {/* Contagem */}
       <p className="text-sm text-muted-foreground">

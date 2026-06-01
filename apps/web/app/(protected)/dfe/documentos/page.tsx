@@ -1223,13 +1223,11 @@ function FiltersBar({
   }, []);
 
   return (
-    {/* card full-width — campos com largura fixa via inline-flex */}
-    <div className="shrink-0 border-b bg-card px-6 py-3">
-      <div className="inline-flex flex-col gap-[10px]">
+    <div className="shrink-0 border-b bg-card px-6 py-3 flex flex-col gap-[10px]">
 
-      {/* Linha 1: Empresa / Razão Social — borda direita alinhada com Filtrar */}
+      {/* Linha 1: Empresa / Razão Social — 420px fixo, compacto à esquerda */}
       <div className="flex items-end gap-[10px]">
-        <div className="flex flex-col gap-1 min-w-[420px]" ref={empresaComboRef}>
+        <div className="flex flex-col gap-1 w-[420px]" ref={empresaComboRef}>
           <label className="text-xs text-muted-foreground">Empresa / Razão Social</label>
           <div className="relative">
             <input
@@ -1268,13 +1266,6 @@ function FiltersBar({
               </div>
             )}
           </div>
-        </div>
-        {/* Ghost do Limpar — alinha borda direita do campo com o botão Filtrar */}
-        <div aria-hidden="true" className="invisible shrink-0 pointer-events-none">
-          <button type="button" tabIndex={-1}
-            className="flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-sm">
-            <XIcon size={13} />Limpar
-          </button>
         </div>
       </div>
 
@@ -1353,7 +1344,7 @@ function FiltersBar({
             ) : null}
           </div>
         </div>
-      </div>{/* end inline-flex */}
+      </div>
 
       {/* Linha avançada */}
       {showAdvanced ? (
