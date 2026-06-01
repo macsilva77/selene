@@ -26,7 +26,6 @@ import {
   formatarData,
   type TipoObrigacao,
   type FinalidadeObrigacao,
-  type StatusProcessamento,
   type ObrigacaoAcessoria,
 } from '@/lib/obrigacoes-api';
 
@@ -65,9 +64,6 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   const [cnpj,         setCnpj]         = useState(searchParams.get('cnpj') ?? '');
   const [dataInicial,  setDataInicial]  = useState(searchParams.get('dataInicial') ?? '');
   const [dataFinal,    setDataFinal]    = useState(searchParams.get('dataFinal') ?? '');
-  const [status,       setStatus]       = useState<StatusProcessamento | ''>(
-    (searchParams.get('status') as StatusProcessamento) ?? '',
-  );
   const [finalidade,   setFinalidade]   = useState<FinalidadeObrigacao | ''>(
     (searchParams.get('finalidade') as FinalidadeObrigacao) ?? '',
   );
@@ -101,7 +97,6 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         cnpj:         cnpj.replace(/\D/g, '') || undefined,
         dataInicial:  dataInicial || undefined,
         dataFinal:    dataFinal   || undefined,
-        statusProcessamento: status    || undefined,
         finalidade:   finalidade  || undefined,
         page:         pg,
         size:         PAGE_SIZE,
@@ -114,7 +109,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     } finally {
       setCarregando(false);
     }
-  }, [tipoObrigacao, cnpj, dataInicial, dataFinal, status, finalidade, page, toastError]);
+  }, [tipoObrigacao, cnpj, dataInicial, dataFinal, finalidade, page, toastError]);
 
   // Carrega na montagem e quando a página muda
   useEffect(() => { void buscar(page); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -123,13 +118,13 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     e.preventDefault();
     const pg = 1;
     setPage(pg);
-    pushParams({ cnpj, dataInicial, dataFinal, status: status || undefined, finalidade: finalidade || undefined, page: pg });
+    pushParams({ cnpj, dataInicial, dataFinal, finalidade: finalidade || undefined, page: pg });
     void buscar(pg);
   }
 
   function handleLimpar() {
     setCnpj(''); setDataInicial(''); setDataFinal('');
-    setStatus(''); setFinalidade(''); setPage(1);
+    setFinalidade(''); setPage(1);
     router.replace(pathname);
     void buscar(1);
   }
@@ -186,12 +181,13 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
 
       {/* Filtros — query params persistidos na URL */}
       <form onSubmit={handleFiltrar}
-        className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card px-4 py-3">
+        className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3">
+        {/* Linha 1: CNPJ em largura total para exibir nome completo */}
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">CNPJ</label>
           <select
             title="Filtrar por CNPJ"
-            className={`${selectCls} w-52`}
+            className={`${selectCls} w-full`}
             value={cnpj}
             onChange={(e) => setCnpj(e.target.value)}
           >
@@ -206,47 +202,37 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             })}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">Data Inicial</label>
-          <input type="date" title="Data inicial" className={`${inputCls} w-36`}
-            value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">Data Final</label>
-          <input type="date" title="Data final" className={`${inputCls} w-36`}
-            value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">Status</label>
-          <select title="Filtrar por status" className={`${selectCls} w-48`} value={status}
-            onChange={(e) => setStatus(e.target.value as StatusProcessamento | '')}>
-            <option value="">Todos</option>
-            <option value="Recebido">Recebido</option>
-            <option value="Processado">Processado</option>
-            <option value="Erro_Validacao">Erro: Validação</option>
-            <option value="Erro_Arquivo_Nao_Encontrado">Erro: Arquivo</option>
-            <option value="Erro_Hash_Divergente">Erro: Hash</option>
-            <option value="Erro_Duplicata_Original">Erro: Duplicata</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">Finalidade</label>
-          <select title="Filtrar por finalidade" className={`${selectCls} w-36`} value={finalidade}
-            onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
-            <option value="">Todas</option>
-            <option value="Original">Original</option>
-            <option value="Retificacao">Retificação</option>
-          </select>
-        </div>
-        <div className="flex gap-2 pb-0.5">
-          <button type="submit"
-            className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors">
-            Filtrar
-          </button>
-          <button type="button" onClick={handleLimpar}
-            className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors">
-            Limpar
-          </button>
+        {/* Linha 2: Demais filtros */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Data Inicial</label>
+            <input type="date" title="Data inicial" className={`${inputCls} w-36`}
+              value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Data Final</label>
+            <input type="date" title="Data final" className={`${inputCls} w-36`}
+              value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Finalidade</label>
+            <select title="Filtrar por finalidade" className={`${selectCls} w-36`} value={finalidade}
+              onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
+              <option value="">Todas</option>
+              <option value="Original">Original</option>
+              <option value="Retificacao">Retificação</option>
+            </select>
+          </div>
+          <div className="flex gap-2 pb-0.5">
+            <button type="submit"
+              className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors">
+              Filtrar
+            </button>
+            <button type="button" onClick={handleLimpar}
+              className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors">
+              Limpar
+            </button>
+          </div>
         </div>
       </form>
 
