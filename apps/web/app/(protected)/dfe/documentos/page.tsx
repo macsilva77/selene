@@ -1223,9 +1223,11 @@ function FiltersBar({
   }, []);
 
   return (
-    <div className="shrink-0 border-b bg-card px-6 py-3 flex flex-col gap-[10px]">
+    <div className="shrink-0 border-b bg-background px-6 py-3">
+      {/* card com borda igual às demais telas */}
+      <div className="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-[10px]">
 
-      {/* Linha 1: Empresa / Razão Social — 420px fixo, compacto à esquerda */}
+      {/* Linha 1: Empresa / Razão Social + Raiz CNPJ */}
       <div className="flex items-end gap-[10px]">
         <div className="flex flex-col gap-1 w-[420px]" ref={empresaComboRef}>
           <label className="text-xs text-muted-foreground">Empresa / Razão Social</label>
@@ -1267,23 +1269,23 @@ function FiltersBar({
             )}
           </div>
         </div>
-      </div>
-
-      {/* Linha 2: filtros + Raiz CNPJ + botões */}
-      <div className="flex items-end gap-[10px] flex-wrap">
-        <label className="flex items-center gap-1 cursor-pointer pb-[3px] shrink-0">
+        {/* Raiz CNPJ ao lado do campo Empresa */}
+        <label className="flex items-center gap-1.5 cursor-pointer self-end pb-[3px] shrink-0">
           <input type="checkbox" checked={filters.raizCnpj}
             onChange={(e) => { upd('raizCnpj', e.target.checked); }}
             className="rounded accent-primary" />
           <span className="text-xs text-foreground whitespace-nowrap">Raiz CNPJ</span>
         </label>
+      </div>
 
-        <div className="flex flex-col gap-1 flex-1 min-w-36">
+      {/* Linha 2: filtros + botões */}
+      <div className="flex items-end gap-[10px] flex-wrap">
+        <div className="flex flex-col gap-1 shrink-0">
           <label htmlFor="f-chave" className="text-xs text-muted-foreground">Chave NF-e</label>
           <input id="f-chave" type="text" placeholder="44 dígitos…" value={filters.chaveAcesso}
             onChange={(e) => { upd('chaveAcesso', e.target.value); }}
             onKeyDown={(e) => { if (e.key === 'Enter') onApply(); }}
-            className={`${inputCls} w-full`} />
+            className={`${inputCls} w-72`} />
         </div>
 
         <div className="flex flex-col gap-1 shrink-0">
@@ -1347,6 +1349,7 @@ function FiltersBar({
       </div>
 
       {/* Linha avançada */}
+
       {showAdvanced ? (
         <div className="flex flex-wrap gap-2 items-end pt-2 border-t">
           <div className="flex flex-col gap-1">
@@ -1389,6 +1392,7 @@ function FiltersBar({
           </div>
         </div>
       ) : null}
+      </div>{/* end card */}
     </div>
   );
 }
