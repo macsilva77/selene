@@ -86,6 +86,20 @@ export const obrigacoesApi = {
       .then((r) => r.data);
   },
 
+  async baixarArquivo(id: string, nomeArquivo: string): Promise<void> {
+    const resp = await api.get(`/obrigacoes-acessorias/${id}/download`, {
+      responseType: 'blob',
+    });
+    const url = URL.createObjectURL(resp.data as Blob);
+    const a   = document.createElement('a');
+    a.href     = url;
+    a.download = nomeArquivo;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   upload({ onProgress, arquivo, ...campos }: UploadPayload): Promise<{ id: string }> {
     const form = new FormData();
     Object.entries(campos).forEach(([k, v]) => { if (v !== undefined) form.append(k, v); });

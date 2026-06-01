@@ -130,18 +130,12 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
     void buscar(1);
   }
 
-  // ── Download ──
+  // ── Download via proxy (sem Signed URL) ──
   async function handleDownload(item: ObrigacaoAcessoria) {
     try {
-      const { url } = await obrigacoesApi.gerarDownloadUrl(item.id);
-      const a = document.createElement('a');
-      a.href  = url;
-      a.download = item.nomeArquivo;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      await obrigacoesApi.baixarArquivo(item.id, item.nomeArquivo);
     } catch {
-      toastError('Não foi possível gerar o link de download');
+      toastError('Não foi possível baixar o arquivo');
     }
   }
 

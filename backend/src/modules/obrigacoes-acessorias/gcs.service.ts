@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Storage, File } from '@google-cloud/storage';
 import { createHash } from 'crypto';
 import { pipeline } from 'stream/promises';
-import { Writable } from 'stream';
+import { Readable, Writable } from 'stream';
 
 export interface SignedUrlOptions {
   /** Data/hora de expiração */
@@ -96,6 +96,15 @@ export class GcsService {
     const file = this.storage.bucket(bucket).file(filePath);
     await file.save(buffer, { contentType });
     this.logger.log(`Upload concluído: gs://${bucket}/${filePath} (${buffer.byteLength} bytes)`);
+  }
+
+  /**
+   * Cria um Readable stream do arquivo no GCS.
+   * Usado para download via proxy (sem Signed URL).
+   */
+  criarReadStream(caminhoBucket: string): Readable {
+    const { bucket, filePath } = this.parseCaminho(caminhoBucket);
+    return this.storage.bucket(bucket).file(filePath).createReadStream();
   }
 
   /** Retorna o nome do bucket padrão configurado. */

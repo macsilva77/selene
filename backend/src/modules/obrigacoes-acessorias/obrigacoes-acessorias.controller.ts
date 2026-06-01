@@ -10,7 +10,10 @@ import {
   Body,
   BadRequestException,
   ParseUUIDPipe,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ObrigacoesAcessoriasService } from './obrigacoes-acessorias.service';
@@ -89,5 +92,20 @@ export class ObrigacoesAcessoriasController {
   @ApiOperation({ summary: 'Gera URL pré-assinada para download do arquivo (RN-15 — 15 min)' })
   gerarDownloadUrl(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.gerarDownloadUrl(id);
+  }
+
+  @Get(':id/download')
+  @RequiresPermission('obrigacoes-acessorias.view')
+  @ApiOperation({ summary: 'Download do arquivo via proxy — sem necessidade de Signed URL' })
+  async download(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { stream, nomeArquivo } = await this.service.downloadArquivo(id);
+    res.set({
+      'Content-Type':        'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(nomeArquivo)}"`,
+    });
+    return new StreamableFile(stream);
   }
 }

@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { Readable } from 'stream';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { createHash } from 'crypto';
@@ -376,5 +377,18 @@ export class ObrigacoesAcessoriasService {
       filename: record.nomeArquivo,
     });
     return { url, expiresAt: expiresAt.toISOString() };
+  }
+
+  /**
+   * Retorna stream do arquivo + nome original para download via proxy.
+   * Alternativa à Signed URL — não requer iam.serviceAccounts.signBlob.
+   */
+  async downloadArquivo(id: string): Promise<{ stream: Readable; nomeArquivo: string }> {
+    const record = await this.prisma.obrigacaoAcessoria.findUnique({ where: { id } });
+    if (!record) throw new NotFoundException(`Obrigação não encontrada: ${id}`);
+    return {
+      stream:      this.gcsService.criarReadStream(record.caminhoBucket),
+      nomeArquivo: record.nomeArquivo,
+    };
   }
 }
