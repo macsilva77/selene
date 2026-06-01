@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { api } from '@/lib/api';
 import {
   ArrowClockwiseIcon,
   UploadSimpleIcon,
@@ -19,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Pagination } from '@/components/ui/pagination';
 import { useToast, ToastContainer } from '@/components/ui/toast';
 import { UploadObrigacaoModal } from './upload-modal';
 import {
@@ -91,6 +93,18 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   const pathname    = usePathname();
   const searchParams = useSearchParams();
   const { toasts, success, error: toastError, dismiss } = useToast();
+
+  // ── Lista de empresas para o select de CNPJ ──
+  const [empresas, setEmpresas] = useState<{ id: string; cnpj: string; nome: string; nomeFantasia?: string }[]>([]);
+
+  useEffect(() => {
+    api.get('/empresas?limit=200&ativo=true')
+      .then((res) => {
+        const list = (res.data?.data ?? res.data ?? []) as { id: string; cnpj: string; nome: string; nomeFantasia?: string }[];
+        setEmpresas(list.filter((e) => e.cnpj));
+      })
+      .catch(() => {});
+  }, []);
 
   // ── Estado dos filtros (sincronizados com URL) ──
   const [cnpj,         setCnpj]         = useState(searchParams.get('cnpj') ?? '');
@@ -220,22 +234,33 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card px-4 py-3">
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">CNPJ</label>
-          <input className={`${inputCls} w-44`} placeholder="00.000.000/0000-00"
-            value={cnpj} onChange={(e) => setCnpj(e.target.value)} />
+          <select
+            title="Filtrar por CNPJ"
+            className={`${selectCls} w-52`}
+            value={cnpj}
+            onChange={(e) => setCnpj(e.target.value)}
+          >
+            <option value="">Todos</option>
+            {empresas.map((emp) => (
+              <option key={emp.id} value={emp.cnpj.replace(/\D/g, '')}>
+                {formatarCnpj(emp.cnpj)} — {emp.nomeFantasia ?? emp.nome}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Data Inicial</label>
-          <input type="date" className={`${inputCls} w-36`}
+          <input type="date" title="Data inicial" className={`${inputCls} w-36`}
             value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Data Final</label>
-          <input type="date" className={`${inputCls} w-36`}
+          <input type="date" title="Data final" className={`${inputCls} w-36`}
             value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Status</label>
-          <select className={`${selectCls} w-48`} value={status}
+          <select title="Filtrar por status" className={`${selectCls} w-48`} value={status}
             onChange={(e) => setStatus(e.target.value as StatusProcessamento | '')}>
             <option value="">Todos</option>
             <option value="Recebido">Recebido</option>
@@ -248,7 +273,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Finalidade</label>
-          <select className={`${selectCls} w-36`} value={finalidade}
+          <select title="Filtrar por finalidade" className={`${selectCls} w-36`} value={finalidade}
             onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
             <option value="">Todas</option>
             <option value="Original">Original</option>
@@ -342,23 +367,13 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
       </div>
 
       {/* Paginação */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            Página {page} de {totalPages}
-          </span>
-          <div className="flex gap-1">
-            <button type="button" onClick={() => irPagina(page - 1)} disabled={page <= 1}
-              className="rounded-md border border-input px-3 py-1.5 hover:bg-muted transition-colors disabled:opacity-40">
-              Anterior
-            </button>
-            <button type="button" onClick={() => irPagina(page + 1)} disabled={page >= totalPages}
-              className="rounded-md border border-input px-3 py-1.5 hover:bg-muted transition-colors disabled:opacity-40">
-              Próxima
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={PAGE_SIZE}
+        onPageChange={irPagina}
+      />
 
       {/* Modal de upload */}
       <UploadObrigacaoModal
