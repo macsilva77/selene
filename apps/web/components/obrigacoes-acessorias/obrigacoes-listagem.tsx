@@ -196,11 +196,14 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             onChange={(e) => setCnpj(e.target.value)}
           >
             <option value="">Todos</option>
-            {empresas.map((emp) => (
-              <option key={emp.id} value={emp.cnpj.replace(/\D/g, '')}>
-                {formatarCnpj(emp.cnpj)} — {emp.nomeFantasia || emp.nome}
-              </option>
-            ))}
+            {empresas.map((emp) => {
+              const nome = emp.nomeFantasia || emp.nome;
+              return (
+                <option key={emp.id} value={emp.cnpj.replace(/\D/g, '')}>
+                  {formatarCnpj(emp.cnpj)}{nome ? ` — ${nome}` : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div className="flex flex-col gap-1">

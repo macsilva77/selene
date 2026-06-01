@@ -52,7 +52,7 @@ export class EmpresasController {
       search,
       ativo: ativo === undefined ? undefined : ativo === 'true',
       page: page ? Number.parseInt(page) : 1,
-      limit: limit ? Math.min(Number.parseInt(limit), 100) : 20,
+      limit: limit ? Math.min(Number.parseInt(limit), 500) : 20,
     });
   }
 
