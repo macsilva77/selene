@@ -93,6 +93,8 @@ async function main() {
     'dfe.view', 'dfe.manage',
     // Permissões de Etiquetas
     'etiquetas.view', 'etiquetas.create', 'etiquetas.edit', 'etiquetas.delete',
+    // Permissões de Obrigações Acessórias
+    'obrigacoes-acessorias.view',
   ];
 
   // Use raw SQL to upsert perfil (bypasses stale Prisma client types)

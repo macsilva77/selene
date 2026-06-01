@@ -65,6 +65,7 @@ const PERMISSION_GROUPS = [
   { group: 'Etiquetas',    module: 'etiquetas',    label: 'Etiquetas',    permissions: [{ key: 'etiquetas.view', label: 'Visualizar' }, { key: 'etiquetas.create', label: 'Criar' }, { key: 'etiquetas.edit', label: 'Editar' }, { key: 'etiquetas.delete', label: 'Excluir' }] },
   { group: 'Auditoria',    module: 'auditoria',    label: 'Auditoria',    permissions: [{ key: 'auditoria.view', label: 'Visualizar' }] },
   { group: 'Relatórios',   module: 'relatorios',   label: 'Relatórios',   permissions: [{ key: 'relatorios.view', label: 'Visualizar' }] },
+  { group: 'Obrigações Acessórias', module: 'obrigacoes', label: 'Obrigações Acessórias', permissions: [{ key: 'obrigacoes-acessorias.view', label: 'Visualizar / Upload' }] },
 ];
 
 
