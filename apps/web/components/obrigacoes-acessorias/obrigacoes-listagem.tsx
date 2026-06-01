@@ -243,17 +243,17 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
 
       {/* Tabela */}
       <div className="rounded-lg border border-border overflow-hidden">
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow className="bg-muted/30">
-              <TableHead>CNPJ</TableHead>
-              {showInscricaoEstadual && <TableHead>Insc. Estadual</TableHead>}
-              <TableHead>Finalidade</TableHead>
+              <TableHead className="w-[150px]">CNPJ</TableHead>
+              {showInscricaoEstadual && <TableHead className="w-[120px]">Insc. Estadual</TableHead>}
+              <TableHead className="w-[90px]">Finalidade</TableHead>
               <TableHead>Hash</TableHead>
-              <TableHead>Data Início</TableHead>
-              <TableHead>Data Fim</TableHead>
-              <TableHead>Data Envio SPED</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
+              <TableHead className="w-[100px]">Data Início</TableHead>
+              <TableHead className="w-[100px]">Data Fim</TableHead>
+              <TableHead className="w-[130px]">Data Envio SPED</TableHead>
+              <TableHead className="w-[100px] text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -276,16 +276,16 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
                   <TableCell className="text-xs">{item.inscricaoEstadual ?? '—'}</TableCell>
                 )}
                 <TableCell className="text-xs">{item.finalidade}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-[160px]" title={item.hash}>
-                  {item.hash}
+                <TableCell className="font-mono text-xs text-muted-foreground overflow-hidden" title={item.hash}>
+                  <span className="block truncate">{item.hash}</span>
                 </TableCell>
-                <TableCell className="text-xs whitespace-nowrap">
+                <TableCell className="text-xs">
                   {formatarData(item.dataInicial)}
                 </TableCell>
-                <TableCell className="text-xs whitespace-nowrap">
+                <TableCell className="text-xs">
                   {formatarData(item.dataFinal)}
                 </TableCell>
-                <TableCell className="text-xs whitespace-nowrap">
+                <TableCell className="text-xs">
                   {formatarData(item.dataEntrega)}
                 </TableCell>
                 <TableCell className="text-right">
