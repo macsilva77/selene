@@ -207,12 +207,14 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
           : empresas;
 
         return (
+          /* card w-full — campos internos têm largura fixa via inline-flex */
           <form onSubmit={handleFiltrar}
-            className="flex flex-col gap-[10px] rounded-lg border border-border bg-card px-4 py-3">
+            className="w-full rounded-lg border border-border bg-card px-4 py-3">
+            <div className="inline-flex flex-col gap-[10px]">
 
-            {/* Linha 1: CNPJ / Razão Social — termina alinhado com botão Filtrar */}
+            {/* Linha 1: CNPJ / Razão Social — borda direita alinhada com Filtrar */}
             <div className="flex items-end gap-[10px]">
-              <div className="flex flex-col gap-1 flex-1 min-w-0" ref={cnpjRef}>
+              <div className="flex flex-col gap-1 min-w-[420px]" ref={cnpjRef}>
                 <label className="text-xs text-muted-foreground">CNPJ / Razão Social</label>
                 <div className="relative">
                   <input
@@ -257,38 +259,38 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
               </div>
             </div>
 
-            {/* Linha 2: datas | Finalidade (flex:1) | Filtrar | Limpar */}
+            {/* Linha 2: campos largura fixa | Filtrar | Limpar */}
             <div className="flex items-end gap-[10px]">
-              <div className="flex flex-col gap-1 shrink-0">
+              <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground">Data Inicial</label>
-                <input type="date" title="Data inicial" className={`${inputCls} w-36`}
+                <input type="date" title="Data inicial" className={`${inputCls} w-[130px]`}
                   value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
               </div>
-              <div className="flex flex-col gap-1 shrink-0">
+              <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground">Data Final</label>
-                <input type="date" title="Data final" className={`${inputCls} w-36`}
+                <input type="date" title="Data final" className={`${inputCls} w-[130px]`}
                   value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
               </div>
-              <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+              <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground">Finalidade</label>
-                <select title="Filtrar por finalidade" className={`${selectCls} w-full`} value={finalidade}
+                <select title="Filtrar por finalidade" className={`${selectCls} w-[160px]`} value={finalidade}
                   onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
                   <option value="">Todas</option>
                   <option value="Original">Original</option>
                   <option value="Retificacao">Retificação</option>
                 </select>
               </div>
-              <div className="flex gap-[10px] shrink-0">
-                <button type="submit"
-                  className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors">
-                  Filtrar
-                </button>
-                <button type="button" onClick={handleLimpar}
-                  className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors">
-                  Limpar
-                </button>
-              </div>
+              <button type="submit"
+                className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors shrink-0">
+                Filtrar
+              </button>
+              <button type="button" onClick={handleLimpar}
+                className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors shrink-0">
+                Limpar
+              </button>
             </div>
+
+            </div>{/* end inline-flex */}
           </form>
         );
       })()}

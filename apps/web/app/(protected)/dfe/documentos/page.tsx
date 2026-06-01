@@ -1223,11 +1223,13 @@ function FiltersBar({
   }, []);
 
   return (
-    <div className="shrink-0 border-b bg-card px-6 py-3 flex flex-col gap-[10px]">
+    {/* card full-width — campos com largura fixa via inline-flex */}
+    <div className="shrink-0 border-b bg-card px-6 py-3">
+      <div className="inline-flex flex-col gap-[10px]">
 
-      {/* Linha 1: Empresa / Razão Social — termina alinhada com o botão Filtrar */}
+      {/* Linha 1: Empresa / Razão Social — borda direita alinhada com Filtrar */}
       <div className="flex items-end gap-[10px]">
-        <div className="flex flex-col gap-1 flex-1 min-w-0" ref={empresaComboRef}>
+        <div className="flex flex-col gap-1 min-w-[420px]" ref={empresaComboRef}>
           <label className="text-xs text-muted-foreground">Empresa / Razão Social</label>
           <div className="relative">
             <input
@@ -1351,7 +1353,7 @@ function FiltersBar({
             ) : null}
           </div>
         </div>
-      </div>
+      </div>{/* end inline-flex */}
 
       {/* Linha avançada */}
       {showAdvanced ? (
