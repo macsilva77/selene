@@ -1219,17 +1219,17 @@ function FiltersBar({
 
   return (
     <div className="shrink-0 border-b bg-card px-6 py-3 space-y-2">
-      <div className="flex items-end gap-2 flex-wrap">
 
-        {/* Empresa — combobox pesquisável */}
-        <div className="flex flex-col gap-1">
+      {/* Linha 1: Empresa + Raiz CNPJ */}
+      <div className="flex items-end gap-3 w-fit">
+        <div className="flex flex-col gap-1 flex-1">
           <label className="text-xs font-medium text-muted-foreground">Empresa</label>
           <div ref={empresaComboRef} className="relative">
             <input
               type="text"
               autoComplete="off"
               placeholder="Todas as empresas — pesquise por CNPJ ou nome"
-              className={`${inputCls} w-72 pr-7`}
+              className={`${inputCls} w-full pr-7`}
               value={empresaAberta
                 ? empresaBusca
                 : configSelecionada
@@ -1264,14 +1264,16 @@ function FiltersBar({
             )}
           </div>
         </div>
-
-        {/* Raiz CNPJ */}
-        <label className="flex items-center gap-1 cursor-pointer pb-2">
+        <label className="flex items-center gap-1 cursor-pointer pb-2 whitespace-nowrap">
           <input type="checkbox" checked={filters.raizCnpj}
             onChange={(e) => { upd('raizCnpj', e.target.checked); }}
             className="rounded accent-primary" />
-          <span className="text-xs text-foreground whitespace-nowrap">Raiz CNPJ</span>
+          <span className="text-xs text-foreground">Raiz CNPJ</span>
         </label>
+      </div>
+
+      {/* Linha 2: demais filtros */}
+      <div className="flex items-end gap-2 flex-wrap">
 
         {/* Número Chave */}
         <div className="flex flex-col gap-1 flex-1 min-w-36">
@@ -1346,7 +1348,7 @@ function FiltersBar({
             ) : null}
           </div>
         </div>
-      </div>
+      </div>{/* fim linha 2 */}
 
       {/* Linha avançada */}
       {showAdvanced ? (
