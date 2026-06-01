@@ -44,13 +44,15 @@ export class GcsService {
    */
   parseCaminho(caminhoBucket: string): { bucket: string; filePath: string } {
     const defaultBucket = this.config.get<string>('gcs.bucketName') ?? '';
-    const slashIdx = caminhoBucket.indexOf('/');
+    // Normaliza: remove prefixo "gs://" se presente
+    const path = caminhoBucket.startsWith('gs://')
+      ? caminhoBucket.slice(5)
+      : caminhoBucket;
+    const slashIdx = path.indexOf('/');
     if (slashIdx === -1) {
-      return { bucket: defaultBucket, filePath: caminhoBucket };
+      return { bucket: defaultBucket, filePath: path };
     }
-    const bucket   = caminhoBucket.slice(0, slashIdx);
-    const filePath = caminhoBucket.slice(slashIdx + 1);
-    return { bucket, filePath };
+    return { bucket: path.slice(0, slashIdx), filePath: path.slice(slashIdx + 1) };
   }
 
   /**

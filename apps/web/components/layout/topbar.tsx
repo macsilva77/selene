@@ -109,19 +109,19 @@ export function SeleneTopbar() {
     <header className="h-14 shrink-0 border-b border-border bg-card flex items-center justify-between px-5 gap-4">
 
       {/* ── Breadcrumb ─────────────────────────────────────────── */}
-      <nav className="flex items-center gap-1.5 text-sm min-w-0 flex-1" aria-label="Caminho atual">
+      <nav className="flex items-center gap-1.5 min-w-0 flex-1" aria-label="Caminho atual">
         <Link
           href="/"
-          className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0"
         >
           Início
         </Link>
         {crumb && (
           <>
-            <CaretRightIcon size={10} className="text-muted-foreground/40 shrink-0" />
-            <span className="text-xs text-muted-foreground shrink-0">{crumb.section}</span>
-            <CaretRightIcon size={10} className="text-muted-foreground/40 shrink-0" />
-            <span className="text-xs text-foreground font-medium truncate">{crumb.label}</span>
+            <CaretRightIcon size={11} className="text-muted-foreground/40 shrink-0" />
+            <span className="text-sm text-muted-foreground shrink-0">{crumb.section}</span>
+            <CaretRightIcon size={11} className="text-muted-foreground/40 shrink-0" />
+            <span className="text-sm text-foreground font-medium truncate">{crumb.label}</span>
           </>
         )}
       </nav>
