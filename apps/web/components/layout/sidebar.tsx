@@ -16,36 +16,54 @@ import {
   SignOutIcon,
   TagIcon,
   ReceiptIcon,
+  CaretDownIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
-const NAV_ITEMS = [
-  { href: '/empresas', icon: BuildingsIcon, label: 'Empresas' },
-  { href: '/usuarios', icon: UsersIcon, label: 'Usuários' },
-  { href: '/perfis', icon: UserCircleGearIcon, label: 'Perfis' },
-  { href: '/fornecedores', icon: TruckIcon, label: 'Fornecedores' },
-  { href: '/certificados', icon: CertificateIcon, label: 'Certificados A1' },
-] as const;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NavItem = { href: string; icon: React.ComponentType<any>; label: string };
+type NavSection = { id: string; label: string; items: NavItem[] };
 
-const CONFIG_ITEMS = [
-  { href: '/dfe', icon: CloudArrowDownIcon, label: 'DFe / NF-e' },
-  { href: '/dfe/documentos', icon: FileMagnifyingGlassIcon, label: 'Documentos Fiscais' },
-  { href: '/etiquetas', icon: TagIcon, label: 'Etiquetas' },
-  { href: '/unidades', icon: FingerprintIcon, label: 'Unidades' },
-  { href: '/auditoria', icon: ClipboardTextIcon, label: 'Auditoria' },
-] as const;
-
-const OBRIGACOES_ITEMS = [
-  { href: '/obrigacoes-acessorias/efd-icms-ipi',    icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
-  { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
-  { href: '/obrigacoes-acessorias/ecd',             icon: ReceiptIcon, label: 'ECD' },
-  { href: '/obrigacoes-acessorias/ecf',             icon: ReceiptIcon, label: 'ECF' },
-] as const;
+const NAV_SECTIONS: NavSection[] = [
+  {
+    id: 'documentos',
+    label: 'Documentos Eletrônicos',
+    items: [
+      { href: '/dfe/documentos', icon: FileMagnifyingGlassIcon, label: 'NF-e' },
+    ],
+  },
+  {
+    id: 'obrigacoes',
+    label: 'Obrigações Acessórias',
+    items: [
+      { href: '/obrigacoes-acessorias/efd-icms-ipi',     icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
+      { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
+      { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
+      { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
+    ],
+  },
+  {
+    id: 'configuracoes',
+    label: 'Configurações',
+    items: [
+      { href: '/dfe',          icon: CloudArrowDownIcon,  label: 'DFe' },
+      { href: '/certificados', icon: CertificateIcon,     label: 'Certificados A1' },
+      { href: '/usuarios',     icon: UsersIcon,           label: 'Usuários' },
+      { href: '/empresas',     icon: BuildingsIcon,       label: 'Empresas' },
+      { href: '/etiquetas',    icon: TagIcon,             label: 'Etiquetas' },
+      { href: '/auditoria',    icon: ClipboardTextIcon,   label: 'Auditoria' },
+      { href: '/perfis',       icon: UserCircleGearIcon,  label: 'Perfis' },
+      { href: '/fornecedores', icon: TruckIcon,           label: 'Fornecedores' },
+      { href: '/unidades',     icon: FingerprintIcon,     label: 'Unid. Administrativas' },
+    ],
+  },
+];
 
 export function SeleneSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [usuario, setUsuario] = useState<{ nome?: string } | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setUsuario(getSessionUser());
@@ -60,85 +78,74 @@ export function SeleneSidebar() {
     ? usuario.nome.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
     : 'U';
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+  // /dfe must be exact to avoid matching /dfe/documentos (which has its own item)
+  const isActive = (href: string) => {
+    if (pathname === href) return true;
+    if (href === '/dfe') return false;
+    return pathname.startsWith(href + '/');
+  };
+
+  const toggleSection = (id: string) =>
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col bg-sidebar border-r border-sidebar-border text-sidebar-foreground">
 
       {/* Logo / Brand */}
-      <div className="flex h-16 items-center px-4 border-b border-sidebar-border shrink-0">
+      <div className="flex h-14 items-center px-4 border-b border-sidebar-border shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-positivo.png" alt="EOS" className="h-9 w-auto object-contain" />
+        <img src="/logo-positivo.png" alt="EOS" className="h-8 w-auto object-contain" />
       </div>
 
-      {/* Nav principal */}
-      <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-0.5">
-        {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-          const active = isActive(href);
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2">
+        {NAV_SECTIONS.map((section) => {
+          const isOpen = !collapsed[section.id];
+          const hasActive = section.items.some((i) => isActive(i.href));
           return (
-            <Link
-              key={href}
-              href={href}
-              className={[
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              ].join(' ')}
-            >
-              <Icon size={18} weight={active ? 'fill' : 'regular'} />
-              {label}
-            </Link>
-          );
-        })}
+            <div key={section.id} className="mb-2">
+              {/* Section header — clicável para colapsar */}
+              <button
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                className={[
+                  'w-full flex items-center justify-between px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-colors',
+                  hasActive && !isOpen
+                    ? 'text-primary'
+                    : 'text-sidebar-foreground/40 hover:text-sidebar-foreground/70',
+                ].join(' ')}
+              >
+                <span>{section.label}</span>
+                <CaretDownIcon
+                  size={10}
+                  className={`shrink-0 transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+                />
+              </button>
 
-        {/* Seção Configurações */}
-        <div className="pt-4 pb-1 px-3">
-          <p className="text-xs text-sidebar-foreground/40 font-medium">
-            Configurações
-          </p>
-        </div>
-        {CONFIG_ITEMS.map(({ href, icon: Icon, label }) => {
-          const active = isActive(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={[
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              ].join(' ')}
-            >
-              <Icon size={18} weight={active ? 'fill' : 'regular'} />
-              {label}
-            </Link>
-          );
-        })}
-
-        {/* Seção Obrigações Acessórias */}
-        <div className="pt-4 pb-1 px-3">
-          <p className="text-xs text-sidebar-foreground/40 font-medium">
-            Obrigações Acessórias
-          </p>
-        </div>
-        {OBRIGACOES_ITEMS.map(({ href, icon: Icon, label }) => {
-          const active = isActive(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={[
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              ].join(' ')}
-            >
-              <Icon size={18} weight={active ? 'fill' : 'regular'} />
-              {label}
-            </Link>
+              {/* Items */}
+              {isOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {section.items.map(({ href, icon: Icon, label }) => {
+                    const active = isActive(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={[
+                          'flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-colors ml-1',
+                          active
+                            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                            : 'text-sidebar-foreground/55 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+                        ].join(' ')}
+                      >
+                        <Icon size={15} weight={active ? 'fill' : 'regular'} />
+                        <span className="truncate">{label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>
