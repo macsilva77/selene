@@ -191,109 +191,107 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         </div>
       </div>
 
-      {/* Filtros — query params persistidos na URL */}
-      <form onSubmit={handleFiltrar}
-        className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 w-fit">
-        {/* Linha 1: CNPJ — combobox pesquisável */}
-        {(() => {
-          const empSel = cnpj ? empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpj) : null;
-          const nomeSel = empSel ? (empSel.nomeFantasia || empSel.nome) : '';
-          const displaySelecionado = empSel
-            ? `${formatarCnpj(empSel.cnpj)}${nomeSel ? ` — ${nomeSel}` : ''}`
-            : 'Todos';
-          const empsFiltradas = cnpjSearch.trim()
-            ? empresas.filter((e) => {
-                const q = cnpjSearch.toLowerCase();
-                const nome = (e.nomeFantasia || e.nome || '').toLowerCase();
-                return (
-                  e.cnpj.includes(cnpjSearch.replace(/\D/g, '')) ||
-                  formatarCnpj(e.cnpj).includes(cnpjSearch) ||
-                  nome.includes(q)
-                );
-              })
-            : empresas;
-          return (
-            <div className="flex flex-col gap-1 w-full" ref={cnpjRef}>
-              <label className="text-xs text-muted-foreground">CNPJ</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  className={`${inputCls} w-full pr-7`}
-                  placeholder="Todos — pesquise por CNPJ ou razão social"
-                  value={cnpjOpen ? cnpjSearch : displaySelecionado}
-                  onChange={(e) => { setCnpjSearch(e.target.value); setCnpjOpen(true); }}
-                  onFocus={() => { setCnpjSearch(''); setCnpjOpen(true); }}
-                  autoComplete="off"
-                />
-                <CaretDownIcon
-                  size={13}
-                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                {cnpjOpen && (
-                  <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[420px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors border-b border-input/30"
-                      onClick={() => { setCnpj(''); setCnpjSearch(''); setCnpjOpen(false); }}
-                    >
-                      Todos
-                    </button>
-                    {empsFiltradas.length === 0 && (
-                      <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
-                    )}
-                    {empsFiltradas.map((emp) => {
-                      const nome = emp.nomeFantasia || emp.nome;
-                      return (
-                        <button
-                          type="button"
-                          key={emp.id}
-                          className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj.replace(/\D/g, '') ? 'bg-primary/5 font-medium' : ''}`}
-                          onClick={() => { setCnpj(emp.cnpj.replace(/\D/g, '')); setCnpjSearch(''); setCnpjOpen(false); }}
-                        >
-                          <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
-                          {nome && <span className="text-foreground truncate">{nome}</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+      {/* Filtros */}
+      {(() => {
+        const empSel      = cnpj ? empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpj) : null;
+        const nomeSel     = empSel ? (empSel.nomeFantasia || empSel.nome || '') : '';
+        const displaySel  = empSel ? `${formatarCnpj(empSel.cnpj)} — ${nomeSel}` : '';
+        // Normalização per spec: remove . - / , lowercase
+        const termo = cnpjSearch.replace(/[.\-/]/g, '').toLowerCase();
+        const empsFiltradas = termo
+          ? empresas.filter((e) => {
+              const cnpjNorm = e.cnpj.replace(/[.\-/]/g, '').toLowerCase();
+              const nome     = (e.nomeFantasia || e.nome || '').toLowerCase();
+              return cnpjNorm.includes(termo) || nome.includes(termo);
+            })
+          : empresas;
+
+        return (
+          <form onSubmit={handleFiltrar}
+            className="flex flex-col gap-[10px] rounded-lg border border-border bg-card px-4 py-3">
+
+            {/* Linha 1: CNPJ / Razão Social — termina alinhado com botão Filtrar */}
+            <div className="flex items-end gap-[10px]">
+              <div className="flex flex-col gap-1 flex-1 min-w-0" ref={cnpjRef}>
+                <label className="text-xs text-muted-foreground">CNPJ / Razão Social</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="Todos — pesquise por CNPJ ou razão social"
+                    className={`${inputCls} w-full pr-7`}
+                    value={cnpjOpen ? cnpjSearch : displaySel}
+                    onChange={(e) => { setCnpjSearch(e.target.value); setCnpjOpen(true); }}
+                    onFocus={() => { setCnpjSearch(''); setCnpjOpen(true); }}
+                  />
+                  <CaretDownIcon size={13}
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  {cnpjOpen && (
+                    <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[400px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
+                      <button type="button"
+                        className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors border-b border-input/30"
+                        onClick={() => { setCnpj(''); setCnpjSearch(''); setCnpjOpen(false); }}>
+                        Todos
+                      </button>
+                      {empsFiltradas.length === 0 && (
+                        <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
+                      )}
+                      {empsFiltradas.map((emp) => {
+                        const nome = emp.nomeFantasia || emp.nome;
+                        return (
+                          <button type="button" key={emp.id}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj.replace(/\D/g, '') ? 'bg-primary/5 font-medium' : ''}`}
+                            onClick={() => { setCnpj(emp.cnpj.replace(/\D/g, '')); setCnpjSearch(''); setCnpjOpen(false); }}>
+                            <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
+                            {nome && <span className="text-foreground truncate">{nome}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Ghost do botão Limpar — reserva espaço para alinhar borda direita do CNPJ com o Filtrar */}
+              <div aria-hidden="true" className="invisible shrink-0 pointer-events-none">
+                <button type="button" tabIndex={-1} className="h-8 rounded-md border border-input px-3 text-sm">Limpar</button>
               </div>
             </div>
-          );
-        })()}
-        {/* Linha 2: Demais filtros */}
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">Data Inicial</label>
-            <input type="date" title="Data inicial" className={`${inputCls} w-36`}
-              value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">Data Final</label>
-            <input type="date" title="Data final" className={`${inputCls} w-36`}
-              value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">Finalidade</label>
-            <select title="Filtrar por finalidade" className={`${selectCls} w-36`} value={finalidade}
-              onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
-              <option value="">Todas</option>
-              <option value="Original">Original</option>
-              <option value="Retificacao">Retificação</option>
-            </select>
-          </div>
-          <div className="flex gap-2 pb-0.5">
-            <button type="submit"
-              className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors">
-              Filtrar
-            </button>
-            <button type="button" onClick={handleLimpar}
-              className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors">
-              Limpar
-            </button>
-          </div>
-        </div>
-      </form>
+
+            {/* Linha 2: datas | Finalidade (flex:1) | Filtrar | Limpar */}
+            <div className="flex items-end gap-[10px]">
+              <div className="flex flex-col gap-1 shrink-0">
+                <label className="text-xs text-muted-foreground">Data Inicial</label>
+                <input type="date" title="Data inicial" className={`${inputCls} w-36`}
+                  value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1 shrink-0">
+                <label className="text-xs text-muted-foreground">Data Final</label>
+                <input type="date" title="Data final" className={`${inputCls} w-36`}
+                  value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                <label className="text-xs text-muted-foreground">Finalidade</label>
+                <select title="Filtrar por finalidade" className={`${selectCls} w-full`} value={finalidade}
+                  onChange={(e) => setFinalidade(e.target.value as FinalidadeObrigacao | '')}>
+                  <option value="">Todas</option>
+                  <option value="Original">Original</option>
+                  <option value="Retificacao">Retificação</option>
+                </select>
+              </div>
+              <div className="flex gap-[10px] shrink-0">
+                <button type="submit"
+                  className="h-8 rounded-md bg-primary text-primary-foreground px-3 text-sm hover:bg-primary/90 transition-colors">
+                  Filtrar
+                </button>
+                <button type="button" onClick={handleLimpar}
+                  className="h-8 rounded-md border border-input px-3 text-sm hover:bg-muted transition-colors">
+                  Limpar
+                </button>
+              </div>
+            </div>
+          </form>
+        );
+      })()}
 
       {/* Contagem */}
       <p className="text-sm text-muted-foreground">
