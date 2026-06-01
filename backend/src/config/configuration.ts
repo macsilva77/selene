@@ -33,8 +33,9 @@ function loadConfiguration() {
     certEncryptionKey: process.env['CERT_ENCRYPTION_KEY'] ?? '',
 
     gcs: {
-      projectId: process.env['GCS_PROJECT_ID'] || '',
-      bucketName: process.env['GCS_BUCKET_NAME'] || process.env['GCS_BUCKET'] || '',
+      projectId:   process.env['GCS_PROJECT_ID'] || '',
+      bucketName:  process.env['GCS_BUCKET_NAME'] || process.env['GCS_BUCKET'] || '',
+      keyFilename: process.env['GCS_KEY_FILE'] || process.env['GOOGLE_APPLICATION_CREDENTIALS'] || '',
     },
 
     pubsub: {

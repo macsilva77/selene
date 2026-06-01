@@ -107,13 +107,12 @@ export function formatarCnpj(cnpj: string): string {
 }
 
 export function formatarData(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
-}
-
-export function formatarPeriodo(dataInicial: string, dataFinal: string): string {
-  return `${formatarData(dataInicial)} — ${formatarData(dataFinal)}`;
+  if (!iso) return '—';
+  // Extrai apenas os dígitos da parte de data (YYYY-MM-DD) sem criar objeto Date,
+  // evitando qualquer desvio de fuso horário em datas fiscais.
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 export function isStatusErro(status: StatusProcessamento): boolean {

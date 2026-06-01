@@ -371,7 +371,10 @@ export class ObrigacoesAcessoriasService {
     if (!record) throw new NotFoundException(`Obrigação não encontrada: ${id}`);
 
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    const url = await this.gcsService.gerarSignedUrl(record.caminhoBucket, { expires: expiresAt });
+    const url = await this.gcsService.gerarSignedUrl(record.caminhoBucket, {
+      expires: expiresAt,
+      filename: record.nomeArquivo,
+    });
     return { url, expiresAt: expiresAt.toISOString() };
   }
 }

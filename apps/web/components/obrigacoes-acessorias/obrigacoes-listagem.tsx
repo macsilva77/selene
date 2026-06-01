@@ -7,9 +7,6 @@ import {
   ArrowClockwiseIcon,
   UploadSimpleIcon,
   DownloadSimpleIcon,
-  WarningIcon,
-  CheckCircleIcon,
-  ClockIcon,
   ProhibitIcon,
 } from '@phosphor-icons/react';
 import {
@@ -27,8 +24,6 @@ import {
   obrigacoesApi,
   formatarCnpj,
   formatarData,
-  formatarPeriodo,
-  isStatusErro,
   type TipoObrigacao,
   type FinalidadeObrigacao,
   type StatusProcessamento,
@@ -40,46 +35,6 @@ interface Props {
   tipoObrigacao:        TipoObrigacao;
   titulo:               string;
   showInscricaoEstadual: boolean;
-}
-
-/* ─── Badge helpers ──────────────────────────────────────────────────────── */
-function StatusBadge({ status }: Readonly<{ status: StatusProcessamento }>) {
-  if (status === 'Processado') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-        <CheckCircleIcon size={11} />Processado
-      </span>
-    );
-  }
-  if (status === 'Recebido') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-        <ClockIcon size={11} />Recebido
-      </span>
-    );
-  }
-  // Qualquer Erro_* — RN-17
-  const label = status.replace('Erro_', '').replace(/_/g, ' ');
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-destructive/15 text-destructive">
-      <WarningIcon size={11} />{label}
-    </span>
-  );
-}
-
-function VersaoBadge({ versaoAtual }: Readonly<{ versaoAtual: boolean }>) {
-  if (versaoAtual) {
-    return (
-      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary">
-        Versão Atual
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-      Versão Original
-    </span>
-  );
 }
 
 /* ─── Helpers de input ───────────────────────────────────────────────────── */
@@ -202,7 +157,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
 
   // ── Row style para erros (RN-17) ──
   function rowCls(item: ObrigacaoAcessoria) {
-    return isStatusErro(item.statusProcessamento)
+    return item.statusProcessamento.startsWith('Erro_')
       ? 'bg-destructive/5 hover:bg-destructive/10'
       : '';
   }
@@ -243,7 +198,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             <option value="">Todos</option>
             {empresas.map((emp) => (
               <option key={emp.id} value={emp.cnpj.replace(/\D/g, '')}>
-                {formatarCnpj(emp.cnpj)} — {emp.nomeFantasia ?? emp.nome}
+                {formatarCnpj(emp.cnpj)} — {emp.nomeFantasia || emp.nome}
               </option>
             ))}
           </select>
@@ -304,12 +259,11 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             <TableRow className="bg-muted/30">
               <TableHead>CNPJ</TableHead>
               {showInscricaoEstadual && <TableHead>Insc. Estadual</TableHead>}
-              <TableHead>Período</TableHead>
               <TableHead>Finalidade</TableHead>
-              <TableHead className="text-center">Versão</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Data Entrega</TableHead>
-              <TableHead>Origem</TableHead>
+              <TableHead>Hash</TableHead>
+              <TableHead>Data Início</TableHead>
+              <TableHead>Data Fim</TableHead>
+              <TableHead>Data Envio SPED</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -317,7 +271,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             {items.length === 0 && !carregando && (
               <TableRow>
                 <TableCell
-                  colSpan={showInscricaoEstadual ? 9 : 8}
+                  colSpan={showInscricaoEstadual ? 8 : 7}
                   className="text-center py-10 text-sm text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <ProhibitIcon size={24} className="text-muted-foreground/40" />
@@ -332,21 +286,18 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
                 {showInscricaoEstadual && (
                   <TableCell className="text-xs">{item.inscricaoEstadual ?? '—'}</TableCell>
                 )}
-                <TableCell className="text-xs whitespace-nowrap">
-                  {formatarPeriodo(item.dataInicial, item.dataFinal)}
-                </TableCell>
                 <TableCell className="text-xs">{item.finalidade}</TableCell>
-                <TableCell className="text-center">
-                  <VersaoBadge versaoAtual={item.versaoAtual} />
+                <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-[160px]" title={item.hash}>
+                  {item.hash}
                 </TableCell>
-                <TableCell>
-                  <StatusBadge status={item.statusProcessamento} />
+                <TableCell className="text-xs whitespace-nowrap">
+                  {formatarData(item.dataInicial)}
+                </TableCell>
+                <TableCell className="text-xs whitespace-nowrap">
+                  {formatarData(item.dataFinal)}
                 </TableCell>
                 <TableCell className="text-xs whitespace-nowrap">
                   {formatarData(item.dataEntrega)}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {item.origem === 'Upload_Manual' ? 'Manual' : 'Tópico'}
                 </TableCell>
                 <TableCell className="text-right">
                   {item.statusProcessamento === 'Processado' && (

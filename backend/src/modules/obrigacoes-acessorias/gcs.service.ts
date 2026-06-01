@@ -8,6 +8,8 @@ import { Writable } from 'stream';
 export interface SignedUrlOptions {
   /** Data/hora de expiração */
   expires: Date;
+  /** Nome original do arquivo — define Content-Disposition na URL assinada */
+  filename?: string;
 }
 
 export interface GcsFileInfo {
@@ -28,8 +30,12 @@ export class GcsService {
   private readonly storage: Storage;
 
   constructor(private readonly config: ConfigService) {
-    const projectId = this.config.get<string>('gcs.projectId') ?? '';
-    this.storage = new Storage({ projectId });
+    const projectId   = this.config.get<string>('gcs.projectId')   ?? '';
+    const keyFilename = this.config.get<string>('gcs.keyFilename')  ?? '';
+    this.storage = new Storage({
+      projectId,
+      ...(keyFilename ? { keyFilename } : {}),
+    });
   }
 
   /**
@@ -74,6 +80,9 @@ export class GcsService {
     const [url] = await file.getSignedUrl({
       action:  'read',
       expires: options.expires,
+      ...(options.filename
+        ? { responseDisposition: `attachment; filename="${options.filename}"` }
+        : {}),
     });
     return url;
   }
