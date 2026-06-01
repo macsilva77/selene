@@ -106,7 +106,7 @@ export function SeleneTopbar() {
   };
 
   return (
-    <header className="h-12 shrink-0 border-b border-border bg-card flex items-center justify-between px-5 gap-4">
+    <header className="h-14 shrink-0 border-b border-border bg-card flex items-center justify-between px-5 gap-4">
 
       {/* ── Breadcrumb ─────────────────────────────────────────── */}
       <nav className="flex items-center gap-1.5 text-sm min-w-0 flex-1" aria-label="Caminho atual">
