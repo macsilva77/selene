@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
 import {
@@ -8,6 +8,7 @@ import {
   UploadSimpleIcon,
   DownloadSimpleIcon,
   ProhibitIcon,
+  CaretDownIcon,
 } from '@phosphor-icons/react';
 import { ActionsMenu } from '@/components/ui/actions-menu';
 import {
@@ -59,6 +60,22 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         setEmpresas(list.filter((e) => e.cnpj));
       })
       .catch(() => {});
+  }, []);
+
+  // ── Combobox CNPJ ──
+  const [cnpjSearch,  setCnpjSearch]  = useState('');
+  const [cnpjOpen,    setCnpjOpen]    = useState(false);
+  const cnpjRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (cnpjRef.current && !cnpjRef.current.contains(e.target as Node)) {
+        setCnpjOpen(false);
+        setCnpjSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   // ── Estado dos filtros (sincronizados com URL) ──
@@ -177,31 +194,73 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
       {/* Filtros — query params persistidos na URL */}
       <form onSubmit={handleFiltrar}
         className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3">
-        {/* Linha 1: CNPJ em largura total para exibir nome completo */}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">CNPJ</label>
-          <select
-            title="Filtrar por CNPJ"
-            className={`${selectCls} w-full`}
-            value={cnpj}
-            onChange={(e) => setCnpj(e.target.value)}
-          >
-            <option value="">Todos</option>
-            {empresas.map((emp) => {
-              const nomeCompleto = emp.nomeFantasia || emp.nome;
-              const label = nomeCompleto
-                ? nomeCompleto.length > 50
-                  ? `${nomeCompleto.slice(0, 50)}…`
-                  : nomeCompleto
-                : formatarCnpj(emp.cnpj);
-              return (
-                <option key={emp.id} value={emp.cnpj.replace(/\D/g, '')}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-        </div>
+        {/* Linha 1: CNPJ — combobox pesquisável */}
+        {(() => {
+          const empSel = cnpj ? empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpj) : null;
+          const nomeSel = empSel ? (empSel.nomeFantasia || empSel.nome) : '';
+          const displaySelecionado = empSel
+            ? `${formatarCnpj(empSel.cnpj)}${nomeSel ? ` — ${nomeSel}` : ''}`
+            : 'Todos';
+          const empsFiltradas = cnpjSearch.trim()
+            ? empresas.filter((e) => {
+                const q = cnpjSearch.toLowerCase();
+                const nome = (e.nomeFantasia || e.nome || '').toLowerCase();
+                return (
+                  e.cnpj.includes(cnpjSearch.replace(/\D/g, '')) ||
+                  formatarCnpj(e.cnpj).includes(cnpjSearch) ||
+                  nome.includes(q)
+                );
+              })
+            : empresas;
+          return (
+            <div className="flex flex-col gap-1 w-96" ref={cnpjRef}>
+              <label className="text-xs text-muted-foreground">CNPJ</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  className={`${inputCls} w-full pr-7`}
+                  placeholder="Todos"
+                  value={cnpjOpen ? cnpjSearch : displaySelecionado}
+                  onChange={(e) => { setCnpjSearch(e.target.value); setCnpjOpen(true); }}
+                  onFocus={() => { setCnpjSearch(''); setCnpjOpen(true); }}
+                  autoComplete="off"
+                />
+                <CaretDownIcon
+                  size={13}
+                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+                {cnpjOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[420px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors border-b border-input/30"
+                      onClick={() => { setCnpj(''); setCnpjSearch(''); setCnpjOpen(false); }}
+                    >
+                      Todos
+                    </button>
+                    {empsFiltradas.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
+                    )}
+                    {empsFiltradas.map((emp) => {
+                      const nome = emp.nomeFantasia || emp.nome;
+                      return (
+                        <button
+                          type="button"
+                          key={emp.id}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj.replace(/\D/g, '') ? 'bg-primary/5 font-medium' : ''}`}
+                          onClick={() => { setCnpj(emp.cnpj.replace(/\D/g, '')); setCnpjSearch(''); setCnpjOpen(false); }}
+                        >
+                          <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
+                          {nome && <span className="text-foreground truncate">{nome}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {/* Linha 2: Demais filtros */}
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
