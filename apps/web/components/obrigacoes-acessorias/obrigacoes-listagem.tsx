@@ -246,14 +246,14 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         <Table className="table-fixed">
           <TableHeader>
             <TableRow className="bg-muted/30">
-              <TableHead className="w-[150px]">CNPJ</TableHead>
-              {showInscricaoEstadual && <TableHead className="w-[120px]">Insc. Estadual</TableHead>}
-              <TableHead className="w-[90px]">Finalidade</TableHead>
+              <TableHead className="w-[120px]">CNPJ</TableHead>
+              {showInscricaoEstadual && <TableHead className="w-[100px]">Insc. Estadual</TableHead>}
+              <TableHead className="w-[72px]">Finalidade</TableHead>
               <TableHead>Hash</TableHead>
-              <TableHead className="w-[100px]">Data Início</TableHead>
-              <TableHead className="w-[100px]">Data Fim</TableHead>
-              <TableHead className="w-[130px]">Data Envio SPED</TableHead>
-              <TableHead className="w-[100px] text-right">Ações</TableHead>
+              <TableHead className="w-[85px]">Data Início</TableHead>
+              <TableHead className="w-[85px]">Data Fim</TableHead>
+              <TableHead className="w-[110px]">Data Envio SPED</TableHead>
+              <TableHead className="w-[85px] text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
