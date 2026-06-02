@@ -232,6 +232,16 @@ function at08(ctx: RegraCtx): AlertaRow | null {
     regraOk: fonteOk(ctx, 'ciclo_financeiro') };
 }
 
+function at09(ctx: RegraCtx): AlertaRow | null {
+  const ebpl = ctx.ind('endiv_bancario_pl');
+  if (ebpl === null) return null;
+  if (!ebpl.greaterThan(2)) return null;
+  return { codigoRegra: 'AT-09', severidade: 'atencao', indicador: 'endiv_bancario_pl',
+    valorAtual: ebpl, categoria: 'endividamento',
+    mensagem: `Dívida bancária/PL de ${rat(ebpl)} — alavancagem financeira elevada`,
+    regraOk: fonteOk(ctx, 'endiv_bancario_pl') };
+}
+
 // ─── Regras POSITIVAS (PO) ────────────────────────────────────────────────────
 
 function po01(ctx: RegraCtx): AlertaRow | null {
