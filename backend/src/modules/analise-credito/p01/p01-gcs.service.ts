@@ -27,7 +27,7 @@ export class P01GcsService implements OnModuleInit {
   private readonly bucketName: string;
 
   constructor(private readonly config: ConfigService) {
-    this.bucketName = this.config.get<string>('gcs.bucketName') ?? 'fiscal-docs-selene-prod';
+    this.bucketName = this.config.get<string>('gcs.spedBucketName') ?? 'fiscal-docs-selene-prod';
   }
 
   onModuleInit() {
