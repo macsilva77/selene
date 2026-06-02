@@ -54,6 +54,7 @@ model Tenant {
   dfeConfigs           DfeConfig[]
   etiquetas            Etiqueta[]
   spedArquivos         SpedArquivo[]
+  creditoEmpresas      CreditoEmpresa[]
 
   @@map("tenants")
 }
@@ -1515,4 +1516,258 @@ model ObrigacaoAcessoria {
   @@index([statusProcessamento])
   @@index([versaoAtual])
   @@map("obrigacao_acessoria")
+}
+
+// ─── ANÁLISE DE CRÉDITO — P01 ─────────────────────────────────────────────────
+// Tabelas geradas pelo pipeline P01 (extração ECD/ECF).
+// Chave de negócio: (tenantId, cnpj) → CreditoEmpresa.
+// Idempotência controlada por CreditoProcessamento.
+
+model CreditoEmpresa {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  cnpj             String   @db.VarChar(14)
+  razaoSocial      String   @map("razao_social")
+  regimeTributario String?  @map("regime_tributario") @db.VarChar(30)
+  cnaePrincipal    String?  @map("cnae_principal")   @db.VarChar(10)
+  statusExtracao   String   @default("completo")     @map("status_extracao")  @db.VarChar(20)
+  observacoes      String?  @db.Text
+  criadoEm        DateTime @default(now())           @map("criado_em")
+  atualizadoEm    DateTime @updatedAt                @map("atualizado_em")
+
+  tenant           Tenant                  @relation(fields: [tenantId], references: [id])
+  planoContas      CreditoPlanoConta[]
+  ecdSaldos        CreditoEcdSaldo[]
+  ecfRegistros     CreditoEcfRegistro[]
+  inconsistencias  CreditoInconsistencia[]
+  processamentos   CreditoProcessamento[]
+  balanco           CreditoBalanco[]
+  dre               CreditoDre[]
+  indicadores        CreditoIndicador[]
+  estruturaCapital   CreditoEstruturaCapital[]
+  alertas            CreditoAlerta[]
+  classificacoes     CreditoClassificacao[]
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId])
+  @@map("credito_empresas")
+}
+
+model CreditoPlanoConta {
+  id          String         @id @default(uuid())
+  empresaId   String         @map("empresa_id")
+  exercicio   Int
+  contaCodigo String         @map("conta_codigo") @db.VarChar(30)
+  contaNome   String         @map("conta_nome")
+  nivel       Int
+  natureza    String         @db.VarChar(1)   // D | C
+  tipo        String         @db.VarChar(20)  // sintetica | analitica
+  grupo       String         @db.VarChar(10)  // AC | ANC | PC | PNC | PL | REC | CUS | DES | RNO
+
+  empresa     CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, contaCodigo])
+  @@index([empresaId, exercicio])
+  @@map("credito_plano_contas")
+}
+
+model CreditoEcdSaldo {
+  id            String         @id @default(uuid())
+  empresaId     String         @map("empresa_id")
+  exercicio     Int
+  periodo       String         @db.VarChar(7)   // AAAA-MM
+  contaCodigo   String         @map("conta_codigo") @db.VarChar(30)
+  contaNome     String         @map("conta_nome")
+  grupo         String?        @db.VarChar(10)
+  saldoAnterior Decimal        @default(0) @map("saldo_anterior") @db.Decimal(18, 2)
+  debitos       Decimal        @default(0)                        @db.Decimal(18, 2)
+  creditos      Decimal        @default(0)                        @db.Decimal(18, 2)
+  saldoFinal    Decimal        @default(0) @map("saldo_final")    @db.Decimal(18, 2)
+  naturezaSaldo String?        @map("natureza_saldo") @db.VarChar(1)  // D | C
+  status        String         @default("ok") @db.VarChar(20)
+
+  empresa       CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, periodo, contaCodigo])
+  @@index([empresaId, exercicio])
+  @@map("credito_ecd_saldos")
+}
+
+model CreditoEcfRegistro {
+  id          String         @id @default(uuid())
+  empresaId   String         @map("empresa_id")
+  exercicio   Int
+  registroEcf String         @map("registro_ecf") @db.VarChar(10) // L100 | L300 | M300 | M350
+  linhaCodigo String         @map("linha_codigo")  @db.VarChar(50)
+  descricao   String         @db.Text
+  valor       Decimal        @default(0)            @db.Decimal(18, 2)
+  status      String         @default("ok")         @db.VarChar(20)
+
+  empresa     CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, registroEcf, linhaCodigo])
+  @@index([empresaId, exercicio])
+  @@map("credito_ecf_registros")
+}
+
+model CreditoInconsistencia {
+  id         String         @id @default(uuid())
+  empresaId  String         @map("empresa_id")
+  exercicio  Int
+  tipoErro   String         @map("tipo_erro")  @db.VarChar(50)
+  descricao  String         @db.Text
+  severidade String         @default("alerta") @db.VarChar(20) // info | alerta | bloqueio
+  criadoEm  DateTime        @default(now())    @map("criado_em")
+
+  empresa    CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@index([empresaId, exercicio])
+  @@map("credito_inconsistencias")
+}
+
+model CreditoProcessamento {
+  id                     String         @id @default(uuid())
+  empresaId              String         @map("empresa_id")
+  exercicio              Int
+  tabelaDestino          String         @map("tabela_destino")         @db.VarChar(50)
+  totalRegistros         Int            @default(0) @map("total_registros")
+  registrosOk            Int            @default(0) @map("registros_ok")
+  registrosComAlerta     Int            @default(0) @map("registros_com_alerta")
+  registrosBloqueados    Int            @default(0) @map("registros_bloqueados")
+  hashArquivoOrigem      String?        @map("hash_arquivo_origem")    @db.VarChar(64)
+  timestampProcessamento DateTime       @map("timestamp_processamento")
+  versaoPrompt           String         @default("P01-v1") @map("versao_prompt") @db.VarChar(20)
+  duracaoMs              Int?           @map("duracao_ms")
+
+  empresa                CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, tabelaDestino, versaoPrompt])
+  @@index([empresaId, exercicio])
+  @@map("credito_processamentos")
+}
+
+// ─── ANÁLISE DE CRÉDITO — P02 ─────────────────────────────────────────────────
+
+model CreditoBalanco {
+  id          String         @id @default(uuid())
+  empresaId   String         @map("empresa_id")
+  exercicio   Int
+  grupo       String         @db.VarChar(10)   // AC | ANC | PC | PNC | PL
+  subgrupo    String         @db.VarChar(60)   // Caixa | Clientes | Estoques ...
+  contaCodigo String         @map("conta_codigo") @db.VarChar(30)
+  contaNome   String         @map("conta_nome")
+  valor       Decimal        @db.Decimal(18, 2)
+  fonte       String         @default("ecd_j100") @db.VarChar(20) // ecd_j100 | ecf_l100 | inferido
+
+  empresa     CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, contaCodigo])
+  @@index([empresaId, exercicio])
+  @@map("credito_balanco")
+}
+
+model CreditoDre {
+  id        String         @id @default(uuid())
+  empresaId String         @map("empresa_id")
+  exercicio Int
+  linhaDre  String         @map("linha_dre") @db.VarChar(30)
+  // receita_bruta | deducoes | receita_liquida | cmv | lucro_bruto |
+  // desp_vendas | desp_admin | desp_financeiras | rec_financeiras |
+  // outras_desp | outras_rec | ebit | depreciacao | ebitda | ir_csll | lucro_liquido
+  valor     Decimal        @db.Decimal(18, 2)
+  fonte     String         @default("ecf_l300") @db.VarChar(20) // ecf_l300 | ecf_l100 | ecd_inferido
+
+  empresa   CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, linhaDre])
+  @@index([empresaId, exercicio])
+  @@map("credito_dre")
+}
+
+// ─── ANÁLISE DE CRÉDITO — P03 ─────────────────────────────────────────────────
+
+model CreditoIndicador {
+  id         String         @id @default(uuid())
+  empresaId  String         @map("empresa_id")
+  exercicio  Int
+  indicador  String         @db.VarChar(50)
+  // NULL = SAFE_DIV retornou null (denominador zero ou dado ausente)
+  valor      Decimal?       @db.Decimal(18, 6)
+  unidade    String         @db.VarChar(15) // ratio | percentual | dias | reais
+  fonteOk    Int            @default(1)     @map("fonte_ok") // 0 se entrada inferida
+
+  empresa    CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, indicador])
+  @@index([empresaId, exercicio])
+  @@map("credito_indicadores")
+}
+
+model CreditoEstruturaCapital {
+  id                     String         @id @default(uuid())
+  empresaId              String         @map("empresa_id")
+  exercicio              Int
+  ativoTotal             Decimal?       @map("ativo_total")              @db.Decimal(18, 2)
+  passivoTotal           Decimal?       @map("passivo_total")            @db.Decimal(18, 2)
+  pl                     Decimal?       @db.Decimal(18, 2)
+  dividaFinanceiraCp     Decimal?       @map("divida_financeira_cp")     @db.Decimal(18, 2)
+  dividaFinanceiraLp     Decimal?       @map("divida_financeira_lp")     @db.Decimal(18, 2)
+  dividaFinanceiraTot    Decimal?       @map("divida_financeira_tot")    @db.Decimal(18, 2)
+  dividaLiquida          Decimal?       @map("divida_liquida")           @db.Decimal(18, 2)
+  capitalProprioPct      Decimal?       @map("capital_proprio_pct")      @db.Decimal(18, 6)
+  capitalTerceirosPct    Decimal?       @map("capital_terceiros_pct")    @db.Decimal(18, 6)
+  grauEndividamento      Decimal?       @map("grau_endividamento")       @db.Decimal(18, 6)
+  independenciaFinanceira Decimal?      @map("independencia_financeira") @db.Decimal(18, 6)
+  relacaoCtCp            Decimal?       @map("relacao_ct_cp")            @db.Decimal(18, 6)
+  endivBancarioPl        Decimal?       @map("endiv_bancario_pl")        @db.Decimal(18, 6)
+  coberturaJuros         Decimal?       @map("cobertura_juros")          @db.Decimal(18, 6)
+  dividaCpPct            Decimal?       @map("divida_cp_pct")            @db.Decimal(18, 6)
+
+  empresa                CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio])
+  @@index([empresaId])
+  @@map("credito_estrutura_capital")
+}
+
+// ─── ANÁLISE DE CRÉDITO — P04 ─────────────────────────────────────────────────
+
+model CreditoAlerta {
+  id           String         @id @default(uuid())
+  empresaId    String         @map("empresa_id")
+  exercicio    Int
+  codigoRegra  String         @map("codigo_regra") @db.VarChar(10) // CR-01 | AT-03 | PO-05
+  severidade   String         @db.VarChar(10)                      // critico | atencao | positivo
+  indicador    String         @db.VarChar(50)
+  valorAtual   Decimal?       @map("valor_atual")                  @db.Decimal(18, 6)
+  mensagem     String         @db.Text
+  categoria    String         @db.VarChar(40)
+  regraOk      Int            @default(1) @map("regra_ok")          // 0 se input inferido
+
+  empresa      CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio, codigoRegra])
+  @@index([empresaId, exercicio])
+  @@map("credito_alertas")
+}
+
+model CreditoClassificacao {
+  id                 String         @id @default(uuid())
+  empresaId          String         @map("empresa_id")
+  exercicio          Int
+  classificacao      String         @db.VarChar(20) // BAIXO | MEDIO_BAIXO | MEDIO | MEDIO_ALTO | ALTO
+  classificacaoNum   Int            @map("classificacao_num") // 1-5
+  qtdCriticos        Int            @map("qtd_criticos")
+  qtdAtencao         Int            @map("qtd_atencao")
+  qtdPositivos       Int            @map("qtd_positivos")
+  overrideAplicado   Int            @default(0) @map("override_aplicado") // 1 se elevado por override
+  motivoOverride     String?        @map("motivo_override") @db.Text
+  confiabilidade     String         @db.VarChar(10) // alta | media | baixa
+  dataGeracao        DateTime       @default(now()) @map("data_geracao")
+
+  empresa            CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio])
+  @@index([empresaId])
+  @@map("credito_classificacoes")
 }

@@ -1,0 +1,471 @@
+'use client';
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  PlayIcon,
+  ArrowClockwiseIcon,
+  CheckCircleIcon,
+  WarningIcon,
+  XCircleIcon,
+  BuildingsIcon,
+  ChartLineIcon,
+  BellIcon,
+  ListChecksIcon,
+} from '@phosphor-icons/react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useToast, ToastContainer } from '@/components/ui/toast';
+import {
+  analiseCreditoApi,
+  type EmpresaResumo,
+  type StatusPipeline,
+  type Indicador,
+  type Alerta,
+  type ClassificacaoRisco,
+  type Classificacao,
+} from '@/lib/analise-credito-api';
+
+/* ─── Helpers visuais ────────────────────────────────────────────────────── */
+
+const CLS_COLOR: Record<Classificacao, string> = {
+  A: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  B: 'bg-green-100 text-green-800 border-green-300',
+  C: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  D: 'bg-orange-100 text-orange-800 border-orange-300',
+  E: 'bg-red-100 text-red-800 border-red-300',
+};
+
+const SEV_COLOR: Record<string, string> = {
+  critico:  'bg-red-100 text-red-800 border-red-300',
+  atencao:  'bg-yellow-100 text-yellow-800 border-yellow-300',
+  positivo: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+};
+
+const SEV_ICON: Record<string, React.ReactNode> = {
+  critico:  <XCircleIcon weight="fill" className="text-red-500" size={14} />,
+  atencao:  <WarningIcon weight="fill" className="text-yellow-500" size={14} />,
+  positivo: <CheckCircleIcon weight="fill" className="text-emerald-500" size={14} />,
+};
+
+function formatarCnpj(cnpj: string) {
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+function formatarValor(valor: string | null, unidade: string): string {
+  if (valor === null) return '—';
+  const n = parseFloat(valor);
+  if (isNaN(n)) return valor;
+  if (unidade === 'percentual') return `${(n * 100).toFixed(1)}%`;
+  if (unidade === 'ratio')      return n.toFixed(2);
+  if (unidade === 'dias')       return `${n.toFixed(0)} dias`;
+  if (unidade === 'reais')      return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return n.toFixed(2);
+}
+
+type Tab = 'status' | 'indicadores' | 'alertas' | 'classificacao';
+
+/* ─── Componente principal ───────────────────────────────────────────────── */
+
+export function AnaliseCreditoDashboard() {
+  const { toasts, success, error: toastError, dismiss } = useToast();
+
+  const [empresas, setEmpresas]               = useState<EmpresaResumo[]>([]);
+  const [cnpjSelecionado, setCnpjSelecionado] = useState<string>('');
+  const [tab, setTab]                         = useState<Tab>('status');
+  const [carregando, setCarregando]           = useState(false);
+  const [disparando, setDisparando]           = useState(false);
+
+  const [statusData, setStatusData]           = useState<StatusPipeline[]>([]);
+  const [indicadores, setIndicadores]         = useState<Indicador[]>([]);
+  const [alertas, setAlertas]                 = useState<Alerta[]>([]);
+  const [classificacao, setClassificacao]     = useState<ClassificacaoRisco[]>([]);
+  const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
+
+  // Carrega lista de empresas uma vez
+  useEffect(() => {
+    analiseCreditoApi.listarEmpresas()
+      .then(setEmpresas)
+      .catch(() => toastError('Erro ao carregar empresas'));
+  }, [toastError]);
+
+  const carregarDados = useCallback(async (cnpj: string, exercicio?: number) => {
+    if (!cnpj) return;
+    setCarregando(true);
+    try {
+      const [status, inds, als, cls] = await Promise.all([
+        analiseCreditoApi.statusPipeline(cnpj),
+        analiseCreditoApi.indicadores(cnpj, exercicio),
+        analiseCreditoApi.alertas(cnpj, exercicio),
+        analiseCreditoApi.classificacao(cnpj),
+      ]);
+      setStatusData(status ?? []);
+      setIndicadores(inds);
+      setAlertas(als);
+      setClassificacao(cls);
+    } catch {
+      toastError('Erro ao carregar dados da empresa');
+    } finally {
+      setCarregando(false);
+    }
+  }, [toastError]);
+
+  useEffect(() => {
+    if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
+  }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
+
+  async function dispararPipeline() {
+    setDisparando(true);
+    try {
+      await analiseCreditoApi.dispararPipeline();
+      success('Pipeline P01→P04 iniciado em background');
+    } catch {
+      toastError('Erro ao disparar pipeline');
+    } finally {
+      setDisparando(false);
+    }
+  }
+
+  const empresaSelecionada = useMemo(
+    () => empresas.find(e => e.cnpj === cnpjSelecionado),
+    [empresas, cnpjSelecionado],
+  );
+
+  const exerciciosDisponiveis = useMemo(() => (
+    [...new Set([
+      ...statusData.map(s => s.exercicio),
+      ...indicadores.map(i => i.exercicio),
+      ...alertas.map(a => a.exercicio),
+      ...classificacao.map(c => c.exercicio),
+    ])].sort((a, b) => b - a)
+  ), [statusData, indicadores, alertas, classificacao]);
+
+  const indPorCategoria = useMemo(() => (
+    indicadores
+      .filter(i => exercicioFiltro === undefined || i.exercicio === exercicioFiltro)
+      .reduce<Record<string, Indicador[]>>((acc, i) => {
+        const cat = i.indicador.split('_')[0] ?? 'Outros';
+        if (!acc[cat]) acc[cat] = [];
+        acc[cat].push(i);
+        return acc;
+      }, {})
+  ), [indicadores, exercicioFiltro]);
+
+  const alertasFiltrados = useMemo(
+    () => alertas.filter(a => exercicioFiltro === undefined || a.exercicio === exercicioFiltro),
+    [alertas, exercicioFiltro],
+  );
+
+  const TAB_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'status',        label: 'Pipeline',    icon: <ListChecksIcon size={15} /> },
+    { id: 'indicadores',   label: 'Indicadores', icon: <ChartLineIcon size={15} /> },
+    { id: 'alertas',       label: `Alertas${alertasFiltrados.length ? ` (${alertasFiltrados.length})` : ''}`, icon: <BellIcon size={15} /> },
+    { id: 'classificacao', label: 'Classificação', icon: <BuildingsIcon size={15} /> },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4 p-6">
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+
+      {/* ── Cabeçalho ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Análise de Crédito</h1>
+          <p className="text-sm text-muted-foreground">Pipeline P01→P04 · ECD/ECF → Balanço → Indicadores → Classificação</p>
+        </div>
+        <button
+          onClick={dispararPipeline}
+          type="button"
+          disabled={disparando}
+          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+        >
+          {disparando
+            ? <ArrowClockwiseIcon size={16} className="animate-spin" />
+            : <PlayIcon size={16} weight="fill" />}
+          Disparar Pipeline
+        </button>
+      </div>
+
+      {/* ── Seletor de empresa ── */}
+      <Card className="w-full border">
+        <CardContent className="flex flex-wrap items-center gap-4 p-4">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="sel-empresa" className="text-xs font-medium text-muted-foreground">Empresa</label>
+            <select
+              id="sel-empresa"
+              className="h-9 min-w-[320px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={cnpjSelecionado}
+              onChange={e => { setCnpjSelecionado(e.target.value); setExercicioFiltro(undefined); }}
+            >
+              <option value="">Selecione uma empresa…</option>
+              {empresas.map(e => (
+                <option key={e.cnpj} value={e.cnpj}>
+                  {formatarCnpj(e.cnpj)} — {e.razaoSocial}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {exerciciosDisponiveis.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <label htmlFor="sel-exercicio" className="text-xs font-medium text-muted-foreground">Exercício</label>
+              <select
+                id="sel-exercicio"
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                value={exercicioFiltro ?? ''}
+                onChange={e => setExercicioFiltro(e.target.value ? Number(e.target.value) : undefined)}
+              >
+                <option value="">Todos</option>
+                {exerciciosDisponiveis.map(a => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {empresaSelecionada?.ultimaClassificacao && (
+            <div className="ml-auto flex items-center gap-3">
+              <div className="text-right text-sm">
+                <p className="font-medium">{empresaSelecionada.razaoSocial}</p>
+                <p className="text-xs text-muted-foreground">{empresaSelecionada.regimeTributario ?? '—'}</p>
+              </div>
+              <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full border-2 text-xl font-bold ${CLS_COLOR[empresaSelecionada.ultimaClassificacao.classificacao]}`}>
+                {empresaSelecionada.ultimaClassificacao.classificacao}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Conteúdo por tabs ── */}
+      {cnpjSelecionado && (
+        <>
+          {/* Tabs */}
+          <div className="flex gap-1 border-b">
+            {TAB_ITEMS.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
+                  tab === t.id
+                    ? 'border-b-2 border-primary text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {t.icon}{t.label}
+              </button>
+            ))}
+          </div>
+
+          {carregando ? (
+            <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+              <ArrowClockwiseIcon size={18} className="mr-2 animate-spin" /> Carregando…
+            </div>
+          ) : (
+            <>
+              {/* ── Tab: Pipeline status ── */}
+              {tab === 'status' && (
+                <Card className="border">
+                  <CardHeader className="pb-2"><CardTitle className="text-base">Status do Pipeline por Exercício</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    {statusData.length === 0 ? (
+                      <p className="p-6 text-sm text-muted-foreground">Nenhum processamento encontrado para esta empresa.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="px-4 py-2 text-left font-medium">Exercício</th>
+                            <th className="px-4 py-2 text-center font-medium">P01 (ECD/ECF)</th>
+                            <th className="px-4 py-2 text-center font-medium">P02 (Balanço/DRE)</th>
+                            <th className="px-4 py-2 text-center font-medium">P03 (Indicadores)</th>
+                            <th className="px-4 py-2 text-center font-medium">P04 (Classificação)</th>
+                            <th className="px-4 py-2 text-center font-medium">Bloqueios</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statusData.map(s => (
+                            <tr key={s.exercicio} className="border-b last:border-0 hover:bg-muted/30">
+                              <td className="px-4 py-2 font-medium">{s.exercicio}</td>
+                              {(['p01', 'p02', 'p03', 'p04'] as const).map(p => (
+                                <td key={p} className="px-4 py-2 text-center">
+                                  {s[p]
+                                    ? <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircleIcon weight="fill" size={14} />{s[p]}</span>
+                                    : <span className="text-muted-foreground">—</span>}
+                                </td>
+                              ))}
+                              <td className="px-4 py-2 text-center">
+                                {s.totalBloqueios > 0
+                                  ? <Badge className="bg-red-100 text-red-800 border-red-300">{s.totalBloqueios}</Badge>
+                                  : <span className="text-muted-foreground">0</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ── Tab: Indicadores ── */}
+              {tab === 'indicadores' && (
+                <div className="flex flex-col gap-4">
+                  {Object.keys(indPorCategoria).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum indicador disponível para o filtro selecionado.</p>
+                  ) : (
+                    Object.entries(indPorCategoria).map(([cat, inds]) => (
+                      <Card key={cat} className="border">
+                        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Grupo {cat}</CardTitle></CardHeader>
+                        <CardContent className="p-0">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b bg-muted/50">
+                                <th className="px-4 py-2 text-left font-medium">Indicador</th>
+                                <th className="px-4 py-2 text-left font-medium">Exercício</th>
+                                <th className="px-4 py-2 text-right font-medium">Valor</th>
+                                <th className="px-4 py-2 text-center font-medium">Fonte</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {inds.map(i => (
+                                <tr key={`${i.exercicio}-${i.indicador}`} className="border-b last:border-0 hover:bg-muted/30">
+                                  <td className="px-4 py-2 font-mono text-xs">{i.indicador}</td>
+                                  <td className="px-4 py-2 text-muted-foreground">{i.exercicio}</td>
+                                  <td className="px-4 py-2 text-right font-medium">
+                                    {i.valor === null
+                                      ? <span className="text-muted-foreground italic">NULL</span>
+                                      : formatarValor(i.valor, i.unidade)}
+                                  </td>
+                                  <td className="px-4 py-2 text-center">
+                                    {i.fonteOk === 1
+                                      ? <span className="text-xs text-emerald-600">direta</span>
+                                      : <span className="text-xs text-orange-600">inferida</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* ── Tab: Alertas ── */}
+              {tab === 'alertas' && (
+                <div className="flex flex-col gap-3">
+                  {alertasFiltrados.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum alerta disponível para o filtro selecionado.</p>
+                  ) : (
+                    (['critico', 'atencao', 'positivo'] as const).map(sev => {
+                      const grupo = alertasFiltrados.filter(a => a.severidade === sev);
+                      if (grupo.length === 0) return null;
+                      return (
+                        <Card key={sev} className="border">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="flex items-center gap-2 text-sm">
+                              {SEV_ICON[sev]}
+                              <span className="capitalize">{sev}</span>
+                              <Badge className={`ml-1 ${SEV_COLOR[sev]}`}>{grupo.length}</Badge>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="p-0">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b bg-muted/50">
+                                  <th className="px-4 py-2 text-left font-medium">Código</th>
+                                  <th className="px-4 py-2 text-left font-medium">Exercício</th>
+                                  <th className="px-4 py-2 text-left font-medium">Categoria</th>
+                                  <th className="px-4 py-2 text-left font-medium">Mensagem</th>
+                                  <th className="px-4 py-2 text-right font-medium">Valor</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {grupo.map(a => (
+                                  <tr key={`${a.exercicio}-${a.codigoRegra}`} className="border-b last:border-0 hover:bg-muted/30">
+                                    <td className="px-4 py-2 font-mono text-xs">{a.codigoRegra}</td>
+                                    <td className="px-4 py-2 text-muted-foreground">{a.exercicio}</td>
+                                    <td className="px-4 py-2 text-xs text-muted-foreground">{a.categoria}</td>
+                                    <td className="px-4 py-2">{a.mensagem}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs">
+                                      {a.valorAtual != null ? parseFloat(a.valorAtual).toFixed(3) : '—'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </CardContent>
+                        </Card>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* ── Tab: Classificação ── */}
+              {tab === 'classificacao' && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {classificacao.length === 0 ? (
+                    <p className="col-span-3 text-sm text-muted-foreground">Nenhuma classificação gerada ainda.</p>
+                  ) : (
+                    classificacao.map(c => (
+                      <Card key={c.id} className="border">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground">Exercício {c.exercicio}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Confiabilidade: <span className="font-medium text-foreground">{c.confiabilidade}</span>
+                              </p>
+                            </div>
+                            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-full border-2 text-2xl font-bold ${CLS_COLOR[c.classificacao]}`}>
+                              {c.classificacao}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex gap-3 text-xs">
+                            <span className="flex items-center gap-1 text-red-700">
+                              <XCircleIcon weight="fill" size={13} /> {c.qtdCriticos} críticos
+                            </span>
+                            <span className="flex items-center gap-1 text-yellow-700">
+                              <WarningIcon weight="fill" size={13} /> {c.qtdAtencao} atenção
+                            </span>
+                            <span className="flex items-center gap-1 text-emerald-700">
+                              <CheckCircleIcon weight="fill" size={13} /> {c.qtdPositivos} positivos
+                            </span>
+                          </div>
+                          {c.overrideAplicado && c.motivoOverride && (
+                            <p className="mt-2 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-xs text-orange-700">
+                              Override: {c.motivoOverride}
+                            </p>
+                          )}
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Gerado em {new Date(c.dataGeracao).toLocaleDateString('pt-BR')}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {!cnpjSelecionado && empresas.length > 0 && (
+        <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+          <BuildingsIcon size={40} />
+          <p className="text-sm">Selecione uma empresa para ver a análise de crédito</p>
+        </div>
+      )}
+
+      {empresas.length === 0 && !carregando && (
+        <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+          <PlayIcon size={40} />
+          <p className="text-sm">Nenhuma empresa processada ainda. Dispare o Pipeline para começar.</p>
+        </div>
+      )}
+    </div>
+  );
+}

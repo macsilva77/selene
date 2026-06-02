@@ -17,6 +17,7 @@ import {
   TagIcon,
   ReceiptIcon,
   CaretDownIcon,
+  ChartLineIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -45,6 +46,13 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Documentos Eletrônicos',
     items: [
       { href: '/dfe/documentos', icon: FileMagnifyingGlassIcon, label: 'NF-e' },
+    ],
+  },
+  {
+    id: 'analise-credito',
+    label: 'Análise de Crédito',
+    items: [
+      { href: '/analise-credito', icon: ChartLineIcon, label: 'Dashboard' },
     ],
   },
   {

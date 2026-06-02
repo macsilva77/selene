@@ -32,6 +32,7 @@ import { DfeDistribuicaoModule } from './modules/dfe-distribuicao/dfe-distribuic
 import { EtiquetasModule } from './modules/etiquetas/etiquetas.module';
 import { SpedModule } from './modules/sped/sped.module';
 import { ObrigacoesAcessoriasModule } from './modules/obrigacoes-acessorias/obrigacoes-acessorias.module';
+import { AnaliseCreditoModule } from './modules/analise-credito/analise-credito.module';
 
 
 @Module({
@@ -117,6 +118,7 @@ import { ObrigacoesAcessoriasModule } from './modules/obrigacoes-acessorias/obri
     EtiquetasModule,
     SpedModule,
     ObrigacoesAcessoriasModule,
+    AnaliseCreditoModule,
   ],
   providers: [
     // Global exception filter

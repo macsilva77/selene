@@ -1,0 +1,197 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService }      from '../../../database/prisma.service';
+import { P02BalancoService }  from './p02-balanco.service';
+import { P02DreService }      from './p02-dre.service';
+import { Decimal }            from '@prisma/client/runtime/library';
+
+const VERSAO_PROMPT  = 'P02-v1';
+const VERSAO_P01     = 'P01-v1';
+
+export interface P02Resultado {
+  empresaId: string;
+  exercicio: number;
+  status:    'ok' | 'bloqueado' | 'pulado' | 'erro';
+  mensagem?: string;
+}
+
+@Injectable()
+export class P02Service {
+  private readonly logger = new Logger(P02Service.name);
+
+  constructor(
+    private readonly prisma:   PrismaService,
+    private readonly balanco:  P02BalancoService,
+    private readonly dre:      P02DreService,
+  ) {}
+
+  // ─── API pública ───────────────────────────────────────────────────────────
+
+  async processarTodos(tenantId: string): Promise<P02Resultado[]> {
+    const empresas = await this.prisma.creditoEmpresa.findMany({
+      where: { tenantId },
+      select: { id: true, cnpj: true },
+    });
+
+    const resultados: P02Resultado[] = [];
+    for (const e of empresas) {
+      const exercicios = await this.descobrirExercicios(e.id);
+      for (const exercicio of exercicios) {
+        try {
+          const r = await this.processarExercicio(e.id, exercicio);
+          resultados.push(r);
+        } catch (err) {
+          this.logger.error(`[P02] Erro em empresa=${e.id} exercicio=${exercicio}: ${err}`);
+          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: String(err) });
+        }
+      }
+    }
+    return resultados;
+  }
+
+  async processarExercicio(empresaId: string, exercicio: number): Promise<P02Resultado> {
+    const t0 = Date.now();
+    this.logger.log(`[P02] empresa=${empresaId} exercicio=${exercicio}`);
+
+    // Pré-requisito: P01 concluído sem bloqueios
+    const p01ok = await this.verificarP01(empresaId, exercicio);
+    if (!p01ok) {
+      await this.gravarInconsistencia(empresaId, exercicio, 'P02_PREREQ_FALHOU',
+        'P01 não foi concluído com sucesso para este exercício', 'bloqueio');
+      return { empresaId, exercicio, status: 'bloqueado', mensagem: 'P01 não concluído' };
+    }
+
+    // Idempotência
+    if (await this.jaProcessado(empresaId, exercicio)) {
+      this.logger.log(`[P02] empresa=${empresaId} exercicio=${exercicio} — pulando`);
+      return { empresaId, exercicio, status: 'pulado' };
+    }
+
+    // ── Balanço ────────────────────────────────────────────────────────────────
+    const balancoResult = await this.balanco.montar(empresaId, exercicio);
+    const msBalanco     = Date.now() - t0;
+
+    if (balancoResult.bloqueado) {
+      await this.gravarInconsistencia(empresaId, exercicio, 'BALANCO_NAO_FECHA',
+        balancoResult.mensagem ?? 'Divergência > R$ 1,00', 'bloqueio');
+      await this.gravarProcessamento(empresaId, exercicio, 'tb_balanco',
+        0, 0, 0, 1, null, msBalanco);
+      return { empresaId, exercicio, status: 'bloqueado', mensagem: balancoResult.mensagem };
+    }
+
+    // Grava linhas do balanço
+    for (const l of balancoResult.linhas) {
+      await this.prisma.creditoBalanco.upsert({
+        where:  { empresaId_exercicio_contaCodigo: { empresaId, exercicio, contaCodigo: l.contaCodigo } },
+        create: { empresaId, exercicio, ...l },
+        update: { grupo: l.grupo, subgrupo: l.subgrupo, valor: l.valor, fonte: l.fonte },
+      });
+    }
+    await this.gravarProcessamento(empresaId, exercicio, 'tb_balanco',
+      balancoResult.linhas.length, balancoResult.linhas.length, 0, 0,
+      null, msBalanco);
+    this.logger.log(`[P02] empresa=${empresaId}/${exercicio} balanço: ${balancoResult.linhas.length} linhas`);
+
+    // ── DRE ────────────────────────────────────────────────────────────────────
+    const dreResult = await this.dre.montar(empresaId, exercicio);
+    const msDre     = Date.now() - t0;
+
+    for (const l of dreResult.linhas) {
+      await this.prisma.creditoDre.upsert({
+        where:  { empresaId_exercicio_linhaDre: { empresaId, exercicio, linhaDre: l.linhaDre } },
+        create: { empresaId, exercicio, linhaDre: l.linhaDre, valor: l.valor, fonte: l.fonte },
+        update: { valor: l.valor, fonte: l.fonte },
+      });
+    }
+
+    // Alertas de fonte/completude
+    for (const alerta of dreResult.alertas) {
+      await this.gravarInconsistencia(empresaId, exercicio, 'DRE_ALERTA', alerta, 'alerta');
+    }
+    if (!dreResult.completo) {
+      await this.gravarInconsistencia(empresaId, exercicio, 'DRE_INCOMPLETA',
+        'Receita líquida ou lucro líquido não identificado', 'alerta');
+    }
+
+    const bloqueiosDre = dreResult.completo ? 0 : 1;
+    await this.gravarProcessamento(empresaId, exercicio, 'tb_dre',
+      dreResult.linhas.length, dreResult.linhas.length,
+      dreResult.alertas.length, bloqueiosDre, dreResult.fonteUsada, msDre);
+
+    this.logger.log(`[P02] empresa=${empresaId}/${exercicio} DRE: ${dreResult.linhas.length} linhas (${dreResult.fonteUsada})`);
+    return { empresaId, exercicio, status: 'ok' };
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  private async descobrirExercicios(empresaId: string): Promise<number[]> {
+    const rows = await this.prisma.creditoProcessamento.findMany({
+      where: {
+        empresaId,
+        versaoPrompt:       VERSAO_P01,
+        registrosBloqueados: 0,
+        tabelaDestino:       'tb_ecd_saldos',
+      },
+      select:  { exercicio: true },
+      distinct: ['exercicio'],
+    });
+    return rows.map(r => r.exercicio);
+  }
+
+  private async verificarP01(empresaId: string, exercicio: number): Promise<boolean> {
+    const reg = await this.prisma.creditoProcessamento.findFirst({
+      where: {
+        empresaId, exercicio,
+        versaoPrompt:       VERSAO_P01,
+        registrosBloqueados: 0,
+        tabelaDestino:       { in: ['tb_ecd_saldos', 'tb_ecf_registros'] },
+      },
+    });
+    return reg !== null;
+  }
+
+  private async jaProcessado(empresaId: string, exercicio: number): Promise<boolean> {
+    const reg = await this.prisma.creditoProcessamento.findFirst({
+      where: {
+        empresaId, exercicio,
+        versaoPrompt:        VERSAO_PROMPT,
+        registrosBloqueados: 0,
+        tabelaDestino:       { in: ['tb_balanco', 'tb_dre'] },
+      },
+    });
+    return reg !== null;
+  }
+
+  private async gravarProcessamento(
+    empresaId: string, exercicio: number, tabela: string,
+    total: number, ok: number, alerta: number, bloqueados: number,
+    hash: string | null, duracaoMs: number,
+  ) {
+    await this.prisma.creditoProcessamento.upsert({
+      where: {
+        empresaId_exercicio_tabelaDestino_versaoPrompt: {
+          empresaId, exercicio, tabelaDestino: tabela, versaoPrompt: VERSAO_PROMPT,
+        },
+      },
+      create: {
+        empresaId, exercicio, tabelaDestino: tabela,
+        totalRegistros: total, registrosOk: ok, registrosComAlerta: alerta,
+        registrosBloqueados: bloqueados, hashArquivoOrigem: hash,
+        timestampProcessamento: new Date(), versaoPrompt: VERSAO_PROMPT, duracaoMs,
+      },
+      update: {
+        totalRegistros: total, registrosOk: ok, registrosComAlerta: alerta,
+        registrosBloqueados: bloqueados, hashArquivoOrigem: hash,
+        timestampProcessamento: new Date(), duracaoMs,
+      },
+    });
+  }
+
+  private async gravarInconsistencia(
+    empresaId: string, exercicio: number,
+    tipoErro: string, descricao: string, severidade: string,
+  ) {
+    await this.prisma.creditoInconsistencia.create({
+      data: { empresaId, exercicio, tipoErro, descricao, severidade },
+    });
+  }
+}
