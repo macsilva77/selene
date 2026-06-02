@@ -136,10 +136,10 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    // Ordenação por criadoEm desc garante que o primeiro registro por tabelaDestino seja o mais recente
+    // Ordenação por timestampProcessamento desc: primeiro registro por tabelaDestino = mais recente
     const procs = await this.prisma.creditoProcessamento.findMany({
       where:   { empresaId: empresa.id },
-      orderBy: [{ exercicio: 'desc' }, { criadoEm: 'desc' }],
+      orderBy: [{ exercicio: 'desc' }, { timestampProcessamento: 'desc' }],
     });
 
     // Indexa o registro mais recente por exercício × tabelaDestino
