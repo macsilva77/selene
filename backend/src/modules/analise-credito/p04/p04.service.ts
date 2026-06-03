@@ -97,13 +97,14 @@ export class P04Service {
     const { classificacao, confiabilidade } = classificar(alertas, percInferido);
 
     // ── Persiste tb_alertas ────────────────────────────────────────────────
-    await this.prisma.$transaction(alertas.map(a =>
-      this.prisma.creditoAlerta.upsert({
-        where:  { empresaId_exercicio_codigoRegra: { empresaId, exercicio, codigoRegra: a.codigoRegra } },
-        create: { empresaId, exercicio, ...a },
-        update: { valorAtual: a.valorAtual, mensagem: a.mensagem, regraOk: a.regraOk },
-      })
-    ));
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoAlerta.deleteMany({ where: { empresaId, exercicio } });
+      if (alertas.length > 0) {
+        await tx.creditoAlerta.createMany({
+          data: alertas.map(a => ({ empresaId, exercicio, ...a })),
+        });
+      }
+    }, { timeout: 30000 });
 
     // ── Persiste tb_classificacoes ─────────────────────────────────────────
     const qtdCriticos  = alertas.filter(a => a.severidade === 'critico').length;

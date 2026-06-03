@@ -250,14 +250,14 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcd>['planoContas'],
   ) {
-    const ops = rows.map(r => this.prisma.creditoPlanoConta.upsert({
-      where:  { empresaId_exercicio_contaCodigo: { empresaId, exercicio, contaCodigo: r.contaCodigo } },
-      create: { empresaId, exercicio, ...r },
-      update: { contaNome: r.contaNome, nivel: r.nivel, natureza: r.natureza, tipo: r.tipo, grupo: r.grupo },
-    }));
-    for (let i = 0; i < ops.length; i += 500) {
-      await this.prisma.$transaction(ops.slice(i, i + 500));
-    }
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoPlanoConta.deleteMany({ where: { empresaId, exercicio } });
+      if (rows.length > 0) {
+        await tx.creditoPlanoConta.createMany({
+          data: rows.map(r => ({ empresaId, exercicio, ...r })),
+        });
+      }
+    }, { timeout: 30000 });
   }
 
   private async upsertEcdSaldos(
@@ -265,37 +265,26 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcd>['saldos'],
   ) {
-    const ops = rows.map(r => this.prisma.creditoEcdSaldo.upsert({
-      where: {
-        empresaId_exercicio_periodo_contaCodigo: {
-          empresaId, exercicio, periodo: r.periodo, contaCodigo: r.contaCodigo,
-        },
-      },
-      create: {
-        empresaId, exercicio,
-        periodo:       r.periodo,
-        contaCodigo:   r.contaCodigo,
-        contaNome:     r.contaNome,
-        grupo:         r.grupo,
-        saldoAnterior: new Decimal(r.saldoAnterior),
-        debitos:       new Decimal(r.debitos),
-        creditos:      new Decimal(r.creditos),
-        saldoFinal:    new Decimal(r.saldoFinal),
-        naturezaSaldo: r.naturezaSaldo,
-        status:        r.status,
-      },
-      update: {
-        saldoAnterior: new Decimal(r.saldoAnterior),
-        debitos:       new Decimal(r.debitos),
-        creditos:      new Decimal(r.creditos),
-        saldoFinal:    new Decimal(r.saldoFinal),
-        naturezaSaldo: r.naturezaSaldo,
-        status:        r.status,
-      },
-    }));
-    for (let i = 0; i < ops.length; i += 500) {
-      await this.prisma.$transaction(ops.slice(i, i + 500));
-    }
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoEcdSaldo.deleteMany({ where: { empresaId, exercicio } });
+      if (rows.length > 0) {
+        await tx.creditoEcdSaldo.createMany({
+          data: rows.map(r => ({
+            empresaId, exercicio,
+            periodo:       r.periodo,
+            contaCodigo:   r.contaCodigo,
+            contaNome:     r.contaNome,
+            grupo:         r.grupo,
+            saldoAnterior: new Decimal(r.saldoAnterior),
+            debitos:       new Decimal(r.debitos),
+            creditos:      new Decimal(r.creditos),
+            saldoFinal:    new Decimal(r.saldoFinal),
+            naturezaSaldo: r.naturezaSaldo,
+            status:        r.status,
+          })),
+        });
+      }
+    }, { timeout: 30000 });
   }
 
   private async upsertEcfRegistros(
@@ -303,18 +292,14 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcf>['registros'],
   ) {
-    const ops = rows.map(r => this.prisma.creditoEcfRegistro.upsert({
-      where: {
-        empresaId_exercicio_registroEcf_linhaCodigo: {
-          empresaId, exercicio, registroEcf: r.registroEcf, linhaCodigo: r.linhaCodigo,
-        },
-      },
-      create: { empresaId, exercicio, ...r, valor: new Decimal(r.valor) },
-      update: { descricao: r.descricao, valor: new Decimal(r.valor), status: r.status },
-    }));
-    for (let i = 0; i < ops.length; i += 500) {
-      await this.prisma.$transaction(ops.slice(i, i + 500));
-    }
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoEcfRegistro.deleteMany({ where: { empresaId, exercicio } });
+      if (rows.length > 0) {
+        await tx.creditoEcfRegistro.createMany({
+          data: rows.map(r => ({ empresaId, exercicio, ...r, valor: new Decimal(r.valor) })),
+        });
+      }
+    }, { timeout: 30000 });
   }
 
   private async gravarProcessamento(p: {

@@ -74,13 +74,20 @@ export class P03Service {
     const indicadores = calcularIndicadores(bal, dre, balAnt, dreAnt, fonteOk);
 
     // ── Persiste tb_indicadores ───────────────────────────────────────────
-    await this.prisma.$transaction(indicadores.map(ind =>
-      this.prisma.creditoIndicador.upsert({
-        where:  { empresaId_exercicio_indicador: { empresaId, exercicio, indicador: ind.indicador } },
-        create: { empresaId, exercicio, indicador: ind.indicador, valor: ind.valor, unidade: ind.unidade, fonteOk: ind.fonteOk },
-        update: { valor: ind.valor, unidade: ind.unidade, fonteOk: ind.fonteOk },
-      })
-    ));
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoIndicador.deleteMany({ where: { empresaId, exercicio } });
+      if (indicadores.length > 0) {
+        await tx.creditoIndicador.createMany({
+          data: indicadores.map(ind => ({
+            empresaId, exercicio,
+            indicador: ind.indicador,
+            valor:     ind.valor,
+            unidade:   ind.unidade,
+            fonteOk:   ind.fonteOk,
+          })),
+        });
+      }
+    }, { timeout: 30000 });
 
     // NULL documentado em lote
     const nullInds = indicadores.filter(i => i.valor === null);

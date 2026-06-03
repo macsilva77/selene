@@ -79,13 +79,14 @@ export class P02Service {
     }
 
     // Grava linhas do balanço
-    await this.prisma.$transaction(balancoResult.linhas.map(l =>
-      this.prisma.creditoBalanco.upsert({
-        where:  { empresaId_exercicio_contaCodigo: { empresaId, exercicio, contaCodigo: l.contaCodigo } },
-        create: { empresaId, exercicio, ...l },
-        update: { grupo: l.grupo, subgrupo: l.subgrupo, valor: l.valor, fonte: l.fonte },
-      })
-    ));
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoBalanco.deleteMany({ where: { empresaId, exercicio } });
+      if (balancoResult.linhas.length > 0) {
+        await tx.creditoBalanco.createMany({
+          data: balancoResult.linhas.map(l => ({ empresaId, exercicio, ...l })),
+        });
+      }
+    }, { timeout: 30000 });
     await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_balanco',
       total: balancoResult.linhas.length, ok: balancoResult.linhas.length, alerta: 0, bloqueados: 0,
       hash: null, duracaoMs: msBalanco });
@@ -95,13 +96,14 @@ export class P02Service {
     const dreResult = await this.dre.montar(empresaId, exercicio);
     const msDre     = Date.now() - t0;
 
-    await this.prisma.$transaction(dreResult.linhas.map(l =>
-      this.prisma.creditoDre.upsert({
-        where:  { empresaId_exercicio_linhaDre: { empresaId, exercicio, linhaDre: l.linhaDre } },
-        create: { empresaId, exercicio, linhaDre: l.linhaDre, valor: l.valor, fonte: l.fonte },
-        update: { valor: l.valor, fonte: l.fonte },
-      })
-    ));
+    await this.prisma.$transaction(async tx => {
+      await tx.creditoDre.deleteMany({ where: { empresaId, exercicio } });
+      if (dreResult.linhas.length > 0) {
+        await tx.creditoDre.createMany({
+          data: dreResult.linhas.map(l => ({ empresaId, exercicio, linhaDre: l.linhaDre, valor: l.valor, fonte: l.fonte })),
+        });
+      }
+    }, { timeout: 30000 });
 
     // Alertas de fonte/completude
     for (const alerta of dreResult.alertas) {
