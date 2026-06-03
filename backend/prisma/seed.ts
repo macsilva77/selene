@@ -95,6 +95,9 @@ async function main() {
     'etiquetas.view', 'etiquetas.create', 'etiquetas.edit', 'etiquetas.delete',
     // Permissões de Obrigações Acessórias
     'obrigacoes-acessorias.view',
+    // Permissões de Análise de Crédito
+    'analise-credito.view',
+    'analise-credito.processar',
   ];
 
   // Use raw SQL to upsert perfil (bypasses stale Prisma client types)
