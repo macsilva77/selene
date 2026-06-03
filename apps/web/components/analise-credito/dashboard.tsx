@@ -11,6 +11,7 @@ import {
   ChartLineIcon,
   BellIcon,
   ListChecksIcon,
+  BugIcon,
 } from '@phosphor-icons/react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +24,7 @@ import {
   type Alerta,
   type ClassificacaoRisco,
   type Classificacao,
+  type Inconsistencia,
 } from '@/lib/analise-credito-api';
 
 /* ─── Helpers visuais ────────────────────────────────────────────────────── */
@@ -47,6 +49,12 @@ const SEV_ICON: Record<string, React.ReactNode> = {
   positivo: <CheckCircleIcon weight="fill" className="text-emerald-500" size={14} />,
 };
 
+const INC_SEV_COLOR: Record<string, string> = {
+  bloqueio: 'bg-red-100 text-red-800 border-red-300',
+  alerta:   'bg-yellow-100 text-yellow-800 border-yellow-300',
+  info:     'bg-blue-100 text-blue-800 border-blue-300',
+};
+
 function formatarCnpj(cnpj: string) {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
@@ -62,7 +70,7 @@ function formatarValor(valor: string | null, unidade: string): string {
   return n.toFixed(2);
 }
 
-type Tab = 'status' | 'indicadores' | 'alertas' | 'classificacao';
+type Tab = 'status' | 'indicadores' | 'alertas' | 'classificacao' | 'inconsistencias';
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
 
@@ -79,9 +87,9 @@ export function AnaliseCreditoDashboard() {
   const [indicadores, setIndicadores]         = useState<Indicador[]>([]);
   const [alertas, setAlertas]                 = useState<Alerta[]>([]);
   const [classificacao, setClassificacao]     = useState<ClassificacaoRisco[]>([]);
+  const [inconsistencias, setInconsistencias] = useState<Inconsistencia[]>([]);
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
 
-  // Carrega lista de empresas uma vez
   useEffect(() => {
     analiseCreditoApi.listarEmpresas()
       .then(setEmpresas)
@@ -92,16 +100,18 @@ export function AnaliseCreditoDashboard() {
     if (!cnpj) return;
     setCarregando(true);
     try {
-      const [status, inds, als, cls] = await Promise.all([
+      const [status, inds, als, cls, incs] = await Promise.all([
         analiseCreditoApi.statusPipeline(cnpj),
         analiseCreditoApi.indicadores(cnpj, exercicio),
         analiseCreditoApi.alertas(cnpj, exercicio),
         analiseCreditoApi.classificacao(cnpj),
+        analiseCreditoApi.inconsistencias(cnpj),
       ]);
       setStatusData(status ?? []);
       setIndicadores(inds);
       setAlertas(als);
       setClassificacao(cls);
+      setInconsistencias(incs);
     } catch {
       toastError('Erro ao carregar dados da empresa');
     } finally {
@@ -155,11 +165,22 @@ export function AnaliseCreditoDashboard() {
     [alertas, exercicioFiltro],
   );
 
-  const TAB_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'status',        label: 'Pipeline',    icon: <ListChecksIcon size={15} /> },
-    { id: 'indicadores',   label: 'Indicadores', icon: <ChartLineIcon size={15} /> },
-    { id: 'alertas',       label: `Alertas${alertasFiltrados.length ? ` (${alertasFiltrados.length})` : ''}`, icon: <BellIcon size={15} /> },
-    { id: 'classificacao', label: 'Classificação', icon: <BuildingsIcon size={15} /> },
+  const incsFiltradas = useMemo(
+    () => inconsistencias.filter(i => exercicioFiltro === undefined || i.exercicio === exercicioFiltro),
+    [inconsistencias, exercicioFiltro],
+  );
+
+  const totalBloqueios = useMemo(
+    () => statusData.reduce((s, r) => s + r.totalBloqueios, 0),
+    [statusData],
+  );
+
+  const TAB_ITEMS: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { id: 'status',          label: 'Pipeline',        icon: <ListChecksIcon size={15} /> },
+    { id: 'indicadores',     label: 'Indicadores',     icon: <ChartLineIcon size={15} /> },
+    { id: 'alertas',         label: `Alertas${alertasFiltrados.length ? ` (${alertasFiltrados.length})` : ''}`, icon: <BellIcon size={15} /> },
+    { id: 'classificacao',   label: 'Classificação',   icon: <BuildingsIcon size={15} /> },
+    { id: 'inconsistencias', label: 'Inconsistências', icon: <BugIcon size={15} />, badge: totalBloqueios || undefined },
   ];
 
   return (
@@ -253,6 +274,9 @@ export function AnaliseCreditoDashboard() {
                 }`}
               >
                 {t.icon}{t.label}
+                {t.badge !== undefined && (
+                  <Badge className="ml-1 bg-red-100 text-red-800 border-red-300">{t.badge}</Badge>
+                )}
               </button>
             ))}
           </div>
@@ -294,9 +318,20 @@ export function AnaliseCreditoDashboard() {
                                 </td>
                               ))}
                               <td className="px-4 py-2 text-center">
-                                {s.totalBloqueios > 0
-                                  ? <Badge className="bg-red-100 text-red-800 border-red-300">{s.totalBloqueios}</Badge>
-                                  : <span className="text-muted-foreground">0</span>}
+                                {s.totalBloqueios > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setTab('inconsistencias')}
+                                    className="cursor-pointer"
+                                    title="Ver inconsistências"
+                                  >
+                                    <Badge className="bg-red-100 text-red-800 border-red-300 hover:bg-red-200">
+                                      {s.totalBloqueios}
+                                    </Badge>
+                                  </button>
+                                ) : (
+                                  <span className="text-muted-foreground">0</span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -447,6 +482,57 @@ export function AnaliseCreditoDashboard() {
                     ))
                   )}
                 </div>
+              )}
+
+              {/* ── Tab: Inconsistências ── */}
+              {tab === 'inconsistencias' && (
+                <Card className="border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <BugIcon size={16} />
+                      Inconsistências do Pipeline
+                      {incsFiltradas.filter(i => i.severidade === 'bloqueio').length > 0 && (
+                        <Badge className="bg-red-100 text-red-800 border-red-300">
+                          {incsFiltradas.filter(i => i.severidade === 'bloqueio').length} bloqueios
+                        </Badge>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {incsFiltradas.length === 0 ? (
+                      <p className="p-6 text-sm text-muted-foreground">Nenhuma inconsistência registrada.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="px-4 py-2 text-left font-medium">Severidade</th>
+                            <th className="px-4 py-2 text-left font-medium">Exercício</th>
+                            <th className="px-4 py-2 text-left font-medium">Tipo</th>
+                            <th className="px-4 py-2 text-left font-medium">Descrição</th>
+                            <th className="px-4 py-2 text-left font-medium">Data</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {incsFiltradas.map(i => (
+                            <tr key={i.id} className="border-b last:border-0 hover:bg-muted/30">
+                              <td className="px-4 py-2">
+                                <Badge className={INC_SEV_COLOR[i.severidade] ?? 'bg-muted text-muted-foreground'}>
+                                  {i.severidade}
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-2 text-muted-foreground">{i.exercicio}</td>
+                              <td className="px-4 py-2 font-mono text-xs">{i.tipoErro}</td>
+                              <td className="px-4 py-2 text-sm">{i.descricao}</td>
+                              <td className="px-4 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                                {new Date(i.criadoEm).toLocaleString('pt-BR')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </CardContent>
+                </Card>
               )}
             </>
           )}

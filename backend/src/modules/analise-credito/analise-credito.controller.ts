@@ -1,5 +1,5 @@
 import {
-  Controller, Post, Get, Param, Query, UseGuards,
+  Controller, Logger, Post, Get, Param, Query, UseGuards,
   HttpCode, HttpStatus, NotFoundException, BadRequestException,
 } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
@@ -16,6 +16,8 @@ import { Audit }         from '../../common/interceptors/audit.interceptor';
 @UseGuards(JwtAuthGuard)
 @Controller('analise-credito')
 export class AnaliseCreditoController {
+  private readonly logger = new Logger(AnaliseCreditoController.name);
+
   constructor(
     private readonly p01Service: P01Service,
     private readonly p01Job:     P01Job,
@@ -36,7 +38,7 @@ export class AnaliseCreditoController {
   ) {
     void this.p01Service.processarTodos(tenantId, {
       forcarReprocessamento: forcar === 'true',
-    }).catch(err => console.error('[P01] Erro em background:', err));
+    }).catch(err => this.logger.error('[P01] Erro em background', err instanceof Error ? err.stack : String(err)));
     return { mensagem: 'P01 iniciado em background', status: 'aceito' };
   }
 
@@ -50,7 +52,7 @@ export class AnaliseCreditoController {
   ) {
     void this.p01Service.processarCnpj(tenantId, cnpj, {
       forcarReprocessamento: forcar === 'true',
-    }).catch(err => console.error(`[P01] Erro em background (${cnpj}):`, err));
+    }).catch(err => this.logger.error(`[P01] Erro em background (${cnpj})`, err instanceof Error ? err.stack : String(err)));
     return { mensagem: `P01 iniciado para CNPJ ${cnpj}`, status: 'aceito' };
   }
 
@@ -69,7 +71,7 @@ export class AnaliseCreditoController {
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoP02')
   async dispararP02(@CurrentUser('tenantId') tenantId: string) {
     void this.p02Service.processarTodos(tenantId)
-      .catch(err => console.error('[P02] Erro em background:', err));
+      .catch(err => this.logger.error('[P02] Erro em background', err instanceof Error ? err.stack : String(err)));
     return { mensagem: 'P02 iniciado em background', status: 'aceito' };
   }
 
@@ -80,7 +82,7 @@ export class AnaliseCreditoController {
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoP03')
   async dispararP03(@CurrentUser('tenantId') tenantId: string) {
     void this.p03Service.processarTodos(tenantId)
-      .catch(err => console.error('[P03] Erro em background:', err));
+      .catch(err => this.logger.error('[P03] Erro em background', err instanceof Error ? err.stack : String(err)));
     return { mensagem: 'P03 iniciado em background', status: 'aceito' };
   }
 
@@ -91,7 +93,7 @@ export class AnaliseCreditoController {
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoP04')
   async dispararP04(@CurrentUser('tenantId') tenantId: string) {
     void this.p04Service.processarTodos(tenantId)
-      .catch(err => console.error('[P04] Erro em background:', err));
+      .catch(err => this.logger.error('[P04] Erro em background', err instanceof Error ? err.stack : String(err)));
     return { mensagem: 'P04 iniciado em background', status: 'aceito' };
   }
 
@@ -103,7 +105,7 @@ export class AnaliseCreditoController {
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoPipeline')
   async dispararPipeline(@CurrentUser('tenantId') tenantId: string) {
     void this.p01Job.executar(tenantId)
-      .catch(err => console.error('[Pipeline] Erro em background:', err));
+      .catch(err => this.logger.error('[Pipeline] Erro em background', err instanceof Error ? err.stack : String(err)));
     return { mensagem: 'Pipeline P01→P04 iniciado em background', status: 'aceito' };
   }
 

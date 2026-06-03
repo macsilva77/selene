@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService }      from '../../../database/prisma.service';
 import { P02BalancoService }  from './p02-balanco.service';
 import { P02DreService }      from './p02-dre.service';
-import { Decimal }            from '@prisma/client/runtime/library';
 
 const VERSAO_PROMPT  = 'P02-v1';
 const VERSAO_P01     = 'P01-v1';
@@ -40,8 +39,9 @@ export class P02Service {
           const r = await this.processarExercicio(e.id, exercicio);
           resultados.push(r);
         } catch (err) {
-          this.logger.error(`[P02] Erro em empresa=${e.id} exercicio=${exercicio}: ${err}`);
-          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: String(err) });
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`[P02] Erro em empresa=${e.id} exercicio=${exercicio}: ${msg}`, err instanceof Error ? err.stack : undefined);
+          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: msg });
         }
       }
     }
@@ -73,35 +73,35 @@ export class P02Service {
     if (balancoResult.bloqueado) {
       await this.gravarInconsistencia(empresaId, exercicio, 'BALANCO_NAO_FECHA',
         balancoResult.mensagem ?? 'Divergência > R$ 1,00', 'bloqueio');
-      await this.gravarProcessamento(empresaId, exercicio, 'tb_balanco',
-        0, 0, 0, 1, null, msBalanco);
+      await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_balanco',
+        total: 0, ok: 0, alerta: 0, bloqueados: 1, hash: null, duracaoMs: msBalanco });
       return { empresaId, exercicio, status: 'bloqueado', mensagem: balancoResult.mensagem };
     }
 
     // Grava linhas do balanço
-    for (const l of balancoResult.linhas) {
-      await this.prisma.creditoBalanco.upsert({
+    await this.prisma.$transaction(balancoResult.linhas.map(l =>
+      this.prisma.creditoBalanco.upsert({
         where:  { empresaId_exercicio_contaCodigo: { empresaId, exercicio, contaCodigo: l.contaCodigo } },
         create: { empresaId, exercicio, ...l },
         update: { grupo: l.grupo, subgrupo: l.subgrupo, valor: l.valor, fonte: l.fonte },
-      });
-    }
-    await this.gravarProcessamento(empresaId, exercicio, 'tb_balanco',
-      balancoResult.linhas.length, balancoResult.linhas.length, 0, 0,
-      null, msBalanco);
+      })
+    ));
+    await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_balanco',
+      total: balancoResult.linhas.length, ok: balancoResult.linhas.length, alerta: 0, bloqueados: 0,
+      hash: null, duracaoMs: msBalanco });
     this.logger.log(`[P02] empresa=${empresaId}/${exercicio} balanço: ${balancoResult.linhas.length} linhas`);
 
     // ── DRE ────────────────────────────────────────────────────────────────────
     const dreResult = await this.dre.montar(empresaId, exercicio);
     const msDre     = Date.now() - t0;
 
-    for (const l of dreResult.linhas) {
-      await this.prisma.creditoDre.upsert({
+    await this.prisma.$transaction(dreResult.linhas.map(l =>
+      this.prisma.creditoDre.upsert({
         where:  { empresaId_exercicio_linhaDre: { empresaId, exercicio, linhaDre: l.linhaDre } },
         create: { empresaId, exercicio, linhaDre: l.linhaDre, valor: l.valor, fonte: l.fonte },
         update: { valor: l.valor, fonte: l.fonte },
-      });
-    }
+      })
+    ));
 
     // Alertas de fonte/completude
     for (const alerta of dreResult.alertas) {
@@ -113,9 +113,10 @@ export class P02Service {
     }
 
     const bloqueiosDre = dreResult.completo ? 0 : 1;
-    await this.gravarProcessamento(empresaId, exercicio, 'tb_dre',
-      dreResult.linhas.length, dreResult.linhas.length,
-      dreResult.alertas.length, bloqueiosDre, dreResult.fonteUsada, msDre);
+    await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_dre',
+      total: dreResult.linhas.length, ok: dreResult.linhas.length,
+      alerta: dreResult.alertas.length, bloqueados: bloqueiosDre,
+      hash: dreResult.fonteUsada, duracaoMs: msDre });
 
     this.logger.log(`[P02] empresa=${empresaId}/${exercicio} DRE: ${dreResult.linhas.length} linhas (${dreResult.fonteUsada})`);
     return { empresaId, exercicio, status: 'ok' };
@@ -161,19 +162,21 @@ export class P02Service {
     return reg !== null;
   }
 
-  private async gravarProcessamento(
-    empresaId: string, exercicio: number, tabela: string,
-    total: number, ok: number, alerta: number, bloqueados: number,
-    hash: string | null, duracaoMs: number,
-  ) {
+  private async gravarProcessamento(p: {
+    empresaId: string; exercicio: number; tabela: string;
+    total: number; ok: number; alerta: number; bloqueados: number;
+    hash: string | null; duracaoMs: number;
+  }) {
+    const { empresaId, exercicio, tabela: tabelaDestino,
+            total, ok, alerta, bloqueados, hash, duracaoMs } = p;
     await this.prisma.creditoProcessamento.upsert({
       where: {
         empresaId_exercicio_tabelaDestino_versaoPrompt: {
-          empresaId, exercicio, tabelaDestino: tabela, versaoPrompt: VERSAO_PROMPT,
+          empresaId, exercicio, tabelaDestino, versaoPrompt: VERSAO_PROMPT,
         },
       },
       create: {
-        empresaId, exercicio, tabelaDestino: tabela,
+        empresaId, exercicio, tabelaDestino,
         totalRegistros: total, registrosOk: ok, registrosComAlerta: alerta,
         registrosBloqueados: bloqueados, hashArquivoOrigem: hash,
         timestampProcessamento: new Date(), versaoPrompt: VERSAO_PROMPT, duracaoMs,

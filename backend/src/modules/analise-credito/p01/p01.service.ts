@@ -69,8 +69,9 @@ export class P01Service {
         const res = await this.processarExercicio(tenantId, cnpj, exercicio, ecf, ecds, opcoes);
         resultados.push(res);
       } catch (err) {
-        this.logger.error(`[P01] Erro em ${cnpj}/${exercicio}: ${err}`);
-        resultados.push({ cnpj, exercicio, status: 'erro', tabelas: {}, mensagem: String(err) });
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`[P01] Erro em ${cnpj}/${exercicio}: ${msg}`, err instanceof Error ? err.stack : undefined);
+        resultados.push({ cnpj, exercicio, status: 'erro', tabelas: {}, mensagem: msg });
       }
     }
     return resultados;
@@ -153,8 +154,9 @@ export class P01Service {
         total, ok: total - alertas, alerta: alertas, bloqueados: 0, hash, duracaoMs: Date.now() - t0 });
       this.logger.log(`[P01] ${cnpj}/${exercicio} ECF: ${total} registros`);
     } catch (err) {
-      this.logger.error(`[P01] ${cnpj}/${exercicio} ECF erro: ${err}`);
-      incs.push({ tipoErro: 'ERRO_ECF', descricao: String(err), severidade: 'bloqueio' });
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[P01] ${cnpj}/${exercicio} ECF erro: ${msg}`, err instanceof Error ? err.stack : undefined);
+      incs.push({ tipoErro: 'ERRO_ECF', descricao: msg, severidade: 'bloqueio' });
       resultado.tabelas['tb_ecf_registros'] = { total: 0, ok: 0, alerta: 0, bloqueados: 1 };
       await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_ecf_registros',
         total: 0, ok: 0, alerta: 0, bloqueados: 1, hash: null, duracaoMs: Date.now() - t0 });
@@ -208,8 +210,9 @@ export class P01Service {
 
       this.logger.log(`[P01] ${cnpj}/${exercicio} ECD: ${saldosMerged.length} saldos | ${planoRows.length} contas`);
     } catch (err) {
-      this.logger.error(`[P01] ${cnpj}/${exercicio} ECD erro: ${err}`);
-      incs.push({ tipoErro: 'ERRO_ECD', descricao: String(err), severidade: 'alerta' });
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[P01] ${cnpj}/${exercicio} ECD erro: ${msg}`, err instanceof Error ? err.stack : undefined);
+      incs.push({ tipoErro: 'ERRO_ECD', descricao: msg, severidade: 'alerta' });
     }
   }
 
@@ -247,12 +250,13 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcd>['planoContas'],
   ) {
-    for (const r of rows) {
-      await this.prisma.creditoPlanoConta.upsert({
-        where:  { empresaId_exercicio_contaCodigo: { empresaId, exercicio, contaCodigo: r.contaCodigo } },
-        create: { empresaId, exercicio, ...r },
-        update: { contaNome: r.contaNome, nivel: r.nivel, natureza: r.natureza, tipo: r.tipo, grupo: r.grupo },
-      });
+    const ops = rows.map(r => this.prisma.creditoPlanoConta.upsert({
+      where:  { empresaId_exercicio_contaCodigo: { empresaId, exercicio, contaCodigo: r.contaCodigo } },
+      create: { empresaId, exercicio, ...r },
+      update: { contaNome: r.contaNome, nivel: r.nivel, natureza: r.natureza, tipo: r.tipo, grupo: r.grupo },
+    }));
+    for (let i = 0; i < ops.length; i += 500) {
+      await this.prisma.$transaction(ops.slice(i, i + 500));
     }
   }
 
@@ -261,35 +265,36 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcd>['saldos'],
   ) {
-    for (const r of rows) {
-      await this.prisma.creditoEcdSaldo.upsert({
-        where: {
-          empresaId_exercicio_periodo_contaCodigo: {
-            empresaId, exercicio, periodo: r.periodo, contaCodigo: r.contaCodigo,
-          },
+    const ops = rows.map(r => this.prisma.creditoEcdSaldo.upsert({
+      where: {
+        empresaId_exercicio_periodo_contaCodigo: {
+          empresaId, exercicio, periodo: r.periodo, contaCodigo: r.contaCodigo,
         },
-        create: {
-          empresaId, exercicio,
-          periodo:       r.periodo,
-          contaCodigo:   r.contaCodigo,
-          contaNome:     r.contaNome,
-          grupo:         r.grupo,
-          saldoAnterior: new Decimal(r.saldoAnterior),
-          debitos:       new Decimal(r.debitos),
-          creditos:      new Decimal(r.creditos),
-          saldoFinal:    new Decimal(r.saldoFinal),
-          naturezaSaldo: r.naturezaSaldo,
-          status:        r.status,
-        },
-        update: {
-          saldoAnterior: new Decimal(r.saldoAnterior),
-          debitos:       new Decimal(r.debitos),
-          creditos:      new Decimal(r.creditos),
-          saldoFinal:    new Decimal(r.saldoFinal),
-          naturezaSaldo: r.naturezaSaldo,
-          status:        r.status,
-        },
-      });
+      },
+      create: {
+        empresaId, exercicio,
+        periodo:       r.periodo,
+        contaCodigo:   r.contaCodigo,
+        contaNome:     r.contaNome,
+        grupo:         r.grupo,
+        saldoAnterior: new Decimal(r.saldoAnterior),
+        debitos:       new Decimal(r.debitos),
+        creditos:      new Decimal(r.creditos),
+        saldoFinal:    new Decimal(r.saldoFinal),
+        naturezaSaldo: r.naturezaSaldo,
+        status:        r.status,
+      },
+      update: {
+        saldoAnterior: new Decimal(r.saldoAnterior),
+        debitos:       new Decimal(r.debitos),
+        creditos:      new Decimal(r.creditos),
+        saldoFinal:    new Decimal(r.saldoFinal),
+        naturezaSaldo: r.naturezaSaldo,
+        status:        r.status,
+      },
+    }));
+    for (let i = 0; i < ops.length; i += 500) {
+      await this.prisma.$transaction(ops.slice(i, i + 500));
     }
   }
 
@@ -298,16 +303,17 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcf>['registros'],
   ) {
-    for (const r of rows) {
-      await this.prisma.creditoEcfRegistro.upsert({
-        where: {
-          empresaId_exercicio_registroEcf_linhaCodigo: {
-            empresaId, exercicio, registroEcf: r.registroEcf, linhaCodigo: r.linhaCodigo,
-          },
+    const ops = rows.map(r => this.prisma.creditoEcfRegistro.upsert({
+      where: {
+        empresaId_exercicio_registroEcf_linhaCodigo: {
+          empresaId, exercicio, registroEcf: r.registroEcf, linhaCodigo: r.linhaCodigo,
         },
-        create: { empresaId, exercicio, ...r, valor: new Decimal(r.valor) },
-        update: { descricao: r.descricao, valor: new Decimal(r.valor), status: r.status },
-      });
+      },
+      create: { empresaId, exercicio, ...r, valor: new Decimal(r.valor) },
+      update: { descricao: r.descricao, valor: new Decimal(r.valor), status: r.status },
+    }));
+    for (let i = 0; i < ops.length; i += 500) {
+      await this.prisma.$transaction(ops.slice(i, i + 500));
     }
   }
 

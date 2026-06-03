@@ -4,7 +4,6 @@ import { Decimal }                 from '@prisma/client/runtime/library';
 import {
   BalData, DreData,
   calcularIndicadores, calcularEstruturaCapital,
-  getBal, getDre,
 } from './p03-formulas';
 
 const VERSAO_PROMPT = 'P03-v1';
@@ -37,8 +36,9 @@ export class P03Service {
         try {
           resultados.push(await this.processarExercicio(e.id, exercicio));
         } catch (err) {
-          this.logger.error(`[P03] empresa=${e.id} exercicio=${exercicio}: ${err}`);
-          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: String(err) });
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`[P03] empresa=${e.id} exercicio=${exercicio}: ${msg}`, err instanceof Error ? err.stack : undefined);
+          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: msg });
         }
       }
     }
@@ -74,24 +74,25 @@ export class P03Service {
     const indicadores = calcularIndicadores(bal, dre, balAnt, dreAnt, fonteOk);
 
     // ── Persiste tb_indicadores ───────────────────────────────────────────
-    for (const ind of indicadores) {
-      await this.prisma.creditoIndicador.upsert({
-        where: { empresaId_exercicio_indicador: { empresaId, exercicio, indicador: ind.indicador } },
-        create: {
-          empresaId, exercicio,
-          indicador: ind.indicador,
-          valor:     ind.valor,
-          unidade:   ind.unidade,
-          fonteOk:   ind.fonteOk,
-        },
+    await this.prisma.$transaction(indicadores.map(ind =>
+      this.prisma.creditoIndicador.upsert({
+        where:  { empresaId_exercicio_indicador: { empresaId, exercicio, indicador: ind.indicador } },
+        create: { empresaId, exercicio, indicador: ind.indicador, valor: ind.valor, unidade: ind.unidade, fonteOk: ind.fonteOk },
         update: { valor: ind.valor, unidade: ind.unidade, fonteOk: ind.fonteOk },
-      });
+      })
+    ));
 
-      // NULL documentado em inconsistências
-      if (ind.valor === null) {
-        await this.gravarInc(empresaId, exercicio,
-          'INDICADOR_NULL', `${ind.indicador}: SAFE_DIV retornou NULL`, 'info');
-      }
+    // NULL documentado em lote
+    const nullInds = indicadores.filter(i => i.valor === null);
+    if (nullInds.length > 0) {
+      await this.prisma.creditoInconsistencia.createMany({
+        data: nullInds.map(i => ({
+          empresaId, exercicio,
+          tipoErro:   'INDICADOR_NULL',
+          descricao:  `${i.indicador}: safeDiv retornou NULL`,
+          severidade: 'info',
+        })),
+      });
     }
 
     // ── Persiste tb_estrutura_capital ─────────────────────────────────────
@@ -103,11 +104,11 @@ export class P03Service {
     });
 
     const ms = Date.now() - t0;
-    await this.gravarProcessamento(empresaId, exercicio, 'tb_indicadores',
-      indicadores.length, indicadores.filter(i => i.valor !== null).length,
-      indicadores.filter(i => i.fonteOk === 0).length, 0, null, ms);
-    await this.gravarProcessamento(empresaId, exercicio, 'tb_estrutura_capital',
-      1, 1, 0, 0, null, ms);
+    await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_indicadores',
+      total: indicadores.length, ok: indicadores.filter(i => i.valor !== null).length,
+      alerta: indicadores.filter(i => i.fonteOk === 0).length, bloqueados: 0, hash: null, duracaoMs: ms });
+    await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_estrutura_capital',
+      total: 1, ok: 1, alerta: 0, bloqueados: 0, hash: null, duracaoMs: ms });
 
     this.logger.log(`[P03] empresa=${empresaId}/${exercicio}: ${indicadores.length} indicadores em ${ms}ms`);
     return { empresaId, exercicio, status: 'ok' };
@@ -175,15 +176,17 @@ export class P03Service {
     });
   }
 
-  private async gravarProcessamento(
-    empresaId: string, exercicio: number, tabela: string,
-    total: number, ok: number, alerta: number, bloqueados: number,
-    hash: string | null, duracaoMs: number,
-  ) {
+  private async gravarProcessamento(p: {
+    empresaId: string; exercicio: number; tabela: string;
+    total: number; ok: number; alerta: number; bloqueados: number;
+    hash: string | null; duracaoMs: number;
+  }) {
+    const { empresaId, exercicio, tabela: tabelaDestino,
+            total, ok, alerta, bloqueados, hash, duracaoMs } = p;
     await this.prisma.creditoProcessamento.upsert({
       where: { empresaId_exercicio_tabelaDestino_versaoPrompt:
-        { empresaId, exercicio, tabelaDestino: tabela, versaoPrompt: VERSAO_PROMPT } },
-      create: { empresaId, exercicio, tabelaDestino: tabela, totalRegistros: total,
+        { empresaId, exercicio, tabelaDestino, versaoPrompt: VERSAO_PROMPT } },
+      create: { empresaId, exercicio, tabelaDestino, totalRegistros: total,
         registrosOk: ok, registrosComAlerta: alerta, registrosBloqueados: bloqueados,
         hashArquivoOrigem: hash, timestampProcessamento: new Date(),
         versaoPrompt: VERSAO_PROMPT, duracaoMs },

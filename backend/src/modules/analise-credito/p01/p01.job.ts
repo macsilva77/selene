@@ -14,10 +14,8 @@ import { P04Service }         from '../p04/p04.service';
 export class P01Job {
   private readonly logger = new Logger(P01Job.name);
   private running = false;
-  private etapaAtual: string | null = null;
 
   estaRodando() { return this.running; }
-  getEtapa()    { return this.etapaAtual; }
 
   constructor(
     private readonly prisma:      PrismaService,
@@ -27,7 +25,7 @@ export class P01Job {
     private readonly p04Service:  P04Service,
   ) {}
 
-  /** Disparo automático: todo dia às 02:15 */
+  /** Cron diário às 02:15 */
   @Cron('15 2 * * *', { name: 'p01-diario' })
   async executarDiario(): Promise<void> {
     await this.executar();
@@ -80,7 +78,8 @@ export class P01Job {
         );
       }
     } catch (err) {
-      this.logger.error(`[P01 Job] Erro inesperado: ${err}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[P01 Job] Erro inesperado: ${msg}`, err instanceof Error ? err.stack : undefined);
     } finally {
       this.running = false;
     }

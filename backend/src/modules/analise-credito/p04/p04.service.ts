@@ -32,8 +32,9 @@ export class P04Service {
         try {
           resultados.push(await this.processarExercicio(e.id, exercicio));
         } catch (err) {
-          this.logger.error(`[P04] empresa=${e.id} exercicio=${exercicio}: ${err}`);
-          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: String(err) });
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`[P04] empresa=${e.id} exercicio=${exercicio}: ${msg}`, err instanceof Error ? err.stack : undefined);
+          resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: msg });
         }
       }
     }
@@ -69,7 +70,7 @@ export class P04Service {
       indPorAno.get(r.exercicio)!.set(r.indicador, { valor: r.valor, fonteOk: r.fonteOk });
     }
 
-    const exerciciosOrdenados = [...indPorAno.keys()].sort();
+    const exerciciosOrdenados = [...indPorAno.keys()].sort((a, b) => a - b);
     const idxAtual = exerciciosOrdenados.indexOf(exercicio);
     const exercicioAnt = idxAtual > 0 ? exerciciosOrdenados[idxAtual - 1] : null;
 
@@ -96,13 +97,13 @@ export class P04Service {
     const { classificacao, confiabilidade } = classificar(alertas, percInferido);
 
     // ── Persiste tb_alertas ────────────────────────────────────────────────
-    for (const a of alertas) {
-      await this.prisma.creditoAlerta.upsert({
-        where: { empresaId_exercicio_codigoRegra: { empresaId, exercicio, codigoRegra: a.codigoRegra } },
+    await this.prisma.$transaction(alertas.map(a =>
+      this.prisma.creditoAlerta.upsert({
+        where:  { empresaId_exercicio_codigoRegra: { empresaId, exercicio, codigoRegra: a.codigoRegra } },
         create: { empresaId, exercicio, ...a },
         update: { valorAtual: a.valorAtual, mensagem: a.mensagem, regraOk: a.regraOk },
-      });
-    }
+      })
+    ));
 
     // ── Persiste tb_classificacoes ─────────────────────────────────────────
     const qtdCriticos  = alertas.filter(a => a.severidade === 'critico').length;
@@ -131,10 +132,10 @@ export class P04Service {
     });
 
     const ms = Date.now() - t0;
-    await this.gravarProcessamento(empresaId, exercicio, 'tb_alertas',
-      alertas.length, alertas.length, 0, 0, null, ms);
-    await this.gravarProcessamento(empresaId, exercicio, 'tb_classificacoes',
-      1, 1, 0, 0, null, ms);
+    await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_alertas',
+      total: alertas.length, ok: alertas.length, alerta: 0, bloqueados: 0, hash: null, duracaoMs: ms });
+    await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_classificacoes',
+      total: 1, ok: 1, alerta: 0, bloqueados: 0, hash: null, duracaoMs: ms });
 
     this.logger.log(
       `[P04] empresa=${empresaId}/${exercicio}: ${qtdCriticos} críticos ` +
@@ -168,15 +169,17 @@ export class P04Service {
     });
   }
 
-  private async gravarProcessamento(
-    empresaId: string, exercicio: number, tabela: string,
-    total: number, ok: number, alerta: number, bloqueados: number,
-    hash: string | null, duracaoMs: number,
-  ) {
+  private async gravarProcessamento(p: {
+    empresaId: string; exercicio: number; tabela: string;
+    total: number; ok: number; alerta: number; bloqueados: number;
+    hash: string | null; duracaoMs: number;
+  }) {
+    const { empresaId, exercicio, tabela: tabelaDestino,
+            total, ok, alerta, bloqueados, hash, duracaoMs } = p;
     await this.prisma.creditoProcessamento.upsert({
       where: { empresaId_exercicio_tabelaDestino_versaoPrompt:
-        { empresaId, exercicio, tabelaDestino: tabela, versaoPrompt: VERSAO_PROMPT } },
-      create: { empresaId, exercicio, tabelaDestino: tabela, totalRegistros: total,
+        { empresaId, exercicio, tabelaDestino, versaoPrompt: VERSAO_PROMPT } },
+      create: { empresaId, exercicio, tabelaDestino, totalRegistros: total,
         registrosOk: ok, registrosComAlerta: alerta, registrosBloqueados: bloqueados,
         hashArquivoOrigem: hash, timestampProcessamento: new Date(),
         versaoPrompt: VERSAO_PROMPT, duracaoMs },
