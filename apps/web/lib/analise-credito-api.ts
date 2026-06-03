@@ -68,6 +68,15 @@ export interface ClassificacaoRisco {
   dataGeracao:      string;
 }
 
+export interface DemonstracaoRow {
+  linhaCodigo: string;
+  descricao:   string;
+  valor:       string;   // Decimal serializado como string
+  nivel:       number;
+  haFilhos:    boolean;
+  natureza:    'DEVEDOR' | 'CREDOR';
+}
+
 export interface Inconsistencia {
   id:         string;
   exercicio:  number;
@@ -107,6 +116,16 @@ export const analiseCreditoApi = {
   /** Inconsistências detectadas no pipeline */
   inconsistencias: (cnpj: string) =>
     api.get<Inconsistencia[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/inconsistencias`).then(r => r.data),
+
+  /** Exercícios disponíveis para um CNPJ (ECF processado) */
+  exercicios: (cnpj: string) =>
+    api.get<number[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/exercicios`).then(r => r.data),
+
+  /** Balanço Patrimonial (L100) ou DRE (L300) de um CNPJ/exercício */
+  demonstracoes: (cnpj: string, tipo: 'balanco' | 'dre', exercicio: number, contaRef?: string) =>
+    api.get<DemonstracaoRow[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/demonstracoes`, {
+      params: { tipo, exercicio, ...(contaRef ? { contaRef } : {}) },
+    }).then(r => r.data),
 
   /** Dispara pipeline completo P01→P04 */
   dispararPipeline: () =>
