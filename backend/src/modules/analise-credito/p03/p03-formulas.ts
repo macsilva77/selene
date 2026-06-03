@@ -92,9 +92,17 @@ export function calcularIndicadores(
 
   r.push(ind('margem_ebitda',   safeDiv(ebitda, recLiq), 'percentual'));
   r.push(ind('margem_liquida',  safeDiv(lucroLiq, recLiq), 'percentual'));
-  r.push(ind('roe',             safeDiv(lucroLiq, pl), 'percentual'));
-  r.push(ind('roa',             safeDiv(lucroLiq, ativoTot), 'percentual'));
-  r.push(ind('giro_ativo',      safeDiv(recLiq, ativoTot), 'ratio'));
+
+  const roeVal = safeDiv(lucroLiq, pl);          // Lucro Líquido / PL
+  const roaVal = safeDiv(ebit, ativoTot);        // EBIT / Ativos (def. do usuário)
+  const roicVal = safeDiv(ebit, pl);             // EBIT / PL
+  const alavancagemVal = safeDiv(roeVal, roaVal); // ROE / ROA
+
+  r.push(ind('roe',               roeVal,         'percentual'));
+  r.push(ind('roa',               roaVal,         'percentual'));
+  r.push(ind('roic',              roicVal,        'percentual'));
+  r.push(ind('grau_alavancagem',  alavancagemVal, 'ratio'));
+  r.push(ind('giro_ativo',        safeDiv(recLiq, ativoTot), 'ratio'));
 
   // ── Grupo 3 — Endividamento ───────────────────────────────────────────────
   const divCP  = pcEmpCP;

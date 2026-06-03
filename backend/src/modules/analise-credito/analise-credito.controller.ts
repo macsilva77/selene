@@ -252,7 +252,7 @@ export class AnaliseCreditoController {
     });
   }
 
-  /** Exercícios disponíveis para um CNPJ (baseado em registros ECF processados) */
+  /** Exercícios disponíveis para um CNPJ (ECF ou ECD processados) */
   @Get('empresas/:cnpj/exercicios')
   async exercicios(
     @CurrentUser('tenantId') tenantId: string,
@@ -262,16 +262,21 @@ export class AnaliseCreditoController {
       where: { tenantId_cnpj: { tenantId, cnpj } },
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
-    const rows = await this.prisma.creditoEcfRegistro.findMany({
-      where:    { empresaId: empresa.id },
-      select:   { exercicio: true },
-      distinct: ['exercicio'],
-      orderBy:  { exercicio: 'desc' },
-    });
-    return rows.map(r => r.exercicio);
+
+    const [ecfRows, balRows] = await Promise.all([
+      this.prisma.creditoEcfRegistro.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
+      this.prisma.creditoBalanco.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
+    ]);
+
+    const anos = new Set([...ecfRows, ...balRows].map(r => r.exercicio));
+    return [...anos].sort((a, b) => b - a);
   }
 
-  /** Balanço Patrimonial (L100) ou DRE (L300) de um CNPJ/exercício */
+  /** Balanço Patrimonial (L100 ou creditoBalanco) ou DRE (L300 ou creditoDre) */
   @Get('empresas/:cnpj/demonstracoes')
   async demonstracoes(
     @CurrentUser('tenantId') tenantId: string,
@@ -289,36 +294,162 @@ export class AnaliseCreditoController {
     if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
 
     const registroEcf = tipo === 'dre' ? 'L300' : 'L100';
-    const where: Prisma.CreditoEcfRegistroWhereInput = {
-      empresaId: empresa.id,
-      exercicio,
-      registroEcf,
-    };
-    if (contaRef?.trim()) where.linhaCodigo = { startsWith: contaRef.trim() };
+    const whereEcf: Prisma.CreditoEcfRegistroWhereInput = { empresaId: empresa.id, exercicio, registroEcf };
+    if (contaRef?.trim()) whereEcf.linhaCodigo = { startsWith: contaRef.trim() };
 
     const registros = await this.prisma.creditoEcfRegistro.findMany({
-      where,
+      where:   whereEcf,
       orderBy: { linhaCodigo: 'asc' },
       select:  { linhaCodigo: true, descricao: true, valor: true },
     });
 
-    // Determina haFilhos em O(n) usando o conjunto de prefixos dos pais
-    const parentCodes = new Set(
-      registros
-        .map(r => r.linhaCodigo.split('.').slice(0, -1).join('.'))
-        .filter(Boolean),
-    );
+    // ── Fonte primária: ECF L100/L300 ────────────────────────────────────────
+    if (registros.length > 0) {
+      const parentCodes = new Set(
+        registros.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
+      );
+      return registros.map(r => ({
+        linhaCodigo: r.linhaCodigo,
+        descricao:   r.descricao,
+        valor:       r.valor,
+        nivel:       r.linhaCodigo.split('.').length,
+        haFilhos:    parentCodes.has(r.linhaCodigo),
+        natureza:    registroEcf === 'L100'
+          ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
+          : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
+        fonte: 'ecf',
+      }));
+    }
 
-    return registros.map(r => ({
-      linhaCodigo: r.linhaCodigo,
-      descricao:   r.descricao,
-      valor:       r.valor,
-      nivel:       r.linhaCodigo.split('.').length,
-      haFilhos:    parentCodes.has(r.linhaCodigo),
-      natureza:    registroEcf === 'L100'
-        ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
-        : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
-    }));
+    // ── Fallback: P02 creditoBalanco / creditoDre ─────────────────────────────
+    if (tipo === 'dre') {
+      return this.demonstracoesDreFallback(empresa.id, exercicio);
+    }
+    return this.demonstracoesBalancoFallback(empresa.id, exercicio, contaRef);
+  }
+
+  private async demonstracoesBalancoFallback(empresaId: string, exercicio: number, contaRef?: string) {
+    const linhas = await this.prisma.creditoBalanco.findMany({
+      where:   { empresaId, exercicio },
+      orderBy: [{ grupo: 'asc' }, { subgrupo: 'asc' }, { contaNome: 'asc' }],
+      select:  { grupo: true, subgrupo: true, contaCodigo: true, contaNome: true, valor: true, fonte: true },
+    });
+
+    const GRUPO_LABEL: Record<string, string> = {
+      AC:  'ATIVO CIRCULANTE',     ANC: 'ATIVO NÃO CIRCULANTE',
+      PC:  'PASSIVO CIRCULANTE',   PNC: 'PASSIVO NÃO CIRCULANTE',
+      PL:  'PATRIMÔNIO LÍQUIDO',
+    };
+    const GRUPO_ORDER = ['AC', 'ANC', 'PC', 'PNC', 'PL'];
+    const NATUREZA: Record<string, 'DEVEDOR' | 'CREDOR'> = {
+      AC: 'DEVEDOR', ANC: 'DEVEDOR', PC: 'CREDOR', PNC: 'CREDOR', PL: 'CREDOR',
+    };
+    type Row = { linhaCodigo: string; descricao: string; valor: unknown; nivel: number; haFilhos: boolean; natureza: 'DEVEDOR' | 'CREDOR'; fonte: string };
+    const rows: Row[] = [];
+
+    // Raízes: ATIVO e PASSIVO + PL
+    const totalAtivo     = linhas.filter(l => ['AC','ANC'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+    const totalPassivoPl = linhas.filter(l => ['PC','PNC','PL'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+
+    rows.push({ linhaCodigo: '1',     descricao: 'ATIVO',          valor: totalAtivo,     nivel: 1, haFilhos: true, natureza: 'DEVEDOR', fonte: 'p02' });
+    rows.push({ linhaCodigo: '2',     descricao: 'PASSIVO E PL',   valor: totalPassivoPl, nivel: 1, haFilhos: true, natureza: 'CREDOR',  fonte: 'p02' });
+
+    // Grupos e subgrupos
+    const byGrupo = new Map<string, typeof linhas>();
+    for (const l of linhas) {
+      if (!byGrupo.has(l.grupo)) byGrupo.set(l.grupo, []);
+      byGrupo.get(l.grupo)!.push(l);
+    }
+
+    let gi = 0;
+    for (const grupo of GRUPO_ORDER) {
+      const grupoLinhas = byGrupo.get(grupo);
+      if (!grupoLinhas?.length) continue;
+      gi++;
+      const grupoTotal = grupoLinhas.reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+      const grupoCode  = ['AC','ANC'].includes(grupo) ? `1.0${gi}` : `2.0${gi - 2}`;
+      const nat        = NATUREZA[grupo] ?? 'DEVEDOR';
+
+      rows.push({ linhaCodigo: grupoCode, descricao: GRUPO_LABEL[grupo] ?? grupo, valor: grupoTotal, nivel: 2, haFilhos: true, natureza: nat, fonte: 'p02' });
+
+      // Subgrupos
+      const bySubgrupo = new Map<string, typeof linhas>();
+      for (const l of grupoLinhas) {
+        if (!bySubgrupo.has(l.subgrupo)) bySubgrupo.set(l.subgrupo, []);
+        bySubgrupo.get(l.subgrupo)!.push(l);
+      }
+
+      let si = 0;
+      for (const [subgrupo, subLinhas] of bySubgrupo) {
+        si++;
+        const subTotal = subLinhas.reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+        const subCode  = `${grupoCode}.${String(si).padStart(2, '0')}`;
+        rows.push({ linhaCodigo: subCode, descricao: subgrupo, valor: subTotal, nivel: 3, haFilhos: true, natureza: nat, fonte: 'p02' });
+
+        subLinhas.forEach((l, idx) => {
+          rows.push({
+            linhaCodigo: `${subCode}.${String(idx + 1).padStart(2, '0')}`,
+            descricao:   l.contaNome,
+            valor:       l.valor,
+            nivel:       4,
+            haFilhos:    false,
+            natureza:    nat,
+            fonte:       l.fonte,
+          });
+        });
+      }
+    }
+
+    const filtro = contaRef?.trim();
+    return filtro ? rows.filter(r => r.linhaCodigo.startsWith(filtro)) : rows;
+  }
+
+  private async demonstracoesDreFallback(empresaId: string, exercicio: number) {
+    const linhas = await this.prisma.creditoDre.findMany({
+      where:  { empresaId, exercicio },
+      select: { linhaDre: true, valor: true, fonte: true },
+    });
+    const dreMap = new Map(linhas.map(l => [l.linhaDre, l]));
+
+    const SECOES = [
+      { code: '3.01', label: 'RECEITA',              linhas: ['receita_bruta','deducoes','receita_liquida'] },
+      { code: '3.02', label: 'CUSTOS',               linhas: ['cmv','lucro_bruto'] },
+      { code: '3.03', label: 'DESPESAS OPERACIONAIS',linhas: ['desp_vendas','desp_admin','outras_desp'] },
+      { code: '3.04', label: 'RESULTADO FINANCEIRO', linhas: ['rec_financeiras','desp_financeiras'] },
+      { code: '3.05', label: 'IMPOSTOS',             linhas: ['ir_csll'] },
+      { code: '3.06', label: 'RESULTADO LÍQUIDO',    linhas: ['lucro_liquido'] },
+      { code: '3.07', label: 'EBITDA',               linhas: ['ebit','depreciacao','ebitda'] },
+    ];
+    const LINHA_LABEL: Record<string, string> = {
+      receita_bruta: 'Receita Bruta', deducoes: 'Deduções', receita_liquida: 'Receita Líquida',
+      cmv: 'CMV / CPV', lucro_bruto: 'Lucro Bruto',
+      desp_vendas: 'Despesas de Vendas', desp_admin: 'Despesas Administrativas', outras_desp: 'Outras Despesas',
+      rec_financeiras: 'Receitas Financeiras', desp_financeiras: 'Despesas Financeiras',
+      ir_csll: 'IR / CSLL', lucro_liquido: 'Resultado Líquido do Período',
+      ebit: 'EBIT', depreciacao: 'Depreciação / Amortização', ebitda: 'EBITDA',
+    };
+
+    type Row = { linhaCodigo: string; descricao: string; valor: unknown; nivel: number; haFilhos: boolean; natureza: 'DEVEDOR' | 'CREDOR'; fonte: string };
+    const rows: Row[] = [];
+
+    for (const secao of SECOES) {
+      const secaoLinhas = secao.linhas.map(k => dreMap.get(k)).filter(Boolean);
+      if (!secaoLinhas.length) continue;
+      rows.push({ linhaCodigo: secao.code, descricao: secao.label, valor: 0, nivel: 1, haFilhos: true, natureza: 'CREDOR', fonte: 'p02' });
+      secaoLinhas.forEach((l, idx) => {
+        const v = l!.valor;
+        rows.push({
+          linhaCodigo: `${secao.code}.${String(idx + 1).padStart(2, '0')}`,
+          descricao:   LINHA_LABEL[l!.linhaDre] ?? l!.linhaDre,
+          valor:       v,
+          nivel:       2,
+          haFilhos:    false,
+          natureza:    v.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR',
+          fonte:       l!.fonte,
+        });
+      });
+    }
+    return rows;
   }
 
   // ─── Helper ───────────────────────────────────────────────────────────────────
