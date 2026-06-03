@@ -68,17 +68,19 @@ export function calcularIndicadores(
   const pnc = getBal(bal, 'PNC', '*');
   const pl  = getBal(bal, 'PL',  '*');
 
-  const acCaixa     = getBal(bal, 'AC', 'Caixa e Equivalentes');
-  const acClientes  = getBal(bal, 'AC', 'Contas a Receber');
-  const acEstoques  = getBal(bal, 'AC', 'Estoques');
-  const pcFornec    = getBal(bal, 'PC', 'Fornecedores');
-  const pcEmpCP     = getBal(bal, 'PC', 'Empréstimos CP');
+  const acCaixa     = getBal(bal, 'AC',  'Caixa e Equivalentes');
+  const acClientes  = getBal(bal, 'AC',  'Contas a Receber');
+  const acEstoques  = getBal(bal, 'AC',  'Estoques');
+  const ancRlp      = getBal(bal, 'ANC', 'RLP');
+  const pcFornec    = getBal(bal, 'PC',  'Fornecedores');
+  const pcEmpCP     = getBal(bal, 'PC',  'Empréstimos CP');
   const pncEmpLP    = getBal(bal, 'PNC', 'Empréstimos LP');
 
   r.push(ind('liquidez_corrente', safeDiv(ac, pc), 'ratio'));
   r.push(ind('liquidez_seca',     safeDiv(ac.minus(acEstoques), pc), 'ratio'));
   r.push(ind('liquidez_imediata', safeDiv(acCaixa, pc), 'ratio'));
-  r.push(ind('liquidez_geral',    safeDiv(ac.add(anc), pc.add(pnc)), 'ratio'));
+  // liquidez_geral: numerador usa apenas RLP (1.02.01), não todo o ANC
+  r.push(ind('liquidez_geral',    safeDiv(ac.add(ancRlp), pc.add(pnc)), 'ratio'));
 
   // ── Grupo 2 — Rentabilidade ───────────────────────────────────────────────
   const recLiq   = getDre(dre, 'receita_liquida');

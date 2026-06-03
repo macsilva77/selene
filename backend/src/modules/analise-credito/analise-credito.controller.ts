@@ -252,6 +252,75 @@ export class AnaliseCreditoController {
     });
   }
 
+  /** Exercícios disponíveis para um CNPJ (baseado em registros ECF processados) */
+  @Get('empresas/:cnpj/exercicios')
+  async exercicios(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+  ) {
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+    const rows = await this.prisma.creditoEcfRegistro.findMany({
+      where:    { empresaId: empresa.id },
+      select:   { exercicio: true },
+      distinct: ['exercicio'],
+      orderBy:  { exercicio: 'desc' },
+    });
+    return rows.map(r => r.exercicio);
+  }
+
+  /** Balanço Patrimonial (L100) ou DRE (L300) de um CNPJ/exercício */
+  @Get('empresas/:cnpj/demonstracoes')
+  async demonstracoes(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+    @Query('tipo') tipo: string,
+    @Query('exercicio') exercicioStr?: string,
+    @Query('contaRef') contaRef?: string,
+  ) {
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    const exercicio = this.parseExercicio(exercicioStr);
+    if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
+
+    const registroEcf = tipo === 'dre' ? 'L300' : 'L100';
+    const where: Prisma.CreditoEcfRegistroWhereInput = {
+      empresaId: empresa.id,
+      exercicio,
+      registroEcf,
+    };
+    if (contaRef?.trim()) where.linhaCodigo = { startsWith: contaRef.trim() };
+
+    const registros = await this.prisma.creditoEcfRegistro.findMany({
+      where,
+      orderBy: { linhaCodigo: 'asc' },
+      select:  { linhaCodigo: true, descricao: true, valor: true },
+    });
+
+    // Determina haFilhos em O(n) usando o conjunto de prefixos dos pais
+    const parentCodes = new Set(
+      registros
+        .map(r => r.linhaCodigo.split('.').slice(0, -1).join('.'))
+        .filter(Boolean),
+    );
+
+    return registros.map(r => ({
+      linhaCodigo: r.linhaCodigo,
+      descricao:   r.descricao,
+      valor:       r.valor,
+      nivel:       r.linhaCodigo.split('.').length,
+      haFilhos:    parentCodes.has(r.linhaCodigo),
+      natureza:    registroEcf === 'L100'
+        ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
+        : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
+    }));
+  }
+
   // ─── Helper ───────────────────────────────────────────────────────────────────
 
   private parseExercicio(value?: string): number | undefined {

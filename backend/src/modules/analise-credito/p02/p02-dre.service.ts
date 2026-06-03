@@ -106,18 +106,21 @@ export class P02DreService {
     const acc = new Map<LinhaDre, Decimal>();
 
     for (const r of registros) {
-      const match = L300_PREFIX_MAP.find(m => r.linhaCodigo === m.prefixo);
+      const match = L300_PREFIX_MAP.find(m => r.linhaCodigo.startsWith(m.prefixo));
       if (!match) continue;
 
       const existing = acc.get(match.linha) ?? new Decimal(0);
       acc.set(match.linha, existing.add(abs(r.valor)));
     }
 
-    // lucro_liquido: L300 conta raiz (menor nível = codigo mais curto)
+    // lucro_liquido: código com menos segmentos (nível mais agregado da DRE)
     if (!acc.has('lucro_liquido')) {
-      const raiz = registros
-        .filter(r => /^\d+$/.test(r.linhaCodigo))
-        .sort((a, b) => a.linhaCodigo.localeCompare(b.linhaCodigo))[0];
+      const raiz = [...registros]
+        .sort((a, b) => {
+          const la = a.linhaCodigo.split('.').length;
+          const lb = b.linhaCodigo.split('.').length;
+          return la === lb ? a.linhaCodigo.localeCompare(b.linhaCodigo) : la - lb;
+        })[0];
       if (raiz) acc.set('lucro_liquido', abs(raiz.valor));
     }
 
@@ -140,39 +143,65 @@ export class P02DreService {
     return { linhas, completo, fonteUsada: 'ecf_l300', alertas };
   }
 
-  // ─── Depreciação (M300/M350) ─────────────────────────────────────────────────
+  // ─── EBIT / EBITDA ───────────────────────────────────────────────────────────
+  // Usado pelas três fontes (L300, L100, ECD).
+  // Prioriza depreciação já presente em acc (ECD preenche via keywords);
+  // quando ausente, varre os registros buscando M300/M350.
 
   private calcularEbitEbitda(
     acc: Map<LinhaDre, Decimal>,
     registros: { linhaCodigo: string; descricao: string; valor: Decimal }[],
     alertas: string[],
   ) {
-    const lucroLiq  = acc.get('lucro_liquido')  ?? null;
-    const irCsll    = acc.get('ir_csll')        ?? new Decimal(0);
-    const despFin   = acc.get('desp_financeiras') ?? new Decimal(0);
-    const recFin    = acc.get('rec_financeiras')  ?? new Decimal(0);
+    const lucroLiq = acc.get('lucro_liquido') ?? null;
+    if (lucroLiq === null) return;
 
-    if (lucroLiq !== null) {
-      const ebit = lucroLiq.add(irCsll).add(despFin).minus(recFin);
-      acc.set('ebit', ebit);
+    const irCsll  = acc.get('ir_csll')          ?? new Decimal(0);
+    const despFin = acc.get('desp_financeiras')  ?? new Decimal(0);
+    const recFin  = acc.get('rec_financeiras')   ?? new Decimal(0);
 
-      // Depreciação: soma de M300 com descrição de depreciação
-      const deprec = registros
+    const ebit = lucroLiq.add(irCsll).add(despFin).minus(recFin);
+    acc.set('ebit', ebit);
+
+    // Usa depreciação já identificada ou varre registros (M300/M350)
+    let deprec = acc.get('depreciacao') ?? new Decimal(0);
+    if (deprec.isZero()) {
+      deprec = registros
         .filter(r => {
           const d = r.descricao.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
           return d.includes('depreciac') || d.includes('amortizac') || d.includes('exaust');
         })
         .reduce((s, r) => s.add(abs(r.valor)), new Decimal(0));
-
-      if (deprec.greaterThan(0)) {
-        acc.set('depreciacao', deprec);
-        acc.set('ebitda', ebit.add(deprec));
-      } else {
-        alertas.push('Depreciação não encontrada em M300/M350 — EBITDA = EBIT');
-        acc.set('depreciacao', new Decimal(0));
-        acc.set('ebitda', ebit);
-      }
     }
+
+    if (deprec.greaterThan(0)) {
+      acc.set('depreciacao', deprec);
+      acc.set('ebitda', ebit.add(deprec));
+    } else {
+      alertas.push('Depreciação não encontrada — EBITDA = EBIT');
+      acc.set('depreciacao', new Decimal(0));
+      acc.set('ebitda', ebit);
+    }
+  }
+
+  // Deriva lucro_liquido quando não identificado diretamente (fallbacks L100/ECD).
+  private derivarLucroLiquido(acc: Map<LinhaDre, Decimal>, alertas: string[]) {
+    if (acc.has('lucro_liquido')) return;
+    const rl  = acc.get('receita_liquida')    ?? new Decimal(0);
+    if (rl.isZero()) return;
+    const cmv = acc.get('cmv')                ?? new Decimal(0);
+    const dA  = acc.get('desp_admin')         ?? new Decimal(0);
+    const dV  = acc.get('desp_vendas')        ?? new Decimal(0);
+    const dep = acc.get('depreciacao')        ?? new Decimal(0);
+    const dF  = acc.get('desp_financeiras')   ?? new Decimal(0);
+    const rF  = acc.get('rec_financeiras')    ?? new Decimal(0);
+    const oD  = acc.get('outras_desp')        ?? new Decimal(0);
+    const oR  = acc.get('outras_rec')         ?? new Decimal(0);
+    const ir  = acc.get('ir_csll')            ?? new Decimal(0);
+    acc.set('lucro_liquido',
+      rl.minus(cmv).minus(dA).minus(dV).minus(dep)
+        .minus(dF).add(rF).minus(oD).add(oR).minus(ir));
+    alertas.push('lucro_liquido derivado (linha direta não identificada)');
   }
 
   // ─── Fonte L100 ─────────────────────────────────────────────────────────────
@@ -191,6 +220,9 @@ export class P02DreService {
         }
       }
     }
+
+    this.derivarLucroLiquido(acc, alertas);
+    this.calcularEbitEbitda(acc, registros, alertas);
 
     const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({
       linhaDre, valor, fonte: 'ecf_l100' as string,
@@ -236,6 +268,9 @@ export class P02DreService {
     if (acc.has('receita_liquida') && acc.has('cmv')) {
       acc.set('lucro_bruto', acc.get('receita_liquida')!.minus(acc.get('cmv')!));
     }
+
+    this.derivarLucroLiquido(acc, alertas);
+    this.calcularEbitEbitda(acc, [], alertas);
 
     const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({
       linhaDre, valor, fonte: 'ecd_inferido' as string,

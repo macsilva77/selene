@@ -31,6 +31,7 @@ const SUBGRUPO: Record<string, { grupos: string[]; palavras: string[] }> = {
   'Caixa e Equivalentes':   { grupos: ['AC'],         palavras: ['caixa','banco','aplicac','numerario','deposito'] },
   'Contas a Receber':       { grupos: ['AC'],         palavras: ['cliente','duplicata','recebi','conta a receber','nota promissoria'] },
   'Estoques':               { grupos: ['AC'],         palavras: ['estoque','mercadoria','produto','materia','insumo'] },
+  'RLP':                    { grupos: ['ANC'],        palavras: ['realizavel longo','recebivel longo','cliente longo','duplicata longo','rlp','credito longo','tributo recuperar longo'] },
   'Imobilizado':            { grupos: ['AC','ANC'],   palavras: ['imobilizado','maquina','veiculo','imovel','equipamento','movel','utensilio','instalacao'] },
   'Intangível':             { grupos: ['ANC'],        palavras: ['intangivel','goodwill','software','licenca','marca','patente'] },
   'Fornecedores':           { grupos: ['PC'],         palavras: ['fornecedor','conta pagar','duplicata a pagar','nota fiscal pagar'] },
