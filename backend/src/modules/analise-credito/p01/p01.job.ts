@@ -14,6 +14,10 @@ import { P04Service }         from '../p04/p04.service';
 export class P01Job {
   private readonly logger = new Logger(P01Job.name);
   private running = false;
+  private etapaAtual: string | null = null;
+
+  estaRodando() { return this.running; }
+  getEtapa()    { return this.etapaAtual; }
 
   constructor(
     private readonly prisma:      PrismaService,

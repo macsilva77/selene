@@ -51,7 +51,7 @@ export class P01GcsService implements OnModuleInit {
         cnpjs.add(partes[1]);
       }
     }
-    return [...cnpjs].sort();
+    return [...cnpjs].sort((a, b) => a.localeCompare(b));
   }
 
   /** Lista metadados de todos os arquivos ECD+ECF de um CNPJ */
@@ -66,7 +66,7 @@ export class P01GcsService implements OnModuleInit {
       if (!m) continue;
       const [, cnpjEmp, , , dtIni, dtFim, , versao] = m;
       if (cnpjEmp !== cnpj) continue;
-      const anoFim = parseInt(dtFim.slice(4), 10);
+      const anoFim = parseInt(dtFim.slice(0, 4), 10);
       resultado.push({
         gcsPath:    blob.name,
         nomeArquivo: blob.name.split('/').pop()!,
@@ -84,7 +84,7 @@ export class P01GcsService implements OnModuleInit {
       if (!m) continue;
       const [, cnpjArq, , dtIni, , timestamp] = m;
       if (cnpjArq !== cnpj) continue;
-      const anoIni = parseInt(dtIni.slice(4), 10);
+      const anoIni = parseInt(dtIni.slice(0, 4), 10);
       resultado.push({
         gcsPath:      blob.name,
         nomeArquivo:  blob.name.split('/').pop()!,
