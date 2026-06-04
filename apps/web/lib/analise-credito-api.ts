@@ -151,6 +151,10 @@ export const analiseCreditoApi = {
   dispararPipeline: () =>
     api.post('/analise-credito/pipeline/processar').then(r => r.data),
 
+  /** Apaga dados calculados P02→P04 (balanco, dre, indicadores, alertas, classificações) */
+  resetarDados: (): Promise<{ mensagem: string; totais: Record<string, number> }> =>
+    api.post('/analise-credito/admin/resetar').then(r => r.data),
+
   /** Dispara apenas P01 para todos os CNPJs */
   dispararP01: (forcar = false) =>
     api.post('/analise-credito/p01/processar', undefined, {

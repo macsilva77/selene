@@ -10,6 +10,7 @@ import {
   BuildingsIcon,
   BugIcon,
   GearIcon,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -76,6 +77,7 @@ export function AnaliseCreditoDashboard() {
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [disparando, setDisparando]           = useState(false);
+  const [resetando, setResetando]             = useState(false);
 
   const [statusData, setStatusData]           = useState<StatusPipeline[]>([]);
   const [indicadores, setIndicadores]         = useState<Indicador[]>([]);
@@ -91,6 +93,21 @@ export function AnaliseCreditoDashboard() {
       .then(setEmpresas)
       .catch(() => toastError('Erro ao carregar empresas'));
   }, [toastError]);
+
+  const carregarFinanceiro = useCallback(async (cnpj: string, exercicioAlvo: number) => {
+    try {
+      const f = await analiseCreditoApi.financeiro(cnpj, exercicioAlvo);
+      setFinanceiro(f);
+      try {
+        setFinanceiroPrevio(await analiseCreditoApi.financeiro(cnpj, exercicioAlvo - 1));
+      } catch {
+        setFinanceiroPrevio(null);
+      }
+    } catch {
+      setFinanceiro(null);
+      setFinanceiroPrevio(null);
+    }
+  }, []);
 
   const carregarDados = useCallback(async (cnpj: string, exercicio?: number) => {
     if (!cnpj) return;
@@ -108,29 +125,32 @@ export function AnaliseCreditoDashboard() {
       setAlertas(als);
       setClassificacao(cls);
       setInconsistencias(incs);
-
       const exercicioAlvo = exercicio ?? status?.[0]?.exercicio;
-      if (exercicioAlvo) {
-        analiseCreditoApi.financeiro(cnpj, exercicioAlvo)
-          .then(f => {
-            setFinanceiro(f);
-            // Carrega ano anterior para comparativo
-            analiseCreditoApi.financeiro(cnpj, exercicioAlvo - 1)
-              .then(setFinanceiroPrevio)
-              .catch(() => setFinanceiroPrevio(null));
-          })
-          .catch(() => { setFinanceiro(null); setFinanceiroPrevio(null); });
-      }
+      if (exercicioAlvo) void carregarFinanceiro(cnpj, exercicioAlvo);
     } catch {
       toastError('Erro ao carregar dados da empresa');
     } finally {
       setCarregando(false);
     }
-  }, [toastError]);
+  }, [toastError, carregarFinanceiro]);
 
   useEffect(() => {
     if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
   }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
+
+  async function resetarDados() {
+    if (!window.confirm('Apagar todos os dados calculados (balanço, DRE, indicadores, alertas e classificações)?\n\nOs arquivos ECF/ECD originais serão preservados.')) return;
+    setResetando(true);
+    try {
+      const res = await analiseCreditoApi.resetarDados();
+      success(`Dados limpos: ${res.totais.balanco ?? 0} balanços · ${res.totais.indicadores ?? 0} indicadores · ${res.totais.classificacoes ?? 0} classificações`);
+      setCnpjSelecionado('');
+    } catch {
+      toastError('Erro ao resetar dados');
+    } finally {
+      setResetando(false);
+    }
+  }
 
   async function dispararPipeline() {
     setDisparando(true);
@@ -215,6 +235,18 @@ export function AnaliseCreditoDashboard() {
             ? <ArrowClockwiseIcon size={16} className="animate-spin" />
             : <PlayIcon size={16} weight="fill" />}
           Disparar Pipeline
+        </button>
+        <button
+          onClick={resetarDados}
+          type="button"
+          disabled={resetando}
+          title="Apaga balanço, DRE, indicadores, alertas e classificações. Preserva ECF/ECD."
+          className="flex items-center gap-2 rounded-md border border-destructive px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-60"
+        >
+          {resetando
+            ? <ArrowClockwiseIcon size={16} className="animate-spin" />
+            : <TrashIcon size={16} weight="bold" />}
+          Limpar dados
         </button>
       </div>
 

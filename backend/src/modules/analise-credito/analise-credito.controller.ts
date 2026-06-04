@@ -110,6 +110,57 @@ export class AnaliseCreditoController {
     return { mensagem: 'Pipeline P01→P04 iniciado em background', status: 'aceito' };
   }
 
+  // ─── Admin: reset de dados processados (P02→P04) ─────────────────────────────
+
+  /**
+   * Apaga todos os dados calculados pelo pipeline P02→P04 para o tenant.
+   * Os dados brutos do P01 (ECF/ECD) são preservados.
+   * Útil para forçar reprocessamento limpo após mudanças de lógica.
+   */
+  @Post('admin/resetar')
+  @HttpCode(HttpStatus.OK)
+  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoReset')
+  async resetarDadosProcessados(@CurrentUser('tenantId') tenantId: string) {
+    const empresas = await this.prisma.creditoEmpresa.findMany({
+      where:  { tenantId },
+      select: { id: true },
+    });
+    const ids = empresas.map(e => e.id);
+    if (ids.length === 0) return { mensagem: 'Nenhuma empresa encontrada', totais: {} };
+
+    const [balanco, dre, estrutura, indicador, alerta, classificacao, inconsistencia, processamento] =
+      await Promise.all([
+        this.prisma.creditoBalanco.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoDre.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoEstruturaCapital.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoIndicador.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoAlerta.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoClassificacao.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoInconsistencia.deleteMany({ where: { empresaId: { in: ids } } }),
+        this.prisma.creditoProcessamento.deleteMany({
+          where: {
+            empresaId:     { in: ids },
+            tabelaDestino: { in: ['tb_balanco', 'tb_dre', 'tb_indicadores', 'tb_classificacoes'] },
+          },
+        }),
+      ]);
+
+    this.logger.warn(`[Admin] Reset executado pelo tenant ${tenantId}: balanco=${balanco.count} dre=${dre.count} indicador=${indicador.count} classificacao=${classificacao.count}`);
+    return {
+      mensagem: 'Dados processados removidos com sucesso',
+      totais: {
+        balanco:        balanco.count,
+        dre:            dre.count,
+        estrutura:      estrutura.count,
+        indicadores:    indicador.count,
+        alertas:        alerta.count,
+        classificacoes: classificacao.count,
+        inconsistencias:inconsistencia.count,
+        processamentos: processamento.count,
+      },
+    };
+  }
+
   // ─── Leitura para o dashboard ─────────────────────────────────────────────────
 
   /** Lista todas as empresas do tenant com última classificação — alimenta o seletor */
