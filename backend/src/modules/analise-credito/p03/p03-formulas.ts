@@ -93,10 +93,14 @@ export function calcularIndicadores(
   r.push(ind('margem_ebitda',   safeDiv(ebitda, recLiq), 'percentual'));
   r.push(ind('margem_liquida',  safeDiv(lucroLiq, recLiq), 'percentual'));
 
-  const roeVal = safeDiv(lucroLiq, pl);          // Lucro Líquido / PL
-  const roaVal = safeDiv(ebit, ativoTot);        // EBIT / Ativos (def. do usuário)
-  const roicVal = safeDiv(ebit, pl);             // EBIT / PL
-  const alavancagemVal = safeDiv(roeVal, roaVal); // ROE / ROA
+  const roeVal = safeDiv(lucroLiq, pl);                       // Lucro Líquido / PL
+  const roaVal = safeDiv(ebit, ativoTot);                    // EBIT / Ativos Totais
+
+  // ROIC = EBIT / Capital Investido (PL + Dívida Financeira)
+  const capitalInvestido = pl.add(pcEmpCP).add(pncEmpLP);
+  const roicVal = capitalInvestido.isZero() ? null : safeDiv(ebit, capitalInvestido);
+
+  const alavancagemVal = safeDiv(roeVal, roaVal); // ROE / ROA (DuPont)
 
   r.push(ind('roe',               roeVal,         'percentual'));
   r.push(ind('roa',               roaVal,         'percentual'));
