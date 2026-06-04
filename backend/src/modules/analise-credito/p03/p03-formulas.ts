@@ -50,138 +50,147 @@ export function safeDiv(a: Decimal | null, b: Decimal | null): Decimal | null {
 export function calcularIndicadores(
   bal:     BalData,
   dre:     DreData,
-  balAnt?: BalData,   // balanço do exercício anterior (Grupo 6)
-  dreAnt?: DreData,   // DRE do exercício anterior (Grupo 6)
+  balAnt?: BalData,
+  dreAnt?: DreData,
   fonteOkGlobal = 1,
 ): IndicadorCalc[] {
-  const r: IndicadorCalc[] = [];
   const fo = fonteOkGlobal;
-
-  // Helper local para não repetir { indicador, valor, unidade, fonteOk }
   const ind = (indicador: string, valor: Decimal | null, unidade: Unidade, fok = fo): IndicadorCalc =>
     ({ indicador, valor, unidade, fonteOk: fok });
 
-  // ── Grupo 1 — Liquidez ────────────────────────────────────────────────────
-  const ac  = getBal(bal, 'AC',  '*');
-  const pc  = getBal(bal, 'PC',  '*');
-  const anc = getBal(bal, 'ANC', '*');
-  const pnc = getBal(bal, 'PNC', '*');
-  const pl  = getBal(bal, 'PL',  '*');
+  // ── Saldos de balanço ────────────────────────────────────────────────────────
+  const ac       = getBal(bal, 'AC',  '*');
+  const pc       = getBal(bal, 'PC',  '*');
+  const anc      = getBal(bal, 'ANC', '*');
+  const pnc      = getBal(bal, 'PNC', '*');
+  const pl       = getBal(bal, 'PL',  '*');
 
-  const acCaixa     = getBal(bal, 'AC',  'Caixa e Equivalentes');
-  const acClientes  = getBal(bal, 'AC',  'Contas a Receber');
-  const acEstoques  = getBal(bal, 'AC',  'Estoques');
-  const ancRlp      = getBal(bal, 'ANC', 'RLP');
-  const pcFornec    = getBal(bal, 'PC',  'Fornecedores');
-  const pcEmpCP     = getBal(bal, 'PC',  'Empréstimos CP');
-  const pncEmpLP    = getBal(bal, 'PNC', 'Empréstimos LP');
+  const acCaixa    = getBal(bal, 'AC',  'Caixa e Equivalentes');
+  const acClientes = getBal(bal, 'AC',  'Contas a Receber');
+  const acEstoques = getBal(bal, 'AC',  'Estoques');
+  const ancRlp     = getBal(bal, 'ANC', 'RLP');
+  const pcFornec   = getBal(bal, 'PC',  'Fornecedores');
+  const pcEmpCP    = getBal(bal, 'PC',  'Empréstimos CP');
+  const pncEmpLP   = getBal(bal, 'PNC', 'Empréstimos LP');
+  const ativoTot   = ac.add(anc);
 
-  r.push(ind('liquidez_corrente', safeDiv(ac, pc), 'ratio'));
-  r.push(ind('liquidez_seca',     safeDiv(ac.minus(acEstoques), pc), 'ratio'));
-  r.push(ind('liquidez_imediata', safeDiv(acCaixa, pc), 'ratio'));
-  // liquidez_geral: numerador usa apenas RLP (1.02.01), não todo o ANC
-  r.push(ind('liquidez_geral',    safeDiv(ac.add(ancRlp), pc.add(pnc)), 'ratio'));
-
-  // ── Grupo 2 — Rentabilidade ───────────────────────────────────────────────
+  // ── Linhas DRE ───────────────────────────────────────────────────────────────
   const recLiq   = getDre(dre, 'receita_liquida');
   const recBruta = getDre(dre, 'receita_bruta');
   const lucroLiq = getDre(dre, 'lucro_liquido');
   const ebitda   = getDre(dre, 'ebitda');
   const ebit     = getDre(dre, 'ebit');
-  const ativoTot = ac.add(anc);
+  const cmv      = getDre(dre, 'cmv');
+  const despFin  = getDre(dre, 'desp_financeiras');
 
-  r.push(ind('margem_ebitda',   safeDiv(ebitda, recLiq), 'percentual'));
-  r.push(ind('margem_liquida',  safeDiv(lucroLiq, recLiq), 'percentual'));
+  // ── Grupo 1 — Liquidez ───────────────────────────────────────────────────────
+  const grp1: IndicadorCalc[] = [
+    ind('liquidez_corrente', safeDiv(ac, pc),                            'ratio'),
+    ind('liquidez_seca',     safeDiv(ac.minus(acEstoques), pc),          'ratio'),
+    ind('liquidez_imediata', safeDiv(acCaixa, pc),                       'ratio'),
+    ind('liquidez_geral',    safeDiv(ac.add(ancRlp), pc.add(pnc)),       'ratio'),
+  ];
 
-  const roeVal = safeDiv(lucroLiq, pl);                       // Lucro Líquido / PL
-  const roaVal = safeDiv(ebit, ativoTot);                    // EBIT / Ativos Totais
+  // ── Grupo 2 — Rentabilidade ──────────────────────────────────────────────────
+  const roeVal = safeDiv(lucroLiq, pl); // Lucro Líquido / PL
+
+  // ROA = Lucro Líquido / Ativo Total Médio
+  const ativoAnt   = balAnt ? getBal(balAnt, 'AC', '*').add(getBal(balAnt, 'ANC', '*')) : null;
+  const ativoMedio = ativoAnt ? ativoTot.add(ativoAnt).dividedBy(2) : ativoTot;
+  const roaVal     = safeDiv(lucroLiq, ativoMedio);
 
   // ROIC = EBIT / Capital Investido (PL + Dívida Financeira)
   const capitalInvestido = pl.add(pcEmpCP).add(pncEmpLP);
   const roicVal = capitalInvestido.isZero() ? null : safeDiv(ebit, capitalInvestido);
 
-  const alavancagemVal = safeDiv(roeVal, roaVal); // ROE / ROA (DuPont)
+  const grp2: IndicadorCalc[] = [
+    ind('margem_ebitda',   safeDiv(ebitda,   recLiq),   'percentual'),
+    ind('margem_liquida',  safeDiv(lucroLiq, recLiq),   'percentual'),
+    ind('roe',             roeVal,                       'percentual'),
+    ind('roa',             roaVal,                       'percentual'),
+    ind('roic',            roicVal,                      'percentual'),
+    ind('grau_alavancagem',safeDiv(roeVal, roaVal),      'ratio'),        // DuPont ROE/ROA
+    ind('giro_ativo',      safeDiv(recLiq, ativoTot),   'ratio'),
+  ];
 
-  r.push(ind('roe',               roeVal,         'percentual'));
-  r.push(ind('roa',               roaVal,         'percentual'));
-  r.push(ind('roic',              roicVal,        'percentual'));
-  r.push(ind('grau_alavancagem',  alavancagemVal, 'ratio'));
-  r.push(ind('giro_ativo',        safeDiv(recLiq, ativoTot), 'ratio'));
-
-  // ── Grupo 3 — Endividamento ───────────────────────────────────────────────
+  // ── Grupo 3 — Endividamento ──────────────────────────────────────────────────
   const divCP  = pcEmpCP;
   const divLP  = pncEmpLP;
   const divTot = divCP.add(divLP);
   const divLiq = divTot.minus(acCaixa);
 
-  r.push(ind('divida_financeira_cp',  divCP,  'reais'));
-  r.push(ind('divida_financeira_lp',  divLP,  'reais'));
-  r.push(ind('divida_financeira_tot', divTot, 'reais'));
-  r.push(ind('caixa_equiv',          acCaixa, 'reais'));
-  r.push(ind('divida_liquida',        divLiq, 'reais'));
-  r.push(ind('dl_ebitda',             safeDiv(divLiq, ebitda), 'ratio'));
+  const grp3: IndicadorCalc[] = [
+    ind('divida_financeira_cp',  divCP,                            'reais'),
+    ind('divida_financeira_lp',  divLP,                            'reais'),
+    ind('divida_financeira_tot', divTot,                           'reais'),
+    ind('caixa_equiv',           acCaixa,                          'reais'),
+    ind('divida_liquida',        divLiq,                           'reais'),
+    ind('dl_ebitda',             safeDiv(divLiq, ebitda),          'ratio'),
+  ];
 
-  // ── Grupo 4 — Estrutura de Capital ────────────────────────────────────────
+  // ── Grupo 4 — Estrutura de Capital ───────────────────────────────────────────
   const passivoTot = pc.add(pnc);
-  const despFin    = getDre(dre, 'desp_financeiras');
 
-  r.push(ind('grau_endividamento',       safeDiv(passivoTot, ativoTot), 'ratio'));
-  r.push(ind('independencia_financeira', safeDiv(pl, ativoTot), 'ratio'));
-  r.push(ind('relacao_ct_cp',            safeDiv(passivoTot, pl), 'ratio'));
-  r.push(ind('endiv_bancario_pl',        safeDiv(divTot, pl), 'ratio'));
-  r.push(ind('cobertura_juros',          safeDiv(ebit, despFin), 'ratio'));
-  r.push(ind('divida_cp_pct',            safeDiv(divCP, divTot), 'percentual'));
-  r.push(ind('capital_proprio_pct',      safeDiv(pl, ativoTot), 'percentual'));
-  r.push(ind('capital_terceiros_pct',    safeDiv(passivoTot, ativoTot), 'percentual'));
+  const grp4: IndicadorCalc[] = [
+    ind('grau_endividamento',        safeDiv(passivoTot, ativoTot), 'ratio'),
+    ind('independencia_financeira',  safeDiv(pl, ativoTot),         'ratio'),
+    ind('relacao_ct_cp',             safeDiv(passivoTot, pl),       'ratio'),
+    ind('endiv_bancario_pl',         safeDiv(divTot, pl),           'ratio'),
+    ind('cobertura_juros',           safeDiv(ebit, despFin),        'ratio'),
+    ind('divida_cp_pct',             safeDiv(divCP, divTot),        'percentual'),
+    ind('capital_proprio_pct',       safeDiv(pl, ativoTot),         'percentual'),
+    ind('capital_terceiros_pct',     safeDiv(passivoTot, ativoTot), 'percentual'),
+  ];
 
-  // ── Grupo 5 — Eficiência Operacional ─────────────────────────────────────
-  const cmv = getDre(dre, 'cmv');
+  // ── Grupo 5 — Eficiência Operacional ─────────────────────────────────────────
   const D   = new Decimal(360);
-
   const pmr = safeDiv(acClientes.mul(D), recBruta);
   const pme = safeDiv(acEstoques.mul(D), cmv);
   const pmp = safeDiv(pcFornec.mul(D),   cmv);
+  const ciclo: Decimal | null = pmr !== null && pme !== null && pmp !== null
+    ? pmr.add(pme).minus(pmp)
+    : null;
 
-  let ciclo: Decimal | null = null;
-  if (pmr !== null && pme !== null && pmp !== null) {
-    ciclo = pmr.add(pme).minus(pmp);
-  }
+  const grp5: IndicadorCalc[] = [
+    ind('pmr',             pmr,   'dias'),
+    ind('pme',             pme,   'dias', cmv.isZero() ? 0 : fo),
+    ind('pmp',             pmp,   'dias', cmv.isZero() ? 0 : fo),
+    ind('ciclo_financeiro', ciclo, 'dias'),
+  ];
 
-  r.push(ind('pmr',             pmr,   'dias'));
-  r.push(ind('pme',             pme,   'dias', cmv.isZero() ? 0 : fo));
-  r.push(ind('pmp',             pmp,   'dias', cmv.isZero() ? 0 : fo));
-  r.push(ind('ciclo_financeiro', ciclo, 'dias'));
+  // ── Grupo 6 — Crescimento (requer histórico) ──────────────────────────────────
+  let grp6: IndicadorCalc[];
+  const crescNames = [
+    'crescimento_receita', 'crescimento_ebitda', 'crescimento_pl',
+    'crescimento_divida',  'crescimento_clientes','crescimento_estoques',
+    'crescimento_ativos',
+  ] as const;
 
-  // ── Grupo 6 — Crescimento (requer histórico) ──────────────────────────────
   if (balAnt && dreAnt) {
-    const recLiqAnt  = getDre(dreAnt, 'receita_liquida');
-    const ebitdaAnt  = getDre(dreAnt, 'ebitda');
-    const plAnt      = getBal(balAnt, 'PL', '*');
-    const acAnt      = getBal(balAnt, 'AC', '*');
-    const ancAnt     = getBal(balAnt, 'ANC', '*');
-    const divTotAnt  = getBal(balAnt, 'PC', 'Empréstimos CP')
-                         .add(getBal(balAnt, 'PNC', 'Empréstimos LP'));
-    const clientesAnt = getBal(balAnt, 'AC', 'Contas a Receber');
-    const estoquesAnt = getBal(balAnt, 'AC', 'Estoques');
-    const ativoAnt   = acAnt.add(ancAnt);
+    const recLiqAnt   = getDre(dreAnt, 'receita_liquida');
+    const ebitdaAnt   = getDre(dreAnt, 'ebitda');
+    const plAnt       = getBal(balAnt, 'PL',  '*');
+    const acAnt2      = getBal(balAnt, 'AC',  '*');
+    const ancAnt2     = getBal(balAnt, 'ANC', '*');
+    const divTotAnt   = getBal(balAnt, 'PC',  'Empréstimos CP').add(getBal(balAnt, 'PNC', 'Empréstimos LP'));
+    const clientesAnt = getBal(balAnt, 'AC',  'Contas a Receber');
+    const estoquesAnt = getBal(balAnt, 'AC',  'Estoques');
+    const ativoAnt2   = acAnt2.add(ancAnt2);
 
-    r.push(ind('crescimento_receita',  safeDiv(recLiq.minus(recLiqAnt), recLiqAnt), 'percentual'));
-    r.push(ind('crescimento_ebitda',   safeDiv(ebitda.minus(ebitdaAnt), ebitdaAnt), 'percentual'));
-    r.push(ind('crescimento_pl',       safeDiv(pl.minus(plAnt), plAnt), 'percentual'));
-    r.push(ind('crescimento_divida',   safeDiv(divTot.minus(divTotAnt), divTotAnt), 'percentual'));
-    r.push(ind('crescimento_clientes', safeDiv(acClientes.minus(clientesAnt), clientesAnt), 'percentual'));
-    r.push(ind('crescimento_estoques', safeDiv(acEstoques.minus(estoquesAnt), estoquesAnt), 'percentual'));
-    r.push(ind('crescimento_ativos',   safeDiv(ativoTot.minus(ativoAnt), ativoAnt), 'percentual'));
+    grp6 = [
+      ind('crescimento_receita',   safeDiv(recLiq.minus(recLiqAnt),     recLiqAnt),   'percentual'),
+      ind('crescimento_ebitda',    safeDiv(ebitda.minus(ebitdaAnt),     ebitdaAnt),   'percentual'),
+      ind('crescimento_pl',        safeDiv(pl.minus(plAnt),             plAnt),       'percentual'),
+      ind('crescimento_divida',    safeDiv(divTot.minus(divTotAnt),     divTotAnt),   'percentual'),
+      ind('crescimento_clientes',  safeDiv(acClientes.minus(clientesAnt),clientesAnt),'percentual'),
+      ind('crescimento_estoques',  safeDiv(acEstoques.minus(estoquesAnt),estoquesAnt),'percentual'),
+      ind('crescimento_ativos',    safeDiv(ativoTot.minus(ativoAnt2),   ativoAnt2),   'percentual'),
+    ];
   } else {
-    // Sem ano anterior → NULL garantido (não estimar)
-    for (const n of ['crescimento_receita','crescimento_ebitda','crescimento_pl',
-                     'crescimento_divida','crescimento_clientes','crescimento_estoques',
-                     'crescimento_ativos']) {
-      r.push(ind(n, null, 'percentual'));
-    }
+    grp6 = crescNames.map(n => ind(n, null, 'percentual'));
   }
 
-  return r;
+  return [...grp1, ...grp2, ...grp3, ...grp4, ...grp5, ...grp6];
 }
 
 /** Monta o snapshot de estrutura de capital (tb_estrutura_capital). */
