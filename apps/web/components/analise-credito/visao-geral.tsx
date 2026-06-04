@@ -146,7 +146,6 @@ function ComposicaoAtivo({ items, total }: Readonly<{ items: BarItem[]; total: n
             <div key={item.label} className="flex items-center gap-3">
               <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">{item.label}</span>
               <div className="flex-1 h-2 rounded-full bg-muted">
-                {/* eslint-disable-next-line react/forbid-dom-props -- largura dinâmica de dados */}
                 <div
                   className={cn('h-full rounded-full transition-all', item.cor)}
                   style={{ width: `${Math.min(pct, 100).toFixed(1)}%` }}
