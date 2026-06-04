@@ -231,7 +231,8 @@ export class P02DreService {
 
   // ─── Fallback ECD ────────────────────────────────────────────────────────────
 
-  private classificarSaldoEcd(grupo: string, desc: string): LinhaDre | null {
+  private classificarSaldoEcd(grupo: string | null, desc: string): LinhaDre | null {
+    if (!grupo) return null;
     if (grupo === 'REC') return 'receita_bruta';
     if (grupo === 'CUS') return 'cmv';
     if (grupo === 'RNO') return desc.includes('receita') ? 'outras_rec' : 'outras_desp';
