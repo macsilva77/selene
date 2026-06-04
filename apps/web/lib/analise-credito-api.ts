@@ -68,6 +68,20 @@ export interface ClassificacaoRisco {
   dataGeracao:      string;
 }
 
+export interface ResumoFinanceiro {
+  exercicio:      number;
+  dre: Record<string, string | null>;       // linhaDre → valor (string Decimal)
+  estrutura: {
+    ativoTotal:          string | null;
+    passivoTotal:        string | null;
+    pl:                  string | null;
+    dividaFinanceiraCp:  string | null;
+    dividaFinanceiraLp:  string | null;
+    dividaFinanceiraTot: string | null;
+    dividaLiquida:       string | null;
+  } | null;
+}
+
 export interface DemonstracaoRow {
   linhaCodigo: string;
   descricao:   string;
@@ -116,6 +130,12 @@ export const analiseCreditoApi = {
   /** Inconsistências detectadas no pipeline */
   inconsistencias: (cnpj: string) =>
     api.get<Inconsistencia[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/inconsistencias`).then(r => r.data),
+
+  /** Resumo financeiro (DRE + Estrutura de Capital) por exercício */
+  financeiro: (cnpj: string, exercicio: number): Promise<ResumoFinanceiro> =>
+    api.get(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/financeiro`, {
+      params: { exercicio },
+    }).then(r => r.data),
 
   /** Exercícios disponíveis para um CNPJ (ECF processado) */
   exercicios: (cnpj: string) =>

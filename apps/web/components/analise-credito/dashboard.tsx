@@ -12,6 +12,7 @@ import {
   BellIcon,
   ListChecksIcon,
   BugIcon,
+  TrendUpIcon,
 } from '@phosphor-icons/react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,9 @@ import {
   type ClassificacaoRisco,
   type Classificacao,
   type Inconsistencia,
+  type ResumoFinanceiro,
 } from '@/lib/analise-credito-api';
+import { VisaoGeral } from './visao-geral';
 
 /* ─── Helpers visuais ────────────────────────────────────────────────────── */
 
@@ -70,7 +73,7 @@ function formatarValor(valor: string | null, unidade: string): string {
   return n.toFixed(2);
 }
 
-type Tab = 'status' | 'indicadores' | 'alertas' | 'classificacao' | 'inconsistencias';
+type Tab = 'visao' | 'estrutura' | 'evolucao' | 'alertas' | 'parecer' | 'pipeline' | 'inconsistencias';
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
 
@@ -79,7 +82,7 @@ export function AnaliseCreditoDashboard() {
 
   const [empresas, setEmpresas]               = useState<EmpresaResumo[]>([]);
   const [cnpjSelecionado, setCnpjSelecionado] = useState<string>('');
-  const [tab, setTab]                         = useState<Tab>('status');
+  const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [disparando, setDisparando]           = useState(false);
 
@@ -88,6 +91,7 @@ export function AnaliseCreditoDashboard() {
   const [alertas, setAlertas]                 = useState<Alerta[]>([]);
   const [classificacao, setClassificacao]     = useState<ClassificacaoRisco[]>([]);
   const [inconsistencias, setInconsistencias] = useState<Inconsistencia[]>([]);
+  const [financeiro, setFinanceiro]           = useState<ResumoFinanceiro | null>(null);
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
 
   useEffect(() => {
@@ -112,6 +116,14 @@ export function AnaliseCreditoDashboard() {
       setAlertas(als);
       setClassificacao(cls);
       setInconsistencias(incs);
+
+      // Carrega resumo financeiro para o exercício mais recente com dados
+      const exercicioAlvo = exercicio ?? status?.[0]?.exercicio;
+      if (exercicioAlvo) {
+        analiseCreditoApi.financeiro(cnpj, exercicioAlvo)
+          .then(setFinanceiro)
+          .catch(() => setFinanceiro(null));
+      }
     } catch {
       toastError('Erro ao carregar dados da empresa');
     } finally {
@@ -176,11 +188,12 @@ export function AnaliseCreditoDashboard() {
   );
 
   const TAB_ITEMS: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'status',          label: 'Pipeline',        icon: <ListChecksIcon size={15} /> },
-    { id: 'indicadores',     label: 'Indicadores',     icon: <ChartLineIcon size={15} /> },
+    { id: 'visao',           label: 'Visão geral',         icon: <ChartLineIcon size={15} /> },
     { id: 'alertas',         label: `Alertas${alertasFiltrados.length ? ` (${alertasFiltrados.length})` : ''}`, icon: <BellIcon size={15} /> },
-    { id: 'classificacao',   label: 'Classificação',   icon: <BuildingsIcon size={15} /> },
-    { id: 'inconsistencias', label: 'Inconsistências', icon: <BugIcon size={15} />, badge: totalBloqueios || undefined },
+    { id: 'evolucao',        label: 'Evolução',            icon: <TrendUpIcon size={15} /> },
+    { id: 'parecer',         label: 'Parecer',             icon: <BuildingsIcon size={15} /> },
+    { id: 'pipeline',        label: 'Pipeline',            icon: <ListChecksIcon size={15} /> },
+    { id: 'inconsistencias', label: 'Inconsistências',     icon: <BugIcon size={15} />, badge: totalBloqueios || undefined },
   ];
 
   return (
@@ -287,8 +300,95 @@ export function AnaliseCreditoDashboard() {
             </div>
           ) : (
             <>
+              {/* ── Tab: Visão Geral ── */}
+              {tab === 'visao' && (
+                <VisaoGeral
+                  exercicio={exercicioFiltro ?? exerciciosDisponiveis[0] ?? 0}
+                  indicadores={indicadores}
+                  alertas={alertas}
+                  financeiro={financeiro}
+                />
+              )}
+
+              {/* ── Tab: Evolução ── */}
+              {tab === 'evolucao' && (
+                <div className="flex flex-col gap-4">
+                  {Object.keys(indPorCategoria).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum indicador disponível.</p>
+                  ) : (
+                    Object.entries(indPorCategoria).map(([cat, inds]) => (
+                      <Card key={cat} className="border">
+                        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Grupo {cat}</CardTitle></CardHeader>
+                        <CardContent className="p-0">
+                          <table className="w-full text-sm">
+                            <thead><tr className="border-b bg-muted/50">
+                              <th className="px-4 py-2 text-left font-medium">Indicador</th>
+                              <th className="px-4 py-2 text-left font-medium">Exercício</th>
+                              <th className="px-4 py-2 text-right font-medium">Valor</th>
+                              <th className="px-4 py-2 text-center font-medium">Fonte</th>
+                            </tr></thead>
+                            <tbody>
+                              {inds.map(i => (
+                                <tr key={`${i.exercicio}-${i.indicador}`} className="border-b last:border-0 hover:bg-muted/30">
+                                  <td className="px-4 py-2 font-mono text-xs">{i.indicador}</td>
+                                  <td className="px-4 py-2 text-muted-foreground">{i.exercicio}</td>
+                                  <td className="px-4 py-2 text-right font-medium">
+                                    {i.valor === null ? <span className="text-muted-foreground italic">NULL</span> : formatarValor(i.valor, i.unidade)}
+                                  </td>
+                                  <td className="px-4 py-2 text-center">
+                                    {i.fonteOk === 1
+                                      ? <span className="text-xs text-emerald-600">direta</span>
+                                      : <span className="text-xs text-orange-600">inferida</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* ── Tab: Parecer (classificação) ── */}
+              {tab === 'parecer' && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {classificacao.length === 0 ? (
+                    <p className="col-span-3 text-sm text-muted-foreground">Nenhuma classificação gerada ainda.</p>
+                  ) : (
+                    classificacao.map(c => (
+                      <Card key={c.id} className="border">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground">Exercício {c.exercicio}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Confiabilidade: <span className="font-medium text-foreground">{c.confiabilidade}</span>
+                              </p>
+                            </div>
+                            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-full border-2 text-2xl font-bold ${CLS_COLOR[c.classificacao]}`}>
+                              {c.classificacao}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex gap-3 text-xs">
+                            <span className="flex items-center gap-1 text-red-700"><XCircleIcon weight="fill" size={13} /> {c.qtdCriticos} críticos</span>
+                            <span className="flex items-center gap-1 text-yellow-700"><WarningIcon weight="fill" size={13} /> {c.qtdAtencao} atenção</span>
+                            <span className="flex items-center gap-1 text-emerald-700"><CheckCircleIcon weight="fill" size={13} /> {c.qtdPositivos} positivos</span>
+                          </div>
+                          {c.overrideAplicado && c.motivoOverride && (
+                            <p className="mt-2 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-xs text-orange-700">Override: {c.motivoOverride}</p>
+                          )}
+                          <p className="mt-2 text-xs text-muted-foreground">Gerado em {new Date(c.dataGeracao).toLocaleDateString('pt-BR')}</p>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+
               {/* ── Tab: Pipeline status ── */}
-              {tab === 'status' && (
+              {tab === 'pipeline' && (
                 <Card className="border">
                   <CardHeader className="pb-2"><CardTitle className="text-base">Status do Pipeline por Exercício</CardTitle></CardHeader>
                   <CardContent className="p-0">

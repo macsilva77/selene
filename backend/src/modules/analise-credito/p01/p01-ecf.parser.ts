@@ -4,6 +4,10 @@
  * Encoding esperado: Latin-1 (ISO-8859-1).
  */
 
+export type RegistroEcfBP  = 'L100' | 'P100' | 'U100';
+export type RegistroEcfDRE = 'L300' | 'P150' | 'U150';
+export type RegistroEcfLalur = 'M300' | 'M350';
+
 export interface EcfRegistroRow {
   registroEcf: string;
   linhaCodigo: string;
@@ -59,8 +63,14 @@ function valorComSinal(campos: string[], colVal: number, colDc: number, dcPositi
 
 // ─── Handlers por tipo de registro ───────────────────────────────────────────
 
-function processarL100(campos: string[], registros: EcfRegistroRow[],
-                       incs: EcfParseResult['inconsistencias']) {
+// BP: L100 (Lucro Real) | P100 (Lucro Presumido/Arbitrado) | U100 (Imunes/Isentas)
+// Sinal: D = positivo (saldo devedor → ativo), C = negativo
+function processarBP(
+  reg: RegistroEcfBP,
+  campos: string[],
+  registros: EcfRegistroRow[],
+  incs: EcfParseResult['inconsistencias'],
+) {
   if (campos.length < 8) return;
   const cod  = (campos[1] ?? '').trim();
   const desc = (campos[2] ?? '').trim();
@@ -68,23 +78,28 @@ function processarL100(campos: string[], registros: EcfRegistroRow[],
     // Saldo final (cols 11/12) tem prioridade; fallback: saldo inicial (7/8)
     const [colVal, colDc] = campos.length >= 12 ? [11, 12] : [7, 8];
     const valor = valorComSinal(campos, colVal, colDc, 'D');
-    registros.push({ registroEcf: 'L100', linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
+    registros.push({ registroEcf: reg, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
   } catch {
-    incs.push({ tipoErro: 'L100_PARSE', descricao: `L100 inválido: ${cod}`, severidade: 'alerta' });
+    incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
   }
 }
 
-function processarL300(campos: string[], registros: EcfRegistroRow[],
-                       incs: EcfParseResult['inconsistencias']) {
+// DRE: L300 (Lucro Real) | P150 (Lucro Presumido/Arbitrado) | U150 (Imunes/Isentas)
+// Sinal: C = positivo (receita), D = negativo (despesa/custo)
+function processarDRE(
+  reg: RegistroEcfDRE,
+  campos: string[],
+  registros: EcfRegistroRow[],
+  incs: EcfParseResult['inconsistencias'],
+) {
   if (campos.length < 8) return;
   const cod  = (campos[1] ?? '').trim();
   const desc = (campos[2] ?? '').trim();
   try {
-    // Receitas C → positivo, despesas/custos D → negativo
     const valor = valorComSinal(campos, 7, 8, 'C');
-    registros.push({ registroEcf: 'L300', linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
+    registros.push({ registroEcf: reg, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
   } catch {
-    incs.push({ tipoErro: 'L300_PARSE', descricao: `L300 inválido: ${cod}`, severidade: 'alerta' });
+    incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
   }
 }
 
@@ -99,6 +114,21 @@ function processarLalur(rec: 'M300' | 'M350', campos: string[], registros: EcfRe
   });
 }
 
+// ─── Tabela de dispatch ───────────────────────────────────────────────────────
+
+type Handler = (campos: string[], registros: EcfRegistroRow[], incs: EcfParseResult['inconsistencias']) => void;
+
+const HANDLERS: Record<string, Handler> = {
+  L100: (c, r, i) => processarBP('L100',  c, r, i),
+  P100: (c, r, i) => processarBP('P100',  c, r, i),
+  U100: (c, r, i) => processarBP('U100',  c, r, i),
+  L300: (c, r, i) => processarDRE('L300', c, r, i),
+  P150: (c, r, i) => processarDRE('P150', c, r, i),
+  U150: (c, r, i) => processarDRE('U150', c, r, i),
+  M300: (c, r)    => processarLalur('M300', c, r),
+  M350: (c, r)    => processarLalur('M350', c, r),
+};
+
 // ─── Parser principal ─────────────────────────────────────────────────────────
 
 export function parseEcf(buffer: Buffer): EcfParseResult {
@@ -107,8 +137,8 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
   let razaoSocial      = '';
   let cnpjArquivo      = '';
   let regimeTributario: RegimeTributario | null = null;
-  const registros:      EcfRegistroRow[]                           = [];
-  const inconsistencias: EcfParseResult['inconsistencias']         = [];
+  const registros:      EcfRegistroRow[]                    = [];
+  const inconsistencias: EcfParseResult['inconsistencias']  = [];
 
   for (const linha of linhas) {
     const campos = parseLinha(linha);
@@ -118,25 +148,15 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
     if (rec === '0000' && campos.length >= 5) {
       cnpjArquivo = (campos[3] ?? '').trim();
       razaoSocial = (campos[4] ?? '').trim();
-      // IND_TRIB (pos 6): fallback de regime se 0010 ainda não foi lido
       if (!regimeTributario)
         regimeTributario = IND_TRIB_MAP[(campos[6] ?? '').trim()] ?? null;
 
     } else if (rec === '0010' && campos.length >= 5) {
-      // IND_FORMA_TRIB (pos 4): fonte primária de regime
+      // IND_FORMA_TRIB (pos 4) é a fonte primária de regime; sobrescreve 0000
       regimeTributario = IND_FORMA_TRIB_MAP[(campos[4] ?? '').trim()] ?? regimeTributario;
 
-    } else if (rec === 'L100') {
-      processarL100(campos, registros, inconsistencias);
-
-    } else if (rec === 'L300') {
-      processarL300(campos, registros, inconsistencias);
-
-    } else if (rec === 'M300') {
-      processarLalur('M300', campos, registros);
-
-    } else if (rec === 'M350') {
-      processarLalur('M350', campos, registros);
+    } else {
+      HANDLERS[rec]?.(campos, registros, inconsistencias);
     }
   }
 

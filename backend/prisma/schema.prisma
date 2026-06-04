@@ -1597,7 +1597,7 @@ model CreditoEcfRegistro {
   id          String         @id @default(uuid())
   empresaId   String         @map("empresa_id")
   exercicio   Int
-  registroEcf String         @map("registro_ecf") @db.VarChar(10) // L100 | L300 | M300 | M350
+  registroEcf String         @map("registro_ecf") @db.VarChar(10) // BP: L100(LR)|P100(LP/LA)|U100(II)  DRE: L300(LR)|P150(LP/LA)|U150(II)  LALUR: M300|M350
   linhaCodigo String         @map("linha_codigo")  @db.VarChar(50)
   descricao   String         @db.Text
   valor       Decimal        @default(0)            @db.Decimal(18, 2)

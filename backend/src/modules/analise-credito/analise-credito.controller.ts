@@ -252,6 +252,51 @@ export class AnaliseCreditoController {
     });
   }
 
+  /** Resumo financeiro: DRE principal + Estrutura de Capital para um exercício */
+  @Get('empresas/:cnpj/financeiro')
+  async financeiro(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+    @Query('exercicio') exercicioStr?: string,
+  ) {
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    const exercicio = this.parseExercicio(exercicioStr);
+    if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
+
+    const DRE_LINHAS = ['receita_bruta','receita_liquida','ebitda','ebit','lucro_liquido','desp_financeiras','cmv'];
+
+    const [dreRows, estrutura] = await Promise.all([
+      this.prisma.creditoDre.findMany({
+        where:  { empresaId: empresa.id, exercicio, linhaDre: { in: DRE_LINHAS } },
+        select: { linhaDre: true, valor: true },
+      }),
+      this.prisma.creditoEstruturaCapital.findUnique({
+        where: { empresaId_exercicio: { empresaId: empresa.id, exercicio } },
+      }),
+    ]);
+
+    const dre: Record<string, string | null> = {};
+    for (const r of dreRows) dre[r.linhaDre] = r.valor.toString();
+
+    return {
+      exercicio,
+      dre,
+      estrutura: estrutura ? {
+        ativoTotal:          estrutura.ativoTotal?.toString() ?? null,
+        passivoTotal:        estrutura.passivoTotal?.toString() ?? null,
+        pl:                  estrutura.pl?.toString() ?? null,
+        dividaFinanceiraCp:  estrutura.dividaFinanceiraCp?.toString() ?? null,
+        dividaFinanceiraLp:  estrutura.dividaFinanceiraLp?.toString() ?? null,
+        dividaFinanceiraTot: estrutura.dividaFinanceiraTot?.toString() ?? null,
+        dividaLiquida:       estrutura.dividaLiquida?.toString() ?? null,
+      } : null,
+    };
+  }
+
   /** Exercícios disponíveis para um CNPJ (ECF ou ECD processados) */
   @Get('empresas/:cnpj/exercicios')
   async exercicios(
@@ -276,7 +321,7 @@ export class AnaliseCreditoController {
     return [...anos].sort((a, b) => b - a);
   }
 
-  /** Balanço Patrimonial (L100 ou creditoBalanco) ou DRE (L300 ou creditoDre) */
+  /** Balanço Patrimonial ou DRE — ECF primário (regime-aware), fallback ECD via P02 */
   @Get('empresas/:cnpj/demonstracoes')
   async demonstracoes(
     @CurrentUser('tenantId') tenantId: string,
@@ -293,18 +338,22 @@ export class AnaliseCreditoController {
     const exercicio = this.parseExercicio(exercicioStr);
     if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
 
-    const registroEcf = tipo === 'dre' ? 'L300' : 'L100';
-    const whereEcf: Prisma.CreditoEcfRegistroWhereInput = { empresaId: empresa.id, exercicio, registroEcf };
-    if (contaRef?.trim()) whereEcf.linhaCodigo = { startsWith: contaRef.trim() };
+    // ── Fonte primária: ECF (ordem: regime-específico → demais) ──────────────
+    const candidatos = this.registrosPorRegime(empresa.regimeTributario, tipo === 'dre' ? 'dre' : 'bp');
 
-    const registros = await this.prisma.creditoEcfRegistro.findMany({
-      where:   whereEcf,
-      orderBy: { linhaCodigo: 'asc' },
-      select:  { linhaCodigo: true, descricao: true, valor: true },
-    });
+    for (const registroEcf of candidatos) {
+      const whereEcf: Prisma.CreditoEcfRegistroWhereInput = { empresaId: empresa.id, exercicio, registroEcf };
+      if (contaRef?.trim()) whereEcf.linhaCodigo = { startsWith: contaRef.trim() };
 
-    // ── Fonte primária: ECF L100/L300 ────────────────────────────────────────
-    if (registros.length > 0) {
+      const registros = await this.prisma.creditoEcfRegistro.findMany({
+        where:   whereEcf,
+        orderBy: { linhaCodigo: 'asc' },
+        select:  { linhaCodigo: true, descricao: true, valor: true },
+      });
+
+      if (registros.length === 0) continue;
+
+      const ehBP = ['L100', 'P100', 'U100'].includes(registroEcf);
       const parentCodes = new Set(
         registros.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
       );
@@ -314,18 +363,43 @@ export class AnaliseCreditoController {
         valor:       r.valor,
         nivel:       r.linhaCodigo.split('.').length,
         haFilhos:    parentCodes.has(r.linhaCodigo),
-        natureza:    registroEcf === 'L100'
+        natureza:    ehBP
           ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
           : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
-        fonte: 'ecf',
+        fonte:       registroEcf.toLowerCase(),
       }));
     }
 
-    // ── Fallback: P02 creditoBalanco / creditoDre ─────────────────────────────
+    // ── Fallback: ECD via P02 (creditoBalanco / creditoDre) ───────────────────
     if (tipo === 'dre') {
       return this.demonstracoesDreFallback(empresa.id, exercicio);
     }
     return this.demonstracoesBalancoFallback(empresa.id, exercicio, contaRef);
+  }
+
+  /**
+   * Retorna os registros ECF de BP ou DRE em ordem de prioridade:
+   * primeiro o específico do regime, depois os demais como fallback.
+   *
+   * Regime          BP     DRE
+   * lucro_real      L100   L300
+   * lucro_presumido P100   P150
+   * lucro_arbitrado P100   P150
+   * imune_isenta    U100   U150
+   * simples_nacional P100  P150  (DEFIS não tem ECF, mas guardamos P caso haja)
+   */
+  private registrosPorRegime(regimeTributario: string | null, tipo: 'bp' | 'dre'): string[] {
+    const MAPA: Record<string, { bp: string; dre: string }> = {
+      lucro_real:       { bp: 'L100', dre: 'L300' },
+      lucro_presumido:  { bp: 'P100', dre: 'P150' },
+      lucro_arbitrado:  { bp: 'P100', dre: 'P150' },
+      imune_isenta:     { bp: 'U100', dre: 'U150' },
+      simples_nacional: { bp: 'P100', dre: 'P150' },
+    };
+    const cfg      = MAPA[regimeTributario ?? ''] ?? MAPA['lucro_real'];
+    const primario = cfg[tipo];
+    const todos    = tipo === 'bp' ? ['L100', 'P100', 'U100'] : ['L300', 'P150', 'U150'];
+    return [primario, ...todos.filter(r => r !== primario)];
   }
 
   private async demonstracoesBalancoFallback(empresaId: string, exercicio: number, contaRef?: string) {
