@@ -3,6 +3,7 @@ import {
   HttpCode, HttpStatus, NotFoundException, BadRequestException,
 } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { P01Service }    from './p01/p01.service';
 import { P01Job }        from './p01/p01.job';
 import { P02Service }    from './p02/p02.service';
@@ -422,8 +423,8 @@ export class AnaliseCreditoController {
     const rows: Row[] = [];
 
     // Raízes: ATIVO e PASSIVO + PL
-    const totalAtivo     = linhas.filter(l => ['AC','ANC'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
-    const totalPassivoPl = linhas.filter(l => ['PC','PNC','PL'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+    const totalAtivo     = linhas.filter(l => ['AC','ANC'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new Decimal(0));
+    const totalPassivoPl = linhas.filter(l => ['PC','PNC','PL'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new Decimal(0));
 
     rows.push({ linhaCodigo: '1',     descricao: 'ATIVO',          valor: totalAtivo,     nivel: 1, haFilhos: true, natureza: 'DEVEDOR', fonte: 'p02' });
     rows.push({ linhaCodigo: '2',     descricao: 'PASSIVO E PL',   valor: totalPassivoPl, nivel: 1, haFilhos: true, natureza: 'CREDOR',  fonte: 'p02' });
@@ -440,7 +441,7 @@ export class AnaliseCreditoController {
       const grupoLinhas = byGrupo.get(grupo);
       if (!grupoLinhas?.length) continue;
       gi++;
-      const grupoTotal = grupoLinhas.reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+      const grupoTotal = grupoLinhas.reduce((s, l) => s.add(l.valor), new Decimal(0));
       const grupoCode  = ['AC','ANC'].includes(grupo) ? `1.0${gi}` : `2.0${gi - 2}`;
       const nat        = NATUREZA[grupo] ?? 'DEVEDOR';
 
@@ -456,7 +457,7 @@ export class AnaliseCreditoController {
       let si = 0;
       for (const [subgrupo, subLinhas] of bySubgrupo) {
         si++;
-        const subTotal = subLinhas.reduce((s, l) => s.add(l.valor), new (require('@prisma/client/runtime/library').Decimal)(0));
+        const subTotal = subLinhas.reduce((s, l) => s.add(l.valor), new Decimal(0));
         const subCode  = `${grupoCode}.${String(si).padStart(2, '0')}`;
         rows.push({ linhaCodigo: subCode, descricao: subgrupo, valor: subTotal, nivel: 3, haFilhos: true, natureza: nat, fonte: 'p02' });
 

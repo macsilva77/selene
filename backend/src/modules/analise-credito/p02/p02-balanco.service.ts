@@ -1,7 +1,8 @@
 /**
  * P02 — Serviço de Balanço Patrimonial
- * Classifica contas analíticas do último período ECD no subgrupo correto
- * e valida a equação Ativo = Passivo + PL (tolerância R$ 1,00).
+ * Fonte primária: ECF (L100/P100/U100, regime-aware).
+ * Fallback: ECD J100 saldos analíticos.
+ * Valida equação Ativo = Passivo + PL (tolerância R$ 1,00).
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
@@ -25,24 +26,24 @@ export interface BalancoResult {
   mensagem?:      string;
 }
 
-// ─── Tabelas de palavras-chave por subgrupo ────────────────────────────────────
+// ─── Classificação por subgrupo ───────────────────────────────────────────────
 
 const SUBGRUPO: Record<string, { grupos: string[]; palavras: string[] }> = {
-  'Caixa e Equivalentes':   { grupos: ['AC'],         palavras: ['caixa','banco','aplicac','numerario','deposito'] },
-  'Contas a Receber':       { grupos: ['AC'],         palavras: ['cliente','duplicata','recebi','conta a receber','nota promissoria'] },
-  'Estoques':               { grupos: ['AC'],         palavras: ['estoque','mercadoria','produto','materia','insumo'] },
-  'RLP':                    { grupos: ['ANC'],        palavras: ['realizavel longo','recebivel longo','cliente longo','duplicata longo','rlp','credito longo','tributo recuperar longo'] },
-  'Imobilizado':            { grupos: ['AC','ANC'],   palavras: ['imobilizado','maquina','veiculo','imovel','equipamento','movel','utensilio','instalacao'] },
-  'Intangível':             { grupos: ['ANC'],        palavras: ['intangivel','goodwill','software','licenca','marca','patente'] },
-  'Fornecedores':           { grupos: ['PC'],         palavras: ['fornecedor','conta pagar','duplicata a pagar','nota fiscal pagar'] },
-  'Empréstimos CP':         { grupos: ['PC'],         palavras: ['emprestimo','financiamento','debenture','mutuo','cce','ccb'] },
-  'Tributos a Pagar':       { grupos: ['PC'],         palavras: ['ir a recolher','csll','pis a recolher','cofins','iss','icms a recolher','tributo','simples','inss a recolher','irrf'] },
-  'Salários e Encargos':    { grupos: ['PC'],         palavras: ['salario','ordenado','ferias','decimo','fgts','inss s/','previdencia','encargo social'] },
-  'Empréstimos LP':         { grupos: ['PNC'],        palavras: ['emprestimo','financiamento','longo prazo','debenture','mutuo'] },
-  'Capital Social':         { grupos: ['PL'],         palavras: ['capital social','capital subscrito'] },
-  'Reservas':               { grupos: ['PL'],         palavras: ['reserva'] },
-  'Lucros Acumulados':      { grupos: ['PL'],         palavras: ['lucro acumulado','prejuizo acumulado','resultado acumulado','resultado retido'] },
-  'Resultado do Exercício': { grupos: ['PL'],         palavras: ['resultado do exercicio','resultado do periodo','lucro do exercicio'] },
+  'Caixa e Equivalentes':   { grupos: ['AC'],       palavras: ['caixa','banco','aplicac','numerario','deposito'] },
+  'Contas a Receber':       { grupos: ['AC'],       palavras: ['cliente','duplicata','recebi','conta a receber','nota promissoria'] },
+  'Estoques':               { grupos: ['AC'],       palavras: ['estoque','mercadoria','produto','materia','insumo'] },
+  'RLP':                    { grupos: ['ANC'],      palavras: ['realizavel longo','recebivel longo','cliente longo','duplicata longo','rlp','credito longo','tributo recuperar longo'] },
+  'Imobilizado':            { grupos: ['AC','ANC'], palavras: ['imobilizado','maquina','veiculo','imovel','equipamento','movel','utensilio','instalacao'] },
+  'Intangível':             { grupos: ['ANC'],      palavras: ['intangivel','goodwill','software','licenca','marca','patente'] },
+  'Fornecedores':           { grupos: ['PC'],       palavras: ['fornecedor','conta pagar','duplicata a pagar','nota fiscal pagar'] },
+  'Empréstimos CP':         { grupos: ['PC'],       palavras: ['emprestimo','financiamento','debenture','mutuo','cce','ccb'] },
+  'Tributos a Pagar':       { grupos: ['PC'],       palavras: ['ir a recolher','csll','pis a recolher','cofins','iss','icms a recolher','tributo','simples','inss a recolher','irrf'] },
+  'Salários e Encargos':    { grupos: ['PC'],       palavras: ['salario','ordenado','ferias','decimo','fgts','inss s/','previdencia','encargo social'] },
+  'Empréstimos LP':         { grupos: ['PNC'],      palavras: ['emprestimo','financiamento','longo prazo','debenture','mutuo'] },
+  'Capital Social':         { grupos: ['PL'],       palavras: ['capital social','capital subscrito'] },
+  'Reservas':               { grupos: ['PL'],       palavras: ['reserva'] },
+  'Lucros Acumulados':      { grupos: ['PL'],       palavras: ['lucro acumulado','prejuizo acumulado','resultado acumulado','resultado retido'] },
+  'Resultado do Exercício': { grupos: ['PL'],       palavras: ['resultado do exercicio','resultado do periodo','lucro do exercicio'] },
 };
 
 function classificarSubgrupo(grupo: string, nome: string): string {
@@ -60,8 +61,126 @@ function classificarSubgrupo(grupo: string, nome: string): string {
 export class P02BalancoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async montar(empresaId: string, exercicio: number): Promise<BalancoResult> {
-    // Último período disponível para este exercício
+  /**
+   * Monta o BP com prioridade: ECF (regime-aware: L100/P100/U100) → ECD J100.
+   */
+  async montar(
+    empresaId: string,
+    exercicio: number,
+    regimeTributario?: string | null,
+  ): Promise<BalancoResult> {
+    const ecfResult = await this.montarDeEcf(empresaId, exercicio, regimeTributario);
+    if (ecfResult) return ecfResult;
+    return this.montarDeEcd(empresaId, exercicio);
+  }
+
+  // ─── Fonte ECF (L100 / P100 / U100) ─────────────────────────────────────────
+
+  private candidatosBp(regime: string | null | undefined): string[] {
+    const MAPA: Record<string, string[]> = {
+      lucro_real:       ['L100', 'P100', 'U100'],
+      lucro_presumido:  ['P100', 'L100', 'U100'],
+      lucro_arbitrado:  ['P100', 'L100', 'U100'],
+      imune_isenta:     ['U100', 'L100', 'P100'],
+      simples_nacional: ['P100', 'L100', 'U100'],
+    };
+    return MAPA[regime ?? ''] ?? ['L100', 'P100', 'U100'];
+  }
+
+  /**
+   * Mapeia o código do Plano Referencial ECF para o grupo contábil.
+   * L100/P100/U100 seguem a numeração RFB:
+   *   1.01.* → AC   1.02.* → ANC   2.01.* → PC   2.02.* → PNC   2.03.* → PL
+   * Fallback por descrição cobre variações de regime.
+   */
+  private detectarGrupo(codigo: string, descricao: string): string | null {
+    if (codigo.startsWith('1.01')) return 'AC';
+    if (codigo.startsWith('1.02') || codigo.startsWith('1.0')) return 'ANC';
+    if (codigo.startsWith('1.'))   return 'ANC';
+    if (codigo.startsWith('2.01')) return 'PC';
+    if (codigo.startsWith('2.02')) return 'PNC';
+    if (codigo.startsWith('2.03') || codigo.startsWith('2.04') || codigo.startsWith('2.1')) return 'PL';
+    if (codigo.startsWith('3.') || codigo.startsWith('4.')) return null; // DRE — pular
+
+    // Fallback por descrição (P100/U100 podem usar códigos distintos)
+    const d = descricao.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if (d.includes('ativo circulante'))                                           return 'AC';
+    if (d.includes('ativo nao circulante') || d.includes('ativo permanente'))     return 'ANC';
+    if (d.includes('passivo circulante'))                                          return 'PC';
+    if (d.includes('passivo nao circulante') || d.includes('exigivel longo'))     return 'PNC';
+    if (d.includes('patrimonio liquido') || d.includes('capital social'))         return 'PL';
+
+    return null;
+  }
+
+  private async montarDeEcf(
+    empresaId: string,
+    exercicio: number,
+    regimeTributario?: string | null,
+  ): Promise<BalancoResult | null> {
+    const candidatos = this.candidatosBp(regimeTributario);
+
+    for (const registroEcf of candidatos) {
+      const registros = await this.prisma.creditoEcfRegistro.findMany({
+        where:   { empresaId, exercicio, registroEcf },
+        orderBy: { linhaCodigo: 'asc' },
+      });
+      if (registros.length === 0) continue;
+
+      // Identifica nós-folha (sem filhos): apenas eles entram no balanço
+      const codigosComFilhos = new Set<string>();
+      for (const { linhaCodigo } of registros) {
+        const parts = linhaCodigo.split('.');
+        for (let i = 1; i < parts.length; i++) {
+          codigosComFilhos.add(parts.slice(0, i).join('.'));
+        }
+      }
+
+      const linhas: BalancoRow[] = [];
+      for (const r of registros) {
+        if (codigosComFilhos.has(r.linhaCodigo)) continue; // nó sintético — pular
+        const grupo = this.detectarGrupo(r.linhaCodigo, r.descricao);
+        if (!grupo) continue;
+        const vAbs = r.valor.abs();
+        if (vAbs.isZero()) continue;
+        linhas.push({
+          contaCodigo: r.linhaCodigo,
+          contaNome:   r.descricao,
+          grupo,
+          subgrupo:    classificarSubgrupo(grupo, r.descricao),
+          valor:       vAbs,
+          fonte:       `ecf_${registroEcf.toLowerCase()}`,
+        });
+      }
+
+      if (linhas.length === 0) continue;
+
+      const somarGrupos = (gs: string[]) =>
+        linhas.filter(l => gs.includes(l.grupo)).reduce((s, l) => s.add(l.valor), new Decimal(0));
+
+      const totalAtivo     = somarGrupos(['AC', 'ANC']);
+      const totalPassivoPl = somarGrupos(['PC', 'PNC', 'PL']);
+      const divergencia    = totalAtivo.minus(totalPassivoPl).abs();
+      const bloqueado      = divergencia.greaterThan(1);
+
+      return {
+        linhas,
+        totalAtivo,
+        totalPassivoPl,
+        divergencia,
+        bloqueado,
+        mensagem: bloqueado
+          ? `Balanço ECF (${registroEcf}) não fecha: divergência R$ ${divergencia.toFixed(2)}`
+          : undefined,
+      };
+    }
+
+    return null; // sem dados ECF — usar ECD
+  }
+
+  // ─── Fallback ECD (J100 saldos analíticos) ───────────────────────────────────
+
+  private async montarDeEcd(empresaId: string, exercicio: number): Promise<BalancoResult> {
     const periodoMax = await this.prisma.creditoEcdSaldo.findFirst({
       where:   { empresaId, exercicio },
       orderBy: { periodo: 'desc' },
@@ -69,22 +188,17 @@ export class P02BalancoService {
     });
 
     if (!periodoMax) {
-      return { linhas: [], totalAtivo: new Decimal(0), totalPassivoPl: new Decimal(0),
-               divergencia: new Decimal(0), bloqueado: true,
-               mensagem: 'Sem saldos ECD para este exercício' };
+      return {
+        linhas: [], totalAtivo: new Decimal(0), totalPassivoPl: new Decimal(0),
+        divergencia: new Decimal(0), bloqueado: true,
+        mensagem: 'Sem saldos ECD para este exercício',
+      };
     }
 
-    // Busca apenas contas analíticas com saldo != 0 no último período
     const saldos = await this.prisma.creditoEcdSaldo.findMany({
-      where: {
-        empresaId,
-        exercicio,
-        periodo: periodoMax.periodo,
-        NOT: { saldoFinal: 0 },
-      },
+      where: { empresaId, exercicio, periodo: periodoMax.periodo, NOT: { saldoFinal: 0 } },
     });
 
-    // Plano para saber tipo (sintetica/analitica)
     const plano = await this.prisma.creditoPlanoConta.findMany({
       where:  { empresaId, exercicio },
       select: { contaCodigo: true, tipo: true, grupo: true },
@@ -92,49 +206,36 @@ export class P02BalancoService {
     const planoMap = new Map(plano.map(p => [p.contaCodigo, p]));
 
     const linhas: BalancoRow[] = [];
-
     for (const s of saldos) {
       const meta = planoMap.get(s.contaCodigo);
-      // Contas sintéticas servem apenas para agrupamento — não entram no balanço
       if (meta?.tipo === 'sintetica') continue;
-
-      const grupo   = meta?.grupo ?? s.grupo ?? 'AC';
+      const grupo    = meta?.grupo ?? s.grupo ?? 'AC';
       const subgrupo = classificarSubgrupo(grupo, s.contaNome);
-
-      // Converte para valor absoluto: D=Ativo (positivo), C=Passivo/PL (positivo)
-      const vAbs = s.saldoFinal.abs();
-
-      linhas.push({ contaCodigo: s.contaCodigo, contaNome: s.contaNome,
-                    grupo, subgrupo, valor: vAbs, fonte: 'ecd_j100' });
+      linhas.push({
+        contaCodigo: s.contaCodigo, contaNome: s.contaNome,
+        grupo, subgrupo, valor: s.saldoFinal.abs(), fonte: 'ecd_j100',
+      });
     }
 
-    // Totais
-    const grupos = (g: string[]) =>
-      linhas.filter(l => g.includes(l.grupo))
-            .reduce((acc, l) => acc.add(l.valor), new Decimal(0));
+    const somarGrupos = (gs: string[]) =>
+      linhas.filter(l => gs.includes(l.grupo)).reduce((s, l) => s.add(l.valor), new Decimal(0));
 
-    const totalAtivo     = grupos(['AC', 'ANC']);
-    const totalPassivoPl = grupos(['PC', 'PNC', 'PL']);
+    const totalAtivo     = somarGrupos(['AC', 'ANC']);
+    const totalPassivoPl = somarGrupos(['PC', 'PNC', 'PL']);
     const divergencia    = totalAtivo.minus(totalPassivoPl).abs();
     const bloqueado      = divergencia.greaterThan(1);
 
     if (!bloqueado && divergencia.greaterThan(0)) {
-      // Ajuste de arredondamento em Outros AC
       linhas.push({
         contaCodigo: 'AJUSTE_ARR', contaNome: 'Ajuste de arredondamento',
-        grupo: 'AC', subgrupo: 'Outros AC',
-        valor: divergencia, fonte: 'inferido',
+        grupo: 'AC', subgrupo: 'Outros AC', valor: divergencia, fonte: 'inferido',
       });
     }
 
     return {
-      linhas,
-      totalAtivo,
-      totalPassivoPl,
-      divergencia,
-      bloqueado,
+      linhas, totalAtivo, totalPassivoPl, divergencia, bloqueado,
       mensagem: bloqueado
-        ? `Balanço não fecha: divergência R$ ${divergencia.toFixed(2)}`
+        ? `Balanço ECD não fecha: divergência R$ ${divergencia.toFixed(2)}`
         : undefined,
     };
   }

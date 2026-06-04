@@ -66,8 +66,15 @@ export class P02Service {
       return { empresaId, exercicio, status: 'pulado' };
     }
 
+    // Regime tributário necessário para selecionar o registro ECF correto
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where:  { id: empresaId },
+      select: { regimeTributario: true },
+    });
+    const regime = empresa?.regimeTributario ?? null;
+
     // ── Balanço ────────────────────────────────────────────────────────────────
-    const balancoResult = await this.balanco.montar(empresaId, exercicio);
+    const balancoResult = await this.balanco.montar(empresaId, exercicio, regime);
     const msBalanco     = Date.now() - t0;
 
     if (balancoResult.bloqueado) {
@@ -93,7 +100,7 @@ export class P02Service {
     this.logger.log(`[P02] empresa=${empresaId}/${exercicio} balanço: ${balancoResult.linhas.length} linhas`);
 
     // ── DRE ────────────────────────────────────────────────────────────────────
-    const dreResult = await this.dre.montar(empresaId, exercicio);
+    const dreResult = await this.dre.montar(empresaId, exercicio, regime);
     const msDre     = Date.now() - t0;
 
     await this.prisma.$transaction(async tx => {
