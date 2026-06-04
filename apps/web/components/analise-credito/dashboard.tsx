@@ -13,6 +13,8 @@ import {
   ListChecksIcon,
   BugIcon,
   TrendUpIcon,
+  ChartBarIcon,
+  GearIcon,
 } from '@phosphor-icons/react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -34,28 +36,22 @@ import { VisaoGeral } from './visao-geral';
 
 const CLS_COLOR: Record<Classificacao, string> = {
   A: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-  B: 'bg-green-100 text-green-800 border-green-300',
-  C: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  D: 'bg-orange-100 text-orange-800 border-orange-300',
-  E: 'bg-red-100 text-red-800 border-red-300',
+  B: 'bg-green-100   text-green-800   border-green-300',
+  C: 'bg-yellow-100  text-yellow-800  border-yellow-300',
+  D: 'bg-orange-100  text-orange-800  border-orange-300',
+  E: 'bg-red-100     text-red-800     border-red-300',
 };
 
 const SEV_COLOR: Record<string, string> = {
-  critico:  'bg-red-100 text-red-800 border-red-300',
-  atencao:  'bg-yellow-100 text-yellow-800 border-yellow-300',
-  positivo: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-};
-
-const SEV_ICON: Record<string, React.ReactNode> = {
-  critico:  <XCircleIcon weight="fill" className="text-red-500" size={14} />,
-  atencao:  <WarningIcon weight="fill" className="text-yellow-500" size={14} />,
-  positivo: <CheckCircleIcon weight="fill" className="text-emerald-500" size={14} />,
+  critico:  'bg-red-100     text-red-700     border-red-300',
+  atencao:  'bg-amber-100   text-amber-700   border-amber-300',
+  positivo: 'bg-emerald-100 text-emerald-700 border-emerald-300',
 };
 
 const INC_SEV_COLOR: Record<string, string> = {
-  bloqueio: 'bg-red-100 text-red-800 border-red-300',
-  alerta:   'bg-yellow-100 text-yellow-800 border-yellow-300',
-  info:     'bg-blue-100 text-blue-800 border-blue-300',
+  bloqueio: 'bg-red-100   text-red-700   border-red-300',
+  alerta:   'bg-amber-100 text-amber-700 border-amber-300',
+  info:     'bg-blue-100  text-blue-700  border-blue-300',
 };
 
 function formatarCnpj(cnpj: string) {
@@ -65,7 +61,7 @@ function formatarCnpj(cnpj: string) {
 function formatarValor(valor: string | null, unidade: string): string {
   if (valor === null) return '—';
   const n = parseFloat(valor);
-  if (isNaN(n)) return valor;
+  if (Number.isNaN(n)) return valor;
   if (unidade === 'percentual') return `${(n * 100).toFixed(1)}%`;
   if (unidade === 'ratio')      return n.toFixed(2);
   if (unidade === 'dias')       return `${n.toFixed(0)} dias`;
@@ -92,6 +88,7 @@ export function AnaliseCreditoDashboard() {
   const [classificacao, setClassificacao]     = useState<ClassificacaoRisco[]>([]);
   const [inconsistencias, setInconsistencias] = useState<Inconsistencia[]>([]);
   const [financeiro, setFinanceiro]           = useState<ResumoFinanceiro | null>(null);
+  const [financeiroPrevio, setFinanceiroPrevio] = useState<ResumoFinanceiro | null>(null);
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
 
   useEffect(() => {
@@ -106,8 +103,8 @@ export function AnaliseCreditoDashboard() {
     try {
       const [status, inds, als, cls, incs] = await Promise.all([
         analiseCreditoApi.statusPipeline(cnpj),
-        analiseCreditoApi.indicadores(cnpj, exercicio),
-        analiseCreditoApi.alertas(cnpj, exercicio),
+        analiseCreditoApi.indicadores(cnpj),
+        analiseCreditoApi.alertas(cnpj),
         analiseCreditoApi.classificacao(cnpj),
         analiseCreditoApi.inconsistencias(cnpj),
       ]);
@@ -117,12 +114,17 @@ export function AnaliseCreditoDashboard() {
       setClassificacao(cls);
       setInconsistencias(incs);
 
-      // Carrega resumo financeiro para o exercício mais recente com dados
       const exercicioAlvo = exercicio ?? status?.[0]?.exercicio;
       if (exercicioAlvo) {
         analiseCreditoApi.financeiro(cnpj, exercicioAlvo)
-          .then(setFinanceiro)
-          .catch(() => setFinanceiro(null));
+          .then(f => {
+            setFinanceiro(f);
+            // Carrega ano anterior para comparativo
+            analiseCreditoApi.financeiro(cnpj, exercicioAlvo - 1)
+              .then(setFinanceiroPrevio)
+              .catch(() => setFinanceiroPrevio(null));
+          })
+          .catch(() => { setFinanceiro(null); setFinanceiroPrevio(null); });
       }
     } catch {
       toastError('Erro ao carregar dados da empresa');
@@ -187,20 +189,22 @@ export function AnaliseCreditoDashboard() {
     [statusData],
   );
 
-  const TAB_ITEMS: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'visao',           label: 'Visão geral',         icon: <ChartLineIcon size={15} /> },
-    { id: 'alertas',         label: `Alertas${alertasFiltrados.length ? ` (${alertasFiltrados.length})` : ''}`, icon: <BellIcon size={15} /> },
-    { id: 'evolucao',        label: 'Evolução',            icon: <TrendUpIcon size={15} /> },
-    { id: 'parecer',         label: 'Parecer',             icon: <BuildingsIcon size={15} /> },
-    { id: 'pipeline',        label: 'Pipeline',            icon: <ListChecksIcon size={15} /> },
-    { id: 'inconsistencias', label: 'Inconsistências',     icon: <BugIcon size={15} />, badge: totalBloqueios || undefined },
+  const exercicioAtivo = exercicioFiltro ?? exerciciosDisponiveis[0];
+
+  /* ── Tabs principais (visíveis no sub-header) ─────────────────────────── */
+  const TAB_ITEMS: { id: Tab; label: string }[] = [
+    { id: 'visao',     label: 'Visão geral'         },
+    { id: 'estrutura', label: 'Estrutura de capital' },
+    { id: 'evolucao',  label: 'Evolução'             },
+    { id: 'alertas',   label: `Alertas${alertasFiltrados.length ? ` (${alertasFiltrados.length})` : ''}` },
+    { id: 'parecer',   label: 'Parecer'              },
   ];
 
   return (
     <div className="flex flex-col gap-4 p-6">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
-      {/* ── Cabeçalho ── */}
+      {/* ── Cabeçalho da página ── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Análise de Crédito</h1>
@@ -255,298 +259,218 @@ export function AnaliseCreditoDashboard() {
               </select>
             </div>
           )}
-
-          {empresaSelecionada?.ultimaClassificacao && (
-            <div className="ml-auto flex items-center gap-3">
-              <div className="text-right text-sm">
-                <p className="font-medium">{empresaSelecionada.razaoSocial}</p>
-                <p className="text-xs text-muted-foreground">{empresaSelecionada.regimeTributario ?? '—'}</p>
-              </div>
-              <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full border-2 text-xl font-bold ${CLS_COLOR[empresaSelecionada.ultimaClassificacao.classificacao]}`}>
-                {empresaSelecionada.ultimaClassificacao.classificacao}
-              </span>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* ── Conteúdo por tabs ── */}
+      {/* ── Container principal: sub-header + conteúdo ── */}
       {cnpjSelecionado && (
-        <>
-          {/* Tabs */}
-          <div className="flex gap-1 border-b">
-            {TAB_ITEMS.map(t => (
+        <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+
+          {/* Sub-header: empresa + exercício (esq) · tabs (dir) */}
+          <div className="flex items-center justify-between gap-4 border-b border-border bg-muted/40 px-6 py-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="truncate font-semibold text-foreground">
+                  {empresaSelecionada?.razaoSocial ?? '—'}
+                </p>
+                {empresaSelecionada?.ultimaClassificacao && (
+                  <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${CLS_COLOR[empresaSelecionada.ultimaClassificacao.classificacao]}`}>
+                    {empresaSelecionada.ultimaClassificacao.classificacao}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {formatarCnpj(cnpjSelecionado)}
+                {exercicioAtivo ? ` · Exercício ${exercicioAtivo}` : ''}
+                {empresaSelecionada?.regimeTributario ? ` · ${empresaSelecionada.regimeTributario.replace('_', ' ')}` : ''}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
+              {TAB_ITEMS.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    tab === t.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+              {/* Diagnósticos (pipeline + inconsistências) como ação secundária */}
               <button
-                key={t.id}
                 type="button"
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors ${
-                  tab === t.id
-                    ? 'border-b-2 border-primary text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
+                onClick={() => setTab(tab === 'pipeline' ? 'visao' : 'pipeline')}
+                title="Diagnósticos do pipeline"
+                className={`ml-1 flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors ${
+                  tab === 'pipeline' || tab === 'inconsistencias'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
-                {t.icon}{t.label}
-                {t.badge !== undefined && (
-                  <Badge className="ml-1 bg-red-100 text-red-800 border-red-300">{t.badge}</Badge>
+                <GearIcon size={14} />
+                {totalBloqueios > 0 && (
+                  <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+                    {totalBloqueios}
+                  </span>
                 )}
               </button>
-            ))}
+            </div>
           </div>
 
-          {carregando ? (
-            <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-              <ArrowClockwiseIcon size={18} className="mr-2 animate-spin" /> Carregando…
-            </div>
-          ) : (
-            <>
-              {/* ── Tab: Visão Geral ── */}
-              {tab === 'visao' && (
-                <VisaoGeral
-                  exercicio={exercicioFiltro ?? exerciciosDisponiveis[0] ?? 0}
-                  indicadores={indicadores}
-                  alertas={alertas}
-                  financeiro={financeiro}
-                />
-              )}
+          {/* Conteúdo das tabs */}
+          <div className="p-6">
+            {carregando ? (
+              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+                <ArrowClockwiseIcon size={18} className="mr-2 animate-spin" /> Carregando…
+              </div>
+            ) : (
+              <>
+                {/* ── Visão geral ── */}
+                {tab === 'visao' && (
+                  <VisaoGeral
+                    exercicio={exercicioAtivo ?? 0}
+                    indicadores={indicadores}
+                    alertas={alertas}
+                    financeiro={financeiro}
+                    financeiroPrevio={financeiroPrevio}
+                  />
+                )}
 
-              {/* ── Tab: Evolução ── */}
-              {tab === 'evolucao' && (
-                <div className="flex flex-col gap-4">
-                  {Object.keys(indPorCategoria).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nenhum indicador disponível.</p>
-                  ) : (
-                    Object.entries(indPorCategoria).map(([cat, inds]) => (
-                      <Card key={cat} className="border">
-                        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Grupo {cat}</CardTitle></CardHeader>
-                        <CardContent className="p-0">
-                          <table className="w-full text-sm">
-                            <thead><tr className="border-b bg-muted/50">
-                              <th className="px-4 py-2 text-left font-medium">Indicador</th>
-                              <th className="px-4 py-2 text-left font-medium">Exercício</th>
-                              <th className="px-4 py-2 text-right font-medium">Valor</th>
-                              <th className="px-4 py-2 text-center font-medium">Fonte</th>
-                            </tr></thead>
-                            <tbody>
-                              {inds.map(i => (
-                                <tr key={`${i.exercicio}-${i.indicador}`} className="border-b last:border-0 hover:bg-muted/30">
-                                  <td className="px-4 py-2 font-mono text-xs">{i.indicador}</td>
-                                  <td className="px-4 py-2 text-muted-foreground">{i.exercicio}</td>
-                                  <td className="px-4 py-2 text-right font-medium">
-                                    {i.valor === null ? <span className="text-muted-foreground italic">NULL</span> : formatarValor(i.valor, i.unidade)}
-                                  </td>
-                                  <td className="px-4 py-2 text-center">
-                                    {i.fonteOk === 1
-                                      ? <span className="text-xs text-emerald-600">direta</span>
-                                      : <span className="text-xs text-orange-600">inferida</span>}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* ── Tab: Parecer (classificação) ── */}
-              {tab === 'parecer' && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {classificacao.length === 0 ? (
-                    <p className="col-span-3 text-sm text-muted-foreground">Nenhuma classificação gerada ainda.</p>
-                  ) : (
-                    classificacao.map(c => (
-                      <Card key={c.id} className="border">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-muted-foreground">Exercício {c.exercicio}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Confiabilidade: <span className="font-medium text-foreground">{c.confiabilidade}</span>
-                              </p>
-                            </div>
-                            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-full border-2 text-2xl font-bold ${CLS_COLOR[c.classificacao]}`}>
-                              {c.classificacao}
-                            </span>
+                {/* ── Estrutura de capital ── */}
+                {tab === 'estrutura' && (
+                  <div className="flex flex-col gap-4">
+                    {financeiro?.estrutura ? (
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                        {[
+                          { label: 'Ativo total',       v: financeiro.estrutura.ativoTotal },
+                          { label: 'Passivo total',      v: financeiro.estrutura.passivoTotal },
+                          { label: 'Patrimônio líquido', v: financeiro.estrutura.pl },
+                          { label: 'Dívida líquida',     v: financeiro.estrutura.dividaLiquida },
+                        ].map(({ label, v }) => (
+                          <div key={label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                            <p className="text-xs text-muted-foreground">{label}</p>
+                            <p className="mt-1 text-lg font-bold text-foreground tabular-nums">
+                              {v ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                            </p>
                           </div>
-                          <div className="mt-3 flex gap-3 text-xs">
-                            <span className="flex items-center gap-1 text-red-700"><XCircleIcon weight="fill" size={13} /> {c.qtdCriticos} críticos</span>
-                            <span className="flex items-center gap-1 text-yellow-700"><WarningIcon weight="fill" size={13} /> {c.qtdAtencao} atenção</span>
-                            <span className="flex items-center gap-1 text-emerald-700"><CheckCircleIcon weight="fill" size={13} /> {c.qtdPositivos} positivos</span>
-                          </div>
-                          {c.overrideAplicado && c.motivoOverride && (
-                            <p className="mt-2 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-xs text-orange-700">Override: {c.motivoOverride}</p>
-                          )}
-                          <p className="mt-2 text-xs text-muted-foreground">Gerado em {new Date(c.dataGeracao).toLocaleDateString('pt-BR')}</p>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* ── Tab: Pipeline status ── */}
-              {tab === 'pipeline' && (
-                <Card className="border">
-                  <CardHeader className="pb-2"><CardTitle className="text-base">Status do Pipeline por Exercício</CardTitle></CardHeader>
-                  <CardContent className="p-0">
-                    {statusData.length === 0 ? (
-                      <p className="p-6 text-sm text-muted-foreground">Nenhum processamento encontrado para esta empresa.</p>
+                        ))}
+                      </div>
                     ) : (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/50">
-                            <th className="px-4 py-2 text-left font-medium">Exercício</th>
-                            <th className="px-4 py-2 text-center font-medium">P01 (ECD/ECF)</th>
-                            <th className="px-4 py-2 text-center font-medium">P02 (Balanço/DRE)</th>
-                            <th className="px-4 py-2 text-center font-medium">P03 (Indicadores)</th>
-                            <th className="px-4 py-2 text-center font-medium">P04 (Classificação)</th>
-                            <th className="px-4 py-2 text-center font-medium">Bloqueios</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {statusData.map(s => (
-                            <tr key={s.exercicio} className="border-b last:border-0 hover:bg-muted/30">
-                              <td className="px-4 py-2 font-medium">{s.exercicio}</td>
-                              {(['p01', 'p02', 'p03', 'p04'] as const).map(p => (
-                                <td key={p} className="px-4 py-2 text-center">
-                                  {s[p]
-                                    ? <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircleIcon weight="fill" size={14} />{s[p]}</span>
-                                    : <span className="text-muted-foreground">—</span>}
-                                </td>
-                              ))}
-                              <td className="px-4 py-2 text-center">
-                                {s.totalBloqueios > 0 ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setTab('inconsistencias')}
-                                    className="cursor-pointer"
-                                    title="Ver inconsistências"
-                                  >
-                                    <Badge className="bg-red-100 text-red-800 border-red-300 hover:bg-red-200">
-                                      {s.totalBloqueios}
-                                    </Badge>
-                                  </button>
-                                ) : (
-                                  <span className="text-muted-foreground">0</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <p className="text-sm text-muted-foreground">Dados de estrutura não disponíveis para este exercício.</p>
                     )}
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                )}
 
-              {/* ── Tab: Indicadores ── */}
-              {tab === 'indicadores' && (
-                <div className="flex flex-col gap-4">
-                  {Object.keys(indPorCategoria).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nenhum indicador disponível para o filtro selecionado.</p>
-                  ) : (
-                    Object.entries(indPorCategoria).map(([cat, inds]) => (
-                      <Card key={cat} className="border">
-                        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Grupo {cat}</CardTitle></CardHeader>
-                        <CardContent className="p-0">
+                {/* ── Evolução (indicadores por categoria) ── */}
+                {tab === 'evolucao' && (
+                  <div className="flex flex-col gap-4">
+                    {Object.keys(indPorCategoria).length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Nenhum indicador disponível.</p>
+                    ) : (
+                      Object.entries(indPorCategoria).map(([cat, inds]) => (
+                        <div key={cat} className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+                          <p className="border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Grupo {cat}
+                          </p>
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="border-b bg-muted/50">
-                                <th className="px-4 py-2 text-left font-medium">Indicador</th>
-                                <th className="px-4 py-2 text-left font-medium">Exercício</th>
-                                <th className="px-4 py-2 text-right font-medium">Valor</th>
-                                <th className="px-4 py-2 text-center font-medium">Fonte</th>
+                              <tr className="border-b border-border bg-muted/40">
+                                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Indicador</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Exercício</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Valor</th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">Fonte</th>
                               </tr>
                             </thead>
                             <tbody>
                               {inds.map(i => (
-                                <tr key={`${i.exercicio}-${i.indicador}`} className="border-b last:border-0 hover:bg-muted/30">
-                                  <td className="px-4 py-2 font-mono text-xs">{i.indicador}</td>
+                                <tr key={`${i.exercicio}-${i.indicador}`} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
+                                  <td className="px-4 py-2 font-mono text-xs text-foreground">{i.indicador}</td>
                                   <td className="px-4 py-2 text-muted-foreground">{i.exercicio}</td>
-                                  <td className="px-4 py-2 text-right font-medium">
+                                  <td className="px-4 py-2 text-right font-medium text-foreground">
                                     {i.valor === null
-                                      ? <span className="text-muted-foreground italic">NULL</span>
+                                      ? <span className="italic text-muted-foreground">NULL</span>
                                       : formatarValor(i.valor, i.unidade)}
                                   </td>
                                   <td className="px-4 py-2 text-center">
                                     {i.fonteOk === 1
                                       ? <span className="text-xs text-emerald-600">direta</span>
-                                      : <span className="text-xs text-orange-600">inferida</span>}
+                                      : <span className="text-xs text-amber-600">inferida</span>}
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
 
-              {/* ── Tab: Alertas ── */}
-              {tab === 'alertas' && (
-                <div className="flex flex-col gap-3">
-                  {alertasFiltrados.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nenhum alerta disponível para o filtro selecionado.</p>
-                  ) : (
-                    (['critico', 'atencao', 'positivo'] as const).map(sev => {
-                      const grupo = alertasFiltrados.filter(a => a.severidade === sev);
-                      if (grupo.length === 0) return null;
-                      return (
-                        <Card key={sev} className="border">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="flex items-center gap-2 text-sm">
-                              {SEV_ICON[sev]}
-                              <span className="capitalize">{sev}</span>
+                {/* ── Alertas ── */}
+                {tab === 'alertas' && (
+                  <div className="flex flex-col gap-3">
+                    {alertasFiltrados.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Nenhum alerta para o filtro selecionado.</p>
+                    ) : (
+                      (['critico', 'atencao', 'positivo'] as const).map(sev => {
+                        const grupo = alertasFiltrados.filter(a => a.severidade === sev);
+                        if (grupo.length === 0) return null;
+                        const sevIcon = {
+                          critico:  <XCircleIcon weight="fill" className="text-red-500" size={14} />,
+                          atencao:  <WarningIcon weight="fill" className="text-amber-500" size={14} />,
+                          positivo: <CheckCircleIcon weight="fill" className="text-emerald-500" size={14} />,
+                        }[sev];
+                        return (
+                          <div key={sev} className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+                            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                              {sevIcon}
+                              <span className="text-sm font-medium capitalize text-foreground">{sev}</span>
                               <Badge className={`ml-1 ${SEV_COLOR[sev]}`}>{grupo.length}</Badge>
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="p-0">
+                            </div>
                             <table className="w-full text-sm">
                               <thead>
-                                <tr className="border-b bg-muted/50">
-                                  <th className="px-4 py-2 text-left font-medium">Código</th>
-                                  <th className="px-4 py-2 text-left font-medium">Exercício</th>
-                                  <th className="px-4 py-2 text-left font-medium">Categoria</th>
-                                  <th className="px-4 py-2 text-left font-medium">Mensagem</th>
-                                  <th className="px-4 py-2 text-right font-medium">Valor</th>
+                                <tr className="border-b border-border bg-muted/40">
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Código</th>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Exercício</th>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Categoria</th>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Mensagem</th>
+                                  <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Valor</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {grupo.map(a => (
-                                  <tr key={`${a.exercicio}-${a.codigoRegra}`} className="border-b last:border-0 hover:bg-muted/30">
-                                    <td className="px-4 py-2 font-mono text-xs">{a.codigoRegra}</td>
+                                  <tr key={`${a.exercicio}-${a.codigoRegra}`} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
+                                    <td className="px-4 py-2 font-mono text-xs text-foreground">{a.codigoRegra}</td>
                                     <td className="px-4 py-2 text-muted-foreground">{a.exercicio}</td>
                                     <td className="px-4 py-2 text-xs text-muted-foreground">{a.categoria}</td>
-                                    <td className="px-4 py-2">{a.mensagem}</td>
-                                    <td className="px-4 py-2 text-right font-mono text-xs">
+                                    <td className="px-4 py-2 text-foreground">{a.mensagem}</td>
+                                    <td className="px-4 py-2 text-right font-mono text-xs text-foreground">
                                       {a.valorAtual != null ? parseFloat(a.valorAtual).toFixed(3) : '—'}
                                     </td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
-                          </CardContent>
-                        </Card>
-                      );
-                    })
-                  )}
-                </div>
-              )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
 
-              {/* ── Tab: Classificação ── */}
-              {tab === 'classificacao' && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {classificacao.length === 0 ? (
-                    <p className="col-span-3 text-sm text-muted-foreground">Nenhuma classificação gerada ainda.</p>
-                  ) : (
-                    classificacao.map(c => (
-                      <Card key={c.id} className="border">
-                        <CardContent className="p-4">
+                {/* ── Parecer (classificação de risco) ── */}
+                {tab === 'parecer' && (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {classificacao.length === 0 ? (
+                      <p className="col-span-3 text-sm text-muted-foreground">Nenhuma classificação gerada ainda.</p>
+                    ) : (
+                      classificacao.map(c => (
+                        <div key={c.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                           <div className="flex items-start justify-between">
                             <div>
                               <p className="text-sm font-medium text-muted-foreground">Exercício {c.exercicio}</p>
@@ -559,71 +483,113 @@ export function AnaliseCreditoDashboard() {
                             </span>
                           </div>
                           <div className="mt-3 flex gap-3 text-xs">
-                            <span className="flex items-center gap-1 text-red-700">
-                              <XCircleIcon weight="fill" size={13} /> {c.qtdCriticos} críticos
-                            </span>
-                            <span className="flex items-center gap-1 text-yellow-700">
-                              <WarningIcon weight="fill" size={13} /> {c.qtdAtencao} atenção
-                            </span>
-                            <span className="flex items-center gap-1 text-emerald-700">
-                              <CheckCircleIcon weight="fill" size={13} /> {c.qtdPositivos} positivos
-                            </span>
+                            <span className="flex items-center gap-1 text-red-600"><XCircleIcon weight="fill" size={13} /> {c.qtdCriticos} críticos</span>
+                            <span className="flex items-center gap-1 text-amber-600"><WarningIcon weight="fill" size={13} /> {c.qtdAtencao} atenção</span>
+                            <span className="flex items-center gap-1 text-emerald-600"><CheckCircleIcon weight="fill" size={13} /> {c.qtdPositivos} positivos</span>
                           </div>
                           {c.overrideAplicado && c.motivoOverride && (
-                            <p className="mt-2 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-xs text-orange-700">
+                            <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">
                               Override: {c.motivoOverride}
                             </p>
                           )}
                           <p className="mt-2 text-xs text-muted-foreground">
                             Gerado em {new Date(c.dataGeracao).toLocaleDateString('pt-BR')}
                           </p>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
 
-              {/* ── Tab: Inconsistências ── */}
-              {tab === 'inconsistencias' && (
-                <Card className="border">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <BugIcon size={16} />
-                      Inconsistências do Pipeline
+                {/* ── Pipeline (diagnóstico) ── */}
+                {tab === 'pipeline' && (
+                  <div className="flex flex-col gap-4">
+                    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+                      <p className="border-b border-border px-4 py-3 text-sm font-medium text-foreground">
+                        Status do Pipeline por Exercício
+                      </p>
+                      {statusData.length === 0 ? (
+                        <p className="p-6 text-sm text-muted-foreground">Nenhum processamento encontrado para esta empresa.</p>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/40">
+                              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Exercício</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P01</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P02</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P03</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P04</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">Bloqueios</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {statusData.map(s => (
+                              <tr key={s.exercicio} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
+                                <td className="px-4 py-2 font-medium text-foreground">{s.exercicio}</td>
+                                {(['p01', 'p02', 'p03', 'p04'] as const).map(p => (
+                                  <td key={p} className="px-4 py-2 text-center">
+                                    {s[p]
+                                      ? <span className="flex items-center justify-center gap-1 text-emerald-600"><CheckCircleIcon weight="fill" size={14} />{s[p]}</span>
+                                      : <span className="text-muted-foreground">—</span>}
+                                  </td>
+                                ))}
+                                <td className="px-4 py-2 text-center">
+                                  {s.totalBloqueios > 0 ? (
+                                    <button type="button" onClick={() => setTab('inconsistencias')} title="Ver inconsistências">
+                                      <Badge className={SEV_COLOR.critico}>
+                                        {s.totalBloqueios}
+                                      </Badge>
+                                    </button>
+                                  ) : (
+                                    <span className="text-muted-foreground">0</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Inconsistências (diagnóstico) ── */}
+                {tab === 'inconsistencias' && (
+                  <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+                    <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                      <BugIcon size={16} className="text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Inconsistências do Pipeline</span>
                       {incsFiltradas.filter(i => i.severidade === 'bloqueio').length > 0 && (
-                        <Badge className="bg-red-100 text-red-800 border-red-300">
+                        <Badge className={SEV_COLOR.critico}>
                           {incsFiltradas.filter(i => i.severidade === 'bloqueio').length} bloqueios
                         </Badge>
                       )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
+                    </div>
                     {incsFiltradas.length === 0 ? (
                       <p className="p-6 text-sm text-muted-foreground">Nenhuma inconsistência registrada.</p>
                     ) : (
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b bg-muted/50">
-                            <th className="px-4 py-2 text-left font-medium">Severidade</th>
-                            <th className="px-4 py-2 text-left font-medium">Exercício</th>
-                            <th className="px-4 py-2 text-left font-medium">Tipo</th>
-                            <th className="px-4 py-2 text-left font-medium">Descrição</th>
-                            <th className="px-4 py-2 text-left font-medium">Data</th>
+                          <tr className="border-b border-border bg-muted/40">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Severidade</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Exercício</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Tipo</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Descrição</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Data</th>
                           </tr>
                         </thead>
                         <tbody>
                           {incsFiltradas.map(i => (
-                            <tr key={i.id} className="border-b last:border-0 hover:bg-muted/30">
+                            <tr key={i.id} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
                               <td className="px-4 py-2">
                                 <Badge className={INC_SEV_COLOR[i.severidade] ?? 'bg-muted text-muted-foreground'}>
                                   {i.severidade}
                                 </Badge>
                               </td>
                               <td className="px-4 py-2 text-muted-foreground">{i.exercicio}</td>
-                              <td className="px-4 py-2 font-mono text-xs">{i.tipoErro}</td>
-                              <td className="px-4 py-2 text-sm">{i.descricao}</td>
-                              <td className="px-4 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                              <td className="px-4 py-2 font-mono text-xs text-foreground">{i.tipoErro}</td>
+                              <td className="px-4 py-2 text-sm text-foreground">{i.descricao}</td>
+                              <td className="px-4 py-2 whitespace-nowrap text-xs text-muted-foreground">
                                 {new Date(i.criadoEm).toLocaleString('pt-BR')}
                               </td>
                             </tr>
@@ -631,12 +597,12 @@ export function AnaliseCreditoDashboard() {
                         </tbody>
                       </table>
                     )}
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-        </>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {!cnpjSelecionado && empresas.length > 0 && (
