@@ -3,7 +3,7 @@ import { PrismaService }      from '../../../database/prisma.service';
 import { P02BalancoService }  from './p02-balanco.service';
 import { P02DreService }      from './p02-dre.service';
 
-const VERSAO_PROMPT  = 'P02-v3';
+const VERSAO_PROMPT  = 'P02-v4';
 const VERSAO_P01     = 'P01-v2';
 
 export interface P02Resultado {
@@ -41,6 +41,15 @@ export class P02Service {
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           this.logger.error(`[P02] Erro em empresa=${e.id} exercicio=${exercicio}: ${msg}`, err instanceof Error ? err.stack : undefined);
+          // Grava bloqueio visível no dashboard mesmo quando a exceção é inesperada
+          try {
+            await this.gravarProcessamento({
+              empresaId: e.id, exercicio, tabela: 'tb_balanco',
+              total: 0, ok: 0, alerta: 0, bloqueados: 1,
+              hash: msg.slice(0, 64), duracaoMs: 0,
+            });
+            await this.gravarInconsistencia(e.id, exercicio, 'P02_ERRO_INESPERADO', msg, 'bloqueio');
+          } catch { /* falha secundária — ignora */ }
           resultados.push({ empresaId: e.id, exercicio, status: 'erro', mensagem: msg });
         }
       }
@@ -55,8 +64,13 @@ export class P02Service {
     // Pré-requisito: P01 concluído sem bloqueios
     const p01ok = await this.verificarP01(empresaId, exercicio);
     if (!p01ok) {
+      this.logger.warn(`[P02] empresa=${empresaId} exercicio=${exercicio} — P01-v2 não encontrado`);
+      await this.gravarProcessamento({
+        empresaId, exercicio, tabela: 'tb_balanco',
+        total: 0, ok: 0, alerta: 0, bloqueados: 1, hash: 'prereq_p01_falhou', duracaoMs: Date.now() - t0,
+      });
       await this.gravarInconsistencia(empresaId, exercicio, 'P02_PREREQ_FALHOU',
-        'P01 não foi concluído com sucesso para este exercício', 'bloqueio');
+        'P01-v2 não encontrado em tb_ecd_saldos ou tb_ecf_registros', 'bloqueio');
       return { empresaId, exercicio, status: 'bloqueado', mensagem: 'P01 não concluído' };
     }
 
@@ -91,6 +105,7 @@ export class P02Service {
       if (balancoResult.linhas.length > 0) {
         await tx.creditoBalanco.createMany({
           data: balancoResult.linhas.map(l => ({ empresaId, exercicio, ...l })),
+          skipDuplicates: true,
         });
       }
     }, { timeout: 30000 });
