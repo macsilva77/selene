@@ -45,8 +45,8 @@ const IND_FORMA_TRIB_MAP: Record<string, RegimeTributario> = {
 
 function parseValorBr(s: string): number {
   if (!s?.trim()) return 0;
-  const v = parseFloat(s.trim().replaceAll('.', '').replace(',', '.'));
-  return isNaN(v) ? 0 : v;
+  const v = Number.parseFloat(s.trim().replaceAll('.', '').replace(',', '.'));
+  return Number.isNaN(v) ? 0 : v;
 }
 
 function parseLinha(linha: string): string[] | null {
@@ -75,8 +75,10 @@ function processarBP(
   const cod  = (campos[1] ?? '').trim();
   const desc = (campos[2] ?? '').trim();
   try {
-    // Saldo final (cols 11/12) tem prioridade; fallback: saldo inicial (7/8)
-    const [colVal, colDc] = campos.length >= 12 ? [11, 12] : [7, 8];
+    // Formato padrão P100/L100/U100 — 11 campos (índices 0-10):
+    //   [7]=VAL_INI [8]=IND_INI [9]=VAL_FIN [10]=IND_FIN
+    // Formato estendido (12+ campos): VAL_FIN em [11], IND_FIN em [12]
+    const [colVal, colDc] = campos.length >= 12 ? [11, 12] : [9, 10];
     const valor = valorComSinal(campos, colVal, colDc, 'D');
     registros.push({ registroEcf: reg, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
   } catch {
