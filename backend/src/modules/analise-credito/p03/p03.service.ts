@@ -7,7 +7,7 @@ import {
 } from './p03-formulas';
 
 const VERSAO_PROMPT = 'P03-v2';
-const VERSAO_P02    = 'P02-v2';
+const VERSAO_P02    = 'P02-v3';
 
 export interface P03Resultado {
   empresaId: string;

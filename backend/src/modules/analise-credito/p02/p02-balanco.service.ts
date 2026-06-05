@@ -28,24 +28,59 @@ export interface BalancoResult {
 
 // ─── Classificação por subgrupo ───────────────────────────────────────────────
 
+// Prefixos do Plano Referencial RFB (ECF L100/P100/U100) — fonte primária
+const ECF_PREFIX_SUBGRUPO: Array<{ prefixo: string; subgrupo: string }> = [
+  { prefixo: '1.01.01', subgrupo: 'Caixa e Equivalentes' },   // DISPONIBILIDADES
+  { prefixo: '1.01.02', subgrupo: 'Contas a Receber' },        // CRÉDITOS
+  { prefixo: '1.01.03', subgrupo: 'Estoques' },                // ESTOQUES
+  { prefixo: '1.02.01', subgrupo: 'RLP' },                     // REALIZÁVEL A LONGO PRAZO
+  { prefixo: '1.02.02', subgrupo: 'Outros ANC' },              // INVESTIMENTOS
+  { prefixo: '1.02.03', subgrupo: 'Imobilizado' },             // IMOBILIZADO
+  { prefixo: '1.02.04', subgrupo: 'Intangível' },              // INTANGÍVEL
+  { prefixo: '2.01.01.01', subgrupo: 'Fornecedores' },
+  { prefixo: '2.01.01.02', subgrupo: 'Salários e Encargos' },  // PESSOAL
+  { prefixo: '2.01.01.03', subgrupo: 'Tributos a Pagar' },     // OBRIGAÇÕES TRIBUTÁRIAS
+  { prefixo: '2.01.01.04', subgrupo: 'Empréstimos CP' },       // EMPRÉSTIMOS E FINANCIAMENTOS
+  { prefixo: '2.01.02',    subgrupo: 'Empréstimos CP' },       // variante de empréstimos CP
+  { prefixo: '2.02.01',    subgrupo: 'Empréstimos LP' },       // OBRIGAÇÕES A LONGO PRAZO
+  { prefixo: '2.02.02',    subgrupo: 'Empréstimos LP' },       // variante LP
+  { prefixo: '2.03.01',    subgrupo: 'Capital Social' },
+  { prefixo: '2.03.02',    subgrupo: 'Reservas' },
+  { prefixo: '2.03.03',    subgrupo: 'Reservas' },
+  { prefixo: '2.03.04',    subgrupo: 'Reservas' },
+  { prefixo: '2.03.05',    subgrupo: 'Lucros Acumulados' },
+  { prefixo: '2.03.06',    subgrupo: 'Resultado do Exercício' },
+];
+
+// Keywords para ECD (fonte de dados analíticos com nomes de conta reais)
 const SUBGRUPO: Record<string, { grupos: string[]; palavras: string[] }> = {
-  'Caixa e Equivalentes':   { grupos: ['AC'],       palavras: ['caixa','banco','aplicac','numerario','deposito'] },
-  'Contas a Receber':       { grupos: ['AC'],       palavras: ['cliente','duplicata','recebi','conta a receber','nota promissoria'] },
+  'Caixa e Equivalentes':   { grupos: ['AC'],       palavras: ['caixa','banco','aplicac','numerario','deposito','disponibilidade'] },
+  'Contas a Receber':       { grupos: ['AC'],       palavras: ['cliente','duplicata','recebi','conta a receber','nota promissoria','credito'] },
   'Estoques':               { grupos: ['AC'],       palavras: ['estoque','mercadoria','produto','materia','insumo'] },
   'RLP':                    { grupos: ['ANC'],      palavras: ['realizavel longo','recebivel longo','cliente longo','duplicata longo','rlp','credito longo','tributo recuperar longo'] },
   'Imobilizado':            { grupos: ['AC','ANC'], palavras: ['imobilizado','maquina','veiculo','imovel','equipamento','movel','utensilio','instalacao'] },
   'Intangível':             { grupos: ['ANC'],      palavras: ['intangivel','goodwill','software','licenca','marca','patente'] },
   'Fornecedores':           { grupos: ['PC'],       palavras: ['fornecedor','conta pagar','duplicata a pagar','nota fiscal pagar'] },
-  'Empréstimos CP':         { grupos: ['PC'],       palavras: ['emprestimo','financiamento','debenture','mutuo','cce','ccb'] },
+  'Empréstimos CP':         { grupos: ['PC'],       palavras: ['emprestimo','financiamento','debenture','mutuo','cce','ccb','obrigacao'] },
   'Tributos a Pagar':       { grupos: ['PC'],       palavras: ['ir a recolher','csll','pis a recolher','cofins','iss','icms a recolher','tributo','simples','inss a recolher','irrf'] },
-  'Salários e Encargos':    { grupos: ['PC'],       palavras: ['salario','ordenado','ferias','decimo','fgts','inss s/','previdencia','encargo social'] },
-  'Empréstimos LP':         { grupos: ['PNC'],      palavras: ['emprestimo','financiamento','longo prazo','debenture','mutuo'] },
+  'Salários e Encargos':    { grupos: ['PC'],       palavras: ['salario','ordenado','ferias','decimo','fgts','inss s/','previdencia','encargo social','pessoal'] },
+  'Empréstimos LP':         { grupos: ['PNC'],      palavras: ['emprestimo','financiamento','longo prazo','debenture','mutuo','obrigacao longo'] },
   'Capital Social':         { grupos: ['PL'],       palavras: ['capital social','capital subscrito'] },
   'Reservas':               { grupos: ['PL'],       palavras: ['reserva'] },
   'Lucros Acumulados':      { grupos: ['PL'],       palavras: ['lucro acumulado','prejuizo acumulado','resultado acumulado','resultado retido'] },
   'Resultado do Exercício': { grupos: ['PL'],       palavras: ['resultado do exercicio','resultado do periodo','lucro do exercicio'] },
 };
 
+/** Classificação por prefixo de código ECF (Plano Referencial RFB) */
+function classificarSubgrupoEcf(codigo: string, grupo: string, nome: string): string {
+  for (const { prefixo, subgrupo } of ECF_PREFIX_SUBGRUPO) {
+    if (codigo.startsWith(prefixo)) return subgrupo;
+  }
+  // Fallback: keyword matching (mesma lógica do ECD)
+  return classificarSubgrupo(grupo, nome);
+}
+
+/** Classificação por palavras-chave na descrição (ECD) */
 function classificarSubgrupo(grupo: string, nome: string): string {
   const n = nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   for (const [sub, { grupos, palavras }] of Object.entries(SUBGRUPO)) {
@@ -147,7 +182,7 @@ export class P02BalancoService {
           contaCodigo: r.linhaCodigo,
           contaNome:   r.descricao,
           grupo,
-          subgrupo:    classificarSubgrupo(grupo, r.descricao),
+          subgrupo:    classificarSubgrupoEcf(r.linhaCodigo, grupo, r.descricao),
           valor:       vAbs,
           fonte:       `ecf_${registroEcf.toLowerCase()}`,
         });

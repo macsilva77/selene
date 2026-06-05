@@ -3,7 +3,7 @@ import { PrismaService }      from '../../../database/prisma.service';
 import { P02BalancoService }  from './p02-balanco.service';
 import { P02DreService }      from './p02-dre.service';
 
-const VERSAO_PROMPT  = 'P02-v2';
+const VERSAO_PROMPT  = 'P02-v3';
 const VERSAO_P01     = 'P01-v2';
 
 export interface P02Resultado {
