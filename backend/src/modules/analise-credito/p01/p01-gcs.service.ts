@@ -39,13 +39,14 @@ export class P01GcsService implements OnModuleInit {
     this.logger.log(`GCS configurado: bucket=${this.bucketName}`);
   }
 
-  /** Lista todos os CNPJs disponíveis pela estrutura ECD/{cnpj}/ */
+  /** Lista todos os CNPJs disponíveis — prioridade ECF, complementado por ECD */
   async listarCnpjs(): Promise<string[]> {
-    // Listagem flat e extrai CNPJs únicos pelo prefixo do path
-    const [blobs] = await this.bucket.getFiles({ prefix: 'ECD/' });
+    const [ecfBlobs, ecdBlobs] = await Promise.all([
+      this.bucket.getFiles({ prefix: 'ECF/' }).then(([b]) => b),
+      this.bucket.getFiles({ prefix: 'ECD/' }).then(([b]) => b),
+    ]);
     const cnpjs = new Set<string>();
-    for (const blob of blobs) {
-      // path: ECD/{cnpj}/{arquivo}
+    for (const blob of [...ecfBlobs, ...ecdBlobs]) {
       const partes = blob.name.split('/');
       if (partes.length >= 3 && /^\d{14}$/.test(partes[1])) {
         cnpjs.add(partes[1]);

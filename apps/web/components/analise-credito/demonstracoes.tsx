@@ -80,6 +80,12 @@ function ancestrais(cod: string): string[] {
   return result;
 }
 
+function emptyMessage(cnpj: string, exercicio: number | null): string {
+  if (cnpj === '') return 'Selecione uma empresa.';
+  if (exercicio === null) return 'Nenhum exercício disponível. Execute o pipeline para esta empresa.';
+  return 'Nenhum dado encontrado para este exercício.';
+}
+
 export function DemonstracoesFinanceiras() {
   const [empresas, setEmpresas]           = useState<EmpresaResumo[]>([]);
   const [cnpj, setCnpj]                   = useState('');
@@ -329,7 +335,7 @@ export function DemonstracoesFinanceiras() {
               )}
               {!loading && registrosVisiveis.length === 0 && (
                 <tr><td colSpan={mostrarAnoAnterior ? 5 : 4} className="py-12 text-center text-slate-400">
-                  {!exercicio ? 'Selecione uma empresa.' : 'Nenhum dado encontrado para este exercício.'}
+                  {emptyMessage(cnpj, exercicio)}
                 </td></tr>
               )}
               {!loading && registrosVisiveis.map(row => {
