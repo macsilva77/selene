@@ -5,7 +5,7 @@ import { parseEcd }           from './p01-ecd.parser';
 import { parseEcf }           from './p01-ecf.parser';
 import { Decimal }            from '@prisma/client/runtime/library';
 
-const VERSAO_PROMPT = 'P01-v2';
+const VERSAO_PROMPT = 'P01-v3';
 
 interface ExercicioCtx {
   tenantId:  string;
@@ -292,30 +292,30 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcf>['registros'],
   ) {
-    // Deduplica por (registroEcf, linhaCodigo) mantendo o último valor não-zero
-    const dedupMap = new Map<string, (typeof rows)[0]>();
-    for (const r of rows) {
-      const key = `${r.registroEcf}::${r.linhaCodigo}`;
-      const existing = dedupMap.get(key);
-      if (!existing || Math.abs(r.valor) >= Math.abs(existing.valor)) {
-        dedupMap.set(key, r);
-      }
-    }
-    const deduped = [...dedupMap.values()];
-    const duplicatas = rows.length - deduped.length;
-    if (duplicatas > 0) {
-      this.logger.warn(`[P01] ${empresaId}/${exercicio} ECF: ${duplicatas} linhaCodigo(s) duplicado(s) removido(s)`);
-    }
-
-    const ativoCount  = deduped.filter(r => r.linhaCodigo.startsWith('1')).length;
-    const passivoCount = deduped.filter(r => r.linhaCodigo.startsWith('2') || r.linhaCodigo.startsWith('3')).length;
-    this.logger.log(`[P01] ${empresaId}/${exercicio} ECF: ${deduped.length} registros (ativo=${ativoCount} passivo/dre=${passivoCount})`);
+    // Armazena todos os registros por trimestre (campo `trimestre` = 1..4 para BP/DRE,
+    // 0 para LALUR/não-trimestrais). A unicidade é garantida por
+    // (empresaId, exercicio, registroEcf, trimestre, linhaCodigo).
+    const trimCount = new Map<number, number>();
+    for (const r of rows) trimCount.set(r.trimestre, (trimCount.get(r.trimestre) ?? 0) + 1);
+    this.logger.log(
+      `[P01] ${empresaId}/${exercicio} ECF: ${rows.length} registros` +
+      ` (Q1=${trimCount.get(1) ?? 0} Q2=${trimCount.get(2) ?? 0}` +
+      ` Q3=${trimCount.get(3) ?? 0} Q4=${trimCount.get(4) ?? 0} anual=${trimCount.get(0) ?? 0})`,
+    );
 
     await this.prisma.$transaction(async tx => {
       await tx.creditoEcfRegistro.deleteMany({ where: { empresaId, exercicio } });
-      if (deduped.length > 0) {
+      if (rows.length > 0) {
         await tx.creditoEcfRegistro.createMany({
-          data: deduped.map(r => ({ empresaId, exercicio, ...r, valor: new Decimal(r.valor) })),
+          data: rows.map(r => ({
+            empresaId, exercicio,
+            registroEcf: r.registroEcf,
+            trimestre:   r.trimestre,
+            linhaCodigo: r.linhaCodigo,
+            descricao:   r.descricao,
+            valor:       new Decimal(r.valor),
+            status:      r.status,
+          })),
           skipDuplicates: true,
         });
       }

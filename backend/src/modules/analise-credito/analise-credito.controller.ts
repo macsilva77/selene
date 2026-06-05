@@ -391,6 +391,7 @@ export class AnaliseCreditoController {
     @Query('tipo') tipo: string,
     @Query('exercicio') exercicioStr?: string,
     @Query('contaRef') contaRef?: string,
+    @Query('trimestre') trimestreStr?: string,
   ) {
     const empresa = await this.prisma.creditoEmpresa.findUnique({
       where: { tenantId_cnpj: { tenantId, cnpj } },
@@ -400,11 +401,31 @@ export class AnaliseCreditoController {
     const exercicio = this.parseExercicio(exercicioStr);
     if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
 
+    // trimestre=0 → anual (não trimestral); 1..4 → Q1..Q4; undefined → último trimestre disponível
+    const trimestreReq = trimestreStr !== undefined ? parseInt(trimestreStr, 10) : undefined;
+
     // ── Fonte primária: ECF (ordem: regime-específico → demais) ──────────────
     const candidatos = this.registrosPorRegime(empresa.regimeTributario, tipo === 'dre' ? 'dre' : 'bp');
 
     for (const registroEcf of candidatos) {
-      const whereEcf: Prisma.CreditoEcfRegistroWhereInput = { empresaId: empresa.id, exercicio, registroEcf };
+      // Descobre trimestres disponíveis para este registro/exercício
+      const trimestresDisponiveis = await this.prisma.creditoEcfRegistro.findMany({
+        where:    { empresaId: empresa.id, exercicio, registroEcf },
+        select:   { trimestre: true },
+        distinct: ['trimestre'],
+        orderBy:  { trimestre: 'asc' },
+      });
+      if (trimestresDisponiveis.length === 0) continue;
+
+      // Resolve qual trimestre usar: solicitado → último disponível
+      const trims = trimestresDisponiveis.map(t => t.trimestre);
+      const trimestre = trimestreReq !== undefined && trims.includes(trimestreReq)
+        ? trimestreReq
+        : Math.max(...trims);
+
+      const whereEcf: Prisma.CreditoEcfRegistroWhereInput = {
+        empresaId: empresa.id, exercicio, registroEcf, trimestre,
+      };
       if (contaRef?.trim()) whereEcf.linhaCodigo = { startsWith: contaRef.trim() };
 
       const registros = await this.prisma.creditoEcfRegistro.findMany({
@@ -419,24 +440,28 @@ export class AnaliseCreditoController {
       const parentCodes = new Set(
         registros.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
       );
-      return registros.map(r => ({
-        linhaCodigo: r.linhaCodigo,
-        descricao:   r.descricao,
-        valor:       r.valor,
-        nivel:       r.linhaCodigo.split('.').length,
-        haFilhos:    parentCodes.has(r.linhaCodigo),
-        natureza:    ehBP
-          ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
-          : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
-        fonte:       registroEcf.toLowerCase(),
-      }));
+      return {
+        trimestres:   trims,
+        trimestreAtivo: trimestre,
+        linhas: registros.map(r => ({
+          linhaCodigo: r.linhaCodigo,
+          descricao:   r.descricao,
+          valor:       r.valor,
+          nivel:       r.linhaCodigo.split('.').length,
+          haFilhos:    parentCodes.has(r.linhaCodigo),
+          natureza:    ehBP
+            ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
+            : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
+          fonte:       registroEcf.toLowerCase(),
+        })),
+      };
     }
 
     // ── Fallback: ECD via P02 (creditoBalanco / creditoDre) ───────────────────
-    if (tipo === 'dre') {
-      return this.demonstracoesDreFallback(empresa.id, exercicio);
-    }
-    return this.demonstracoesBalancoFallback(empresa.id, exercicio, contaRef);
+    const linhas = tipo === 'dre'
+      ? await this.demonstracoesDreFallback(empresa.id, exercicio)
+      : await this.demonstracoesBalancoFallback(empresa.id, exercicio, contaRef);
+    return { trimestres: [0], trimestreAtivo: 0, linhas };
   }
 
   /**

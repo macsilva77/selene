@@ -10,6 +10,7 @@ export type RegistroEcfLalur = 'M300' | 'M350';
 
 export interface EcfRegistroRow {
   registroEcf: string;
+  trimestre:   number;   // 0 = anual/não-trimestral; 1..4 = Q1..Q4
   linhaCodigo: string;
   descricao:   string;
   valor:       number;
@@ -63,11 +64,15 @@ function valorComSinal(campos: string[], colVal: number, colDc: number, dcPositi
 
 // ─── Handlers por tipo de registro ───────────────────────────────────────────
 
+// Registros BP e DRE que têm entrega trimestral
+const REGISTROS_TRIMESTRAIS = new Set(['L100','P100','U100','L300','P150','U150']);
+
 // BP: L100 (Lucro Real) | P100 (Lucro Presumido/Arbitrado) | U100 (Imunes/Isentas)
 // Sinal: D = positivo (saldo devedor → ativo), C = negativo
 function processarBP(
   reg: RegistroEcfBP,
   campos: string[],
+  trimestre: number,
   registros: EcfRegistroRow[],
   incs: EcfParseResult['inconsistencias'],
 ) {
@@ -80,7 +85,7 @@ function processarBP(
     // Formato estendido (12+ campos): VAL_FIN em [11], IND_FIN em [12]
     const [colVal, colDc] = campos.length >= 12 ? [11, 12] : [9, 10];
     const valor = valorComSinal(campos, colVal, colDc, 'D');
-    registros.push({ registroEcf: reg, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
+    registros.push({ registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
   } catch {
     incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
   }
@@ -91,6 +96,7 @@ function processarBP(
 function processarDRE(
   reg: RegistroEcfDRE,
   campos: string[],
+  trimestre: number,
   registros: EcfRegistroRow[],
   incs: EcfParseResult['inconsistencias'],
 ) {
@@ -99,7 +105,7 @@ function processarDRE(
   const desc = (campos[2] ?? '').trim();
   try {
     const valor = valorComSinal(campos, 7, 8, 'C');
-    registros.push({ registroEcf: reg, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
+    registros.push({ registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
   } catch {
     incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
   }
@@ -109,6 +115,7 @@ function processarLalur(rec: 'M300' | 'M350', campos: string[], registros: EcfRe
   if (campos.length < 4) return;
   registros.push({
     registroEcf: rec,
+    trimestre:   0,  // LALUR não é trimestral
     linhaCodigo: (campos[1] ?? '').trim(),
     descricao:   (campos[2] ?? '').trim(),
     valor:       parseValorBr(campos[3] ?? ''),
@@ -118,17 +125,17 @@ function processarLalur(rec: 'M300' | 'M350', campos: string[], registros: EcfRe
 
 // ─── Tabela de dispatch ───────────────────────────────────────────────────────
 
-type Handler = (campos: string[], registros: EcfRegistroRow[], incs: EcfParseResult['inconsistencias']) => void;
+type Handler = (campos: string[], trimestre: number, registros: EcfRegistroRow[], incs: EcfParseResult['inconsistencias']) => void;
 
 const HANDLERS: Record<string, Handler> = {
-  L100: (c, r, i) => processarBP('L100',  c, r, i),
-  P100: (c, r, i) => processarBP('P100',  c, r, i),
-  U100: (c, r, i) => processarBP('U100',  c, r, i),
-  L300: (c, r, i) => processarDRE('L300', c, r, i),
-  P150: (c, r, i) => processarDRE('P150', c, r, i),
-  U150: (c, r, i) => processarDRE('U150', c, r, i),
-  M300: (c, r)    => processarLalur('M300', c, r),
-  M350: (c, r)    => processarLalur('M350', c, r),
+  L100: (c, t, r, i) => processarBP('L100',  c, t, r, i),
+  P100: (c, t, r, i) => processarBP('P100',  c, t, r, i),
+  U100: (c, t, r, i) => processarBP('U100',  c, t, r, i),
+  L300: (c, t, r, i) => processarDRE('L300', c, t, r, i),
+  P150: (c, t, r, i) => processarDRE('P150', c, t, r, i),
+  U150: (c, t, r, i) => processarDRE('U150', c, t, r, i),
+  M300: (c, _t, r)   => processarLalur('M300', c, r),
+  M350: (c, _t, r)   => processarLalur('M350', c, r),
 };
 
 // ─── Parser principal ─────────────────────────────────────────────────────────
@@ -142,6 +149,12 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
   const registros:      EcfRegistroRow[]                    = [];
   const inconsistencias: EcfParseResult['inconsistencias']  = [];
 
+  // Rastreamento de trimestre: para registros BP/DRE, o arquivo ECF Lucro Real
+  // contém 4 blocos consecutivos (Q1→Q4). Detectamos a mudança de trimestre
+  // quando o código raiz '1' (ATIVO/início do plano) aparece novamente.
+  let trimestreAtual = 0;
+  let ultimoRec      = '';
+
   for (const linha of linhas) {
     const campos = parseLinha(linha);
     if (!campos?.length) continue;
@@ -154,11 +167,18 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
         regimeTributario = IND_TRIB_MAP[(campos[6] ?? '').trim()] ?? null;
 
     } else if (rec === '0010' && campos.length >= 5) {
-      // IND_FORMA_TRIB (pos 4) é a fonte primária de regime; sobrescreve 0000
       regimeTributario = IND_FORMA_TRIB_MAP[(campos[4] ?? '').trim()] ?? regimeTributario;
 
-    } else {
-      HANDLERS[rec]?.(campos, registros, inconsistencias);
+    } else if (HANDLERS[rec]) {
+      // Detecta início de novo bloco trimestral: mesmo tipo de registro + código raiz '1'
+      if (REGISTROS_TRIMESTRAIS.has(rec) && (campos[1] ?? '').trim() === '1') {
+        if (rec === ultimoRec || trimestreAtual === 0) {
+          trimestreAtual++;
+        }
+        ultimoRec = rec;
+      }
+      const trimestre = REGISTROS_TRIMESTRAIS.has(rec) ? trimestreAtual : 0;
+      HANDLERS[rec]!(campos, trimestre, registros, inconsistencias);
     }
   }
 

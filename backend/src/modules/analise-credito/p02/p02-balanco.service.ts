@@ -156,8 +156,19 @@ export class P02BalancoService {
     const candidatos = this.candidatosBp(regimeTributario);
 
     for (const registroEcf of candidatos) {
+      // Usa Q4 (trimestre=4) quando disponível — posição 31/dez; fallback trimestre=0 (anual)
+      const trimestresDisp = await this.prisma.creditoEcfRegistro.findMany({
+        where:    { empresaId, exercicio, registroEcf },
+        select:   { trimestre: true },
+        distinct: ['trimestre'],
+        orderBy:  { trimestre: 'desc' },
+      });
+      if (trimestresDisp.length === 0) continue;
+      const trims = trimestresDisp.map(t => t.trimestre);
+      const trimestre = trims.includes(4) ? 4 : trims[0]!;
+
       const registros = await this.prisma.creditoEcfRegistro.findMany({
-        where:   { empresaId, exercicio, registroEcf },
+        where:   { empresaId, exercicio, registroEcf, trimestre },
         orderBy: { linhaCodigo: 'asc' },
       });
       if (registros.length === 0) continue;

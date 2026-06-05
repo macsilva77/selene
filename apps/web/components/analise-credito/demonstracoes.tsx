@@ -96,6 +96,9 @@ export function DemonstracoesFinanceiras() {
   const [contaRefAtiva, setContaRefAtiva] = useState('');
   const [apenasComValores, setApenasComValores]     = useState(false);
   const [mostrarAnoAnterior, setMostrarAnoAnterior] = useState(false);
+  const [trimestres, setTrimestres]       = useState<number[]>([]);
+  const [trimestreAtivo, setTrimestreAtivo] = useState<number>(0); // retornado pela API
+  const [trimestreSel, setTrimestre]      = useState<number | undefined>(undefined); // seleção do usuário
   const [registros, setRegistros]         = useState<DemonstracaoRow[]>([]);
   const [registrosAnt, setRegistrosAnt]   = useState<DemonstracaoRow[]>([]);
   const [loading, setLoading]             = useState(false);
@@ -126,17 +129,18 @@ export function DemonstracoesFinanceiras() {
     setLoading(true);
     setErro(null);
     try {
-      const [regs, regsAnt] = await Promise.all([
-        analiseCreditoApi.demonstracoes(cnpj, aba, exercicio, contaRefAtiva || undefined),
+      const [res, resAnt] = await Promise.all([
+        analiseCreditoApi.demonstracoes(cnpj, aba, exercicio, contaRefAtiva || undefined, trimestreSel),
         mostrarAnoAnterior
-          ? analiseCreditoApi.demonstracoes(cnpj, aba, exercicio - 1, contaRefAtiva || undefined)
-          : Promise.resolve([]),
+          ? analiseCreditoApi.demonstracoes(cnpj, aba, exercicio - 1, contaRefAtiva || undefined, trimestreSel)
+          : Promise.resolve({ trimestres: [], trimestreAtivo: 0, linhas: [] }),
       ]);
-      setRegistros(regs);
-      setRegistrosAnt(regsAnt);
-      // Expande nível 1 e 2 automaticamente ao carregar
+      setTrimestres(res.trimestres);
+      setTrimestreAtivo(res.trimestreAtivo);
+      setRegistros(res.linhas);
+      setRegistrosAnt(resAnt.linhas);
       const autoExp = new Set<string>(
-        regs.filter(r => r.haFilhos && r.nivel <= 2).map(r => r.linhaCodigo),
+        res.linhas.filter(r => r.haFilhos && r.nivel <= 2).map(r => r.linhaCodigo),
       );
       setExpandidos(autoExp);
     } catch {
@@ -144,7 +148,7 @@ export function DemonstracoesFinanceiras() {
     } finally {
       setLoading(false);
     }
-  }, [cnpj, exercicio, aba, contaRefAtiva, mostrarAnoAnterior]);
+  }, [cnpj, exercicio, aba, contaRefAtiva, mostrarAnoAnterior, trimestreSel]);
 
   useEffect(() => { void fetchDados(); }, [fetchDados]);
 
@@ -262,10 +266,24 @@ export function DemonstracoesFinanceiras() {
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-500 mr-1">Anos:</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Trimestres — apenas quando há entrega trimestral (trims > [0]) */}
+            {trimestres.some(t => t > 0) && (
+              <>
+                <span className="text-xs text-slate-500">Trim:</span>
+                {trimestres.filter(t => t > 0).map(t => (
+                  <button type="button" key={t} onClick={() => setTrimestre(t)}
+                    className={cn('px-2 py-1 text-xs font-medium rounded border transition-colors',
+                      t === trimestreAtivo ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}>
+                    Q{t}
+                  </button>
+                ))}
+                <span className="text-xs text-slate-300">|</span>
+              </>
+            )}
+            <span className="text-xs text-slate-500">Anos:</span>
             {exercicios.map(ano => (
-              <button type="button" key={ano} onClick={() => setExercicio(ano)}
+              <button type="button" key={ano} onClick={() => { setExercicio(ano); setTrimestre(undefined); }}
                 className={cn('px-2.5 py-1 text-xs font-medium rounded border transition-colors',
                   ano === exercicio ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}>
                 {ano}
@@ -319,6 +337,7 @@ export function DemonstracoesFinanceiras() {
                 <th className="w-8 px-2 py-2.5" aria-label="Expandir/recolher">
                   <span className="sr-only">Expandir/recolher</span>
                 </th>
+                <th className="text-left px-3 py-2.5 w-36 font-mono">Código</th>
                 <th className="text-left px-4 py-2.5">Descrição da Conta</th>
                 <th className="text-right px-4 py-2.5 w-52">Saldo Final</th>
                 {mostrarAnoAnterior && (
@@ -331,10 +350,10 @@ export function DemonstracoesFinanceiras() {
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={mostrarAnoAnterior ? 5 : 4} className="py-10 text-center text-slate-400">Carregando...</td></tr>
+                <tr><td colSpan={mostrarAnoAnterior ? 6 : 5} className="py-10 text-center text-slate-400">Carregando...</td></tr>
               )}
               {!loading && registrosVisiveis.length === 0 && (
-                <tr><td colSpan={mostrarAnoAnterior ? 5 : 4} className="py-12 text-center text-slate-400">
+                <tr><td colSpan={mostrarAnoAnterior ? 6 : 5} className="py-12 text-center text-slate-400">
                   {emptyMessage(cnpj, exercicio)}
                 </td></tr>
               )}
@@ -357,6 +376,13 @@ export function DemonstracoesFinanceiras() {
                       <span className={cn('text-xs select-none font-mono',
                         isGrupo ? 'text-slate-500 font-bold' : 'text-slate-300')}>
                         {isGrupo ? (expandido ? '–' : '+') : '-'}
+                      </span>
+                    </td>
+
+                    {/* Código referencial */}
+                    <td className="px-3 py-1.5 w-36">
+                      <span className="font-mono text-xs text-slate-400 select-all">
+                        {row.linhaCodigo}
                       </span>
                     </td>
 

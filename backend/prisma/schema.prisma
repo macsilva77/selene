@@ -1598,6 +1598,7 @@ model CreditoEcfRegistro {
   empresaId   String         @map("empresa_id")
   exercicio   Int
   registroEcf String         @map("registro_ecf") @db.VarChar(10) // BP: L100(LR)|P100(LP/LA)|U100(II)  DRE: L300(LR)|P150(LP/LA)|U150(II)  LALUR: M300|M350
+  trimestre   Int            @default(0)            @map("trimestre") // 0=anual/não-trimestral  1..4=Q1..Q4
   linhaCodigo String         @map("linha_codigo")  @db.VarChar(50)
   descricao   String         @db.Text
   valor       Decimal        @default(0)            @db.Decimal(18, 2)
@@ -1605,7 +1606,7 @@ model CreditoEcfRegistro {
 
   empresa     CreditoEmpresa @relation(fields: [empresaId], references: [id])
 
-  @@unique([empresaId, exercicio, registroEcf, linhaCodigo])
+  @@unique([empresaId, exercicio, registroEcf, trimestre, linhaCodigo])
   @@index([empresaId, exercicio])
   @@map("credito_ecf_registros")
 }

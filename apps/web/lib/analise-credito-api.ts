@@ -89,6 +89,13 @@ export interface DemonstracaoRow {
   nivel:       number;
   haFilhos:    boolean;
   natureza:    'DEVEDOR' | 'CREDOR';
+  fonte?:      string;
+}
+
+export interface DemonstracaoResult {
+  trimestres:     number[];   // trimestres disponíveis (1..4 ou [0] para anual/ECD)
+  trimestreAtivo: number;
+  linhas:         DemonstracaoRow[];
 }
 
 export interface Inconsistencia {
@@ -142,9 +149,9 @@ export const analiseCreditoApi = {
     api.get<number[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/exercicios`).then(r => r.data),
 
   /** Balanço Patrimonial (L100) ou DRE (L300) de um CNPJ/exercício */
-  demonstracoes: (cnpj: string, tipo: 'balanco' | 'dre', exercicio: number, contaRef?: string) =>
-    api.get<DemonstracaoRow[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/demonstracoes`, {
-      params: { tipo, exercicio, ...(contaRef ? { contaRef } : {}) },
+  demonstracoes: (cnpj: string, tipo: 'balanco' | 'dre', exercicio: number, contaRef?: string, trimestre?: number) =>
+    api.get<DemonstracaoResult>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/demonstracoes`, {
+      params: { tipo, exercicio, ...(contaRef ? { contaRef } : {}), ...(trimestre === undefined ? {} : { trimestre }) },
     }).then(r => r.data),
 
   /** Dispara pipeline completo P01→P04 */
