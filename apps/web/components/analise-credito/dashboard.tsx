@@ -139,7 +139,7 @@ export function AnaliseCreditoDashboard() {
   }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
 
   async function resetarDados() {
-    if (!window.confirm('Apagar todos os dados calculados (balanço, DRE, indicadores, alertas e classificações)?\n\nOs arquivos ECF/ECD originais serão preservados.')) return;
+    if (!window.confirm('Apagar TODOS os dados do pipeline P01→P04?\n\nIsso inclui os registros ECF/ECD importados, balanço, DRE, indicadores e classificações.\n\nApós limpar, execute o Pipeline completo novamente.')) return;
     setResetando(true);
     try {
       const res = await analiseCreditoApi.resetarDados();

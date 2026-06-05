@@ -110,12 +110,12 @@ export class AnaliseCreditoController {
     return { mensagem: 'Pipeline P01→P04 iniciado em background', status: 'aceito' };
   }
 
-  // ─── Admin: reset de dados processados (P02→P04) ─────────────────────────────
+  // ─── Admin: reset completo P01→P04 ───────────────────────────────────────────
 
   /**
-   * Apaga todos os dados calculados pelo pipeline P02→P04 para o tenant.
-   * Os dados brutos do P01 (ECF/ECD) são preservados.
-   * Útil para forçar reprocessamento limpo após mudanças de lógica.
+   * Apaga todos os dados do pipeline P01→P04 para o tenant.
+   * Inclui dados brutos ECF/ECD (P01) e todos os outputs calculados (P02→P04).
+   * Após o reset, é necessário rodar o pipeline completo novamente.
    */
   @Post('admin/resetar')
   @HttpCode(HttpStatus.OK)
@@ -128,27 +128,37 @@ export class AnaliseCreditoController {
     const ids = empresas.map(e => e.id);
     if (ids.length === 0) return { mensagem: 'Nenhuma empresa encontrada', totais: {} };
 
-    const [balanco, dre, estrutura, indicador, alerta, classificacao, inconsistencia, processamento] =
-      await Promise.all([
-        this.prisma.creditoBalanco.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoDre.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoEstruturaCapital.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoIndicador.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoAlerta.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoClassificacao.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoInconsistencia.deleteMany({ where: { empresaId: { in: ids } } }),
-        this.prisma.creditoProcessamento.deleteMany({
-          where: {
-            empresaId:     { in: ids },
-            tabelaDestino: { in: ['tb_balanco', 'tb_dre', 'tb_indicadores', 'tb_classificacoes'] },
-          },
-        }),
-      ]);
+    const [
+      ecfReg, ecdSaldo, planoConta,
+      balanco, dre, estrutura, indicador, alerta, classificacao,
+      inconsistencia, processamento,
+    ] = await Promise.all([
+      // P01 — dados brutos
+      this.prisma.creditoEcfRegistro.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoEcdSaldo.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoPlanoConta.deleteMany({ where: { empresaId: { in: ids } } }),
+      // P02→P04 — outputs calculados
+      this.prisma.creditoBalanco.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoDre.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoEstruturaCapital.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoIndicador.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoAlerta.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoClassificacao.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoInconsistencia.deleteMany({ where: { empresaId: { in: ids } } }),
+      this.prisma.creditoProcessamento.deleteMany({ where: { empresaId: { in: ids } } }),
+    ]);
 
-    this.logger.warn(`[Admin] Reset executado pelo tenant ${tenantId}: balanco=${balanco.count} dre=${dre.count} indicador=${indicador.count} classificacao=${classificacao.count}`);
+    this.logger.warn(
+      `[Admin] Reset COMPLETO pelo tenant ${tenantId}: ` +
+      `ecf=${ecfReg.count} ecd=${ecdSaldo.count} plano=${planoConta.count} ` +
+      `balanco=${balanco.count} dre=${dre.count} indicador=${indicador.count}`,
+    );
     return {
-      mensagem: 'Dados processados removidos com sucesso',
+      mensagem: 'Reset completo (P01→P04) executado com sucesso',
       totais: {
+        ecfRegistros:   ecfReg.count,
+        ecdSaldos:      ecdSaldo.count,
+        planoContas:    planoConta.count,
         balanco:        balanco.count,
         dre:            dre.count,
         estrutura:      estrutura.count,
