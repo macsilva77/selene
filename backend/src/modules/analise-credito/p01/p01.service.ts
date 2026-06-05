@@ -5,7 +5,7 @@ import { parseEcd }           from './p01-ecd.parser';
 import { parseEcf }           from './p01-ecf.parser';
 import { Decimal }            from '@prisma/client/runtime/library';
 
-const VERSAO_PROMPT = 'P01-v1';
+const VERSAO_PROMPT = 'P01-v2';
 
 interface ExercicioCtx {
   tenantId:  string;
@@ -292,14 +292,34 @@ export class P01Service {
     exercicio: number,
     rows: ReturnType<typeof parseEcf>['registros'],
   ) {
+    // Deduplica por (registroEcf, linhaCodigo) mantendo o último valor não-zero
+    const dedupMap = new Map<string, (typeof rows)[0]>();
+    for (const r of rows) {
+      const key = `${r.registroEcf}::${r.linhaCodigo}`;
+      const existing = dedupMap.get(key);
+      if (!existing || Math.abs(r.valor) >= Math.abs(existing.valor)) {
+        dedupMap.set(key, r);
+      }
+    }
+    const deduped = [...dedupMap.values()];
+    const duplicatas = rows.length - deduped.length;
+    if (duplicatas > 0) {
+      this.logger.warn(`[P01] ${empresaId}/${exercicio} ECF: ${duplicatas} linhaCodigo(s) duplicado(s) removido(s)`);
+    }
+
+    const ativoCount  = deduped.filter(r => r.linhaCodigo.startsWith('1')).length;
+    const passivoCount = deduped.filter(r => r.linhaCodigo.startsWith('2') || r.linhaCodigo.startsWith('3')).length;
+    this.logger.log(`[P01] ${empresaId}/${exercicio} ECF: ${deduped.length} registros (ativo=${ativoCount} passivo/dre=${passivoCount})`);
+
     await this.prisma.$transaction(async tx => {
       await tx.creditoEcfRegistro.deleteMany({ where: { empresaId, exercicio } });
-      if (rows.length > 0) {
+      if (deduped.length > 0) {
         await tx.creditoEcfRegistro.createMany({
-          data: rows.map(r => ({ empresaId, exercicio, ...r, valor: new Decimal(r.valor) })),
+          data: deduped.map(r => ({ empresaId, exercicio, ...r, valor: new Decimal(r.valor) })),
+          skipDuplicates: true,
         });
       }
-    }, { timeout: 30000 });
+    }, { timeout: 60000 });
   }
 
   private async gravarProcessamento(p: {
