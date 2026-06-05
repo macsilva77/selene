@@ -20,12 +20,27 @@ interface Liquidez {
 }
 
 function computeLiquidez(rows: DemonstracaoRow[]): Liquidez {
-  const byCode = (cod: string) => Math.abs(Number(rows.find(r => r.linhaCodigo === cod)?.valor ?? 0));
-  const byDesc = (kw: string) => {
-    const r = rows.find(row => row.descricao.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').includes(kw) && row.haFilhos);
-    return Math.abs(Number(r?.valor ?? 0));
+  const norm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+
+  // Soma os nós-folha sob um prefixo de código (fallback quando o agregado = 0)
+  const sumLeaves = (prefix: string): number =>
+    rows
+      .filter(r => r.linhaCodigo.startsWith(`${prefix}.`) && !r.haFilhos)
+      .reduce((s, r) => s + Math.abs(Number(r.valor)), 0);
+
+  // 1) Código exato com valor > 0  → 2) descrição + haFilhos + valor > 0  → 3) soma folhas
+  const get = (code: string, kw: string): number => {
+    const exactVal = Math.abs(Number(rows.find(r => r.linhaCodigo === code)?.valor ?? 0));
+    if (exactVal > 0) return exactVal;
+
+    const byKw = rows.find(
+      r => norm(r.descricao).includes(kw) && r.haFilhos && Math.abs(Number(r.valor)) > 0,
+    );
+    if (byKw) return Math.abs(Number(byKw.valor));
+
+    return sumLeaves(code);
   };
-  const get = (code: string, kw: string) => { const v = byCode(code); return v !== 0 ? v : byDesc(kw); };
 
   const ac    = get('1.01',    'ativo circulante');
   const pc    = get('2.01',    'passivo circulante');
@@ -295,7 +310,9 @@ export function DemonstracoesFinanceiras() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs font-medium text-slate-500 bg-slate-50 border-b border-slate-200">
-                <th className="w-8 px-2 py-2.5" aria-label="Expandir/recolher" />
+                <th className="w-8 px-2 py-2.5" aria-label="Expandir/recolher">
+                  <span className="sr-only">Expandir/recolher</span>
+                </th>
                 <th className="text-left px-4 py-2.5">Descrição da Conta</th>
                 <th className="text-right px-4 py-2.5 w-52">Saldo Final</th>
                 {mostrarAnoAnterior && (
