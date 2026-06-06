@@ -8,6 +8,7 @@
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { EcfDataSourceService } from '../infrastructure/ecf-data-source.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
 export type LinhaDre =
@@ -71,11 +72,14 @@ function abs(d: Decimal): Decimal { return d.isNegative() ? d.negated() : d; }
 
 @Injectable()
 export class P02DreService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma:        PrismaService,
+    private readonly ecfDataSource: EcfDataSourceService,
+  ) {}
 
   /**
    * Monta a DRE com prioridade: ECF (regime-aware: L300/P150/U150) → ECD inferido.
-   * Nunca usa L100 (BP) como fonte de DRE.
+   * EcfDataSource roteia: Parquet (novo) → banco relacional (fallback legado).
    */
   async montar(
     empresaId: string,
@@ -85,17 +89,20 @@ export class P02DreService {
     const candidatos = this.candidatosDre(regimeTributario);
 
     for (const registroEcf of candidatos) {
-      const registros = await this.prisma.creditoEcfRegistro.findMany({
-        where: { empresaId, exercicio, registroEcf },
-      });
-      if (registros.length === 0) continue;
+      const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf });
+      if (rows.length === 0) continue;
+
+      // Mapeia para o formato interno (valor como Decimal)
+      const registros = rows.map(r => ({
+        linhaCodigo: r.linhaCodigo,
+        descricao:   r.descricao,
+        valor:       new Decimal(r.valor),
+      }));
 
       if (registroEcf === 'L300') return this.montarDeL300(registros);
-      // P150 e U150 têm estrutura diferente do L300 mas descrições padronizadas RFB
       return this.montarDeEcfKeywords(registros, registroEcf);
     }
 
-    // Último recurso: ECD (contas de resultado inferidas por grupo/palavra-chave)
     return this.montarDeEcd(empresaId, exercicio);
   }
 

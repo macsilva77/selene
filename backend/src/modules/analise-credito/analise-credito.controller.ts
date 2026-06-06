@@ -9,6 +9,7 @@ import { P01Job }        from './p01/p01.job';
 import { P02Service }    from './p02/p02.service';
 import { P03Service }    from './p03/p03.service';
 import { P04Service }    from './p04/p04.service';
+import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
 import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard }  from '../../common/guards/jwt-auth.guard';
 import { CurrentUser }   from '../../common/decorators/current-user.decorator';
@@ -20,12 +21,13 @@ export class AnaliseCreditoController {
   private readonly logger = new Logger(AnaliseCreditoController.name);
 
   constructor(
-    private readonly p01Service: P01Service,
-    private readonly p01Job:     P01Job,
-    private readonly p02Service: P02Service,
-    private readonly p03Service: P03Service,
-    private readonly p04Service: P04Service,
-    private readonly prisma:     PrismaService,
+    private readonly p01Service:    P01Service,
+    private readonly p01Job:        P01Job,
+    private readonly p02Service:    P02Service,
+    private readonly p03Service:    P03Service,
+    private readonly p04Service:    P04Service,
+    private readonly ecfDataSource: EcfDataSourceService,
+    private readonly prisma:        PrismaService,
   ) {}
 
   // ─── P01 ──────────────────────────────────────────────────────────────────────
@@ -404,36 +406,24 @@ export class AnaliseCreditoController {
     // trimestre=0 → anual (não trimestral); 1..4 → Q1..Q4; undefined → último trimestre disponível
     const trimestreReq = trimestreStr !== undefined ? parseInt(trimestreStr, 10) : undefined;
 
-    // ── Fonte primária: ECF (ordem: regime-específico → demais) ──────────────
+    // ── Fonte primária: ECF via EcfDataSource (Parquet → fallback DB) ─────────
     const candidatos = this.registrosPorRegime(empresa.regimeTributario, tipo === 'dre' ? 'dre' : 'bp');
 
     for (const registroEcf of candidatos) {
-      // Descobre trimestres disponíveis para este registro/exercício
-      const trimestresDisponiveis = await this.prisma.creditoEcfRegistro.findMany({
-        where:    { empresaId: empresa.id, exercicio, registroEcf },
-        select:   { trimestre: true },
-        distinct: ['trimestre'],
-        orderBy:  { trimestre: 'asc' },
-      });
-      if (trimestresDisponiveis.length === 0) continue;
+      // Descobre trimestres disponíveis — transparente se vier do Parquet ou DB
+      const trims = await this.ecfDataSource.trimestresDisponiveis(empresa.id, exercicio, registroEcf);
+      if (trims.length === 0) continue;
 
       // Resolve qual trimestre usar: solicitado → último disponível
-      const trims = trimestresDisponiveis.map(t => t.trimestre);
       const trimestre = trimestreReq !== undefined && trims.includes(trimestreReq)
         ? trimestreReq
         : Math.max(...trims);
 
-      const whereEcf: Prisma.CreditoEcfRegistroWhereInput = {
-        empresaId: empresa.id, exercicio, registroEcf, trimestre,
-      };
-      if (contaRef?.trim()) whereEcf.linhaCodigo = { startsWith: contaRef.trim() };
-
-      const registros = await this.prisma.creditoEcfRegistro.findMany({
-        where:   whereEcf,
-        orderBy: { linhaCodigo: 'asc' },
-        select:  { linhaCodigo: true, descricao: true, valor: true },
+      const registros = await this.ecfDataSource.consultar(empresa.id, exercicio, {
+        registroEcf,
+        trimestre,
+        linhaCodigoPrefixo: contaRef?.trim() || undefined,
       });
-
       if (registros.length === 0) continue;
 
       const ehBP = ['L100', 'P100', 'U100'].includes(registroEcf);
@@ -441,17 +431,17 @@ export class AnaliseCreditoController {
         registros.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
       );
       return {
-        trimestres:   trims,
+        trimestres:     trims,
         trimestreAtivo: trimestre,
         linhas: registros.map(r => ({
           linhaCodigo: r.linhaCodigo,
           descricao:   r.descricao,
-          valor:       r.valor,
+          valor:       new Decimal(r.valor),
           nivel:       r.linhaCodigo.split('.').length,
           haFilhos:    parentCodes.has(r.linhaCodigo),
           natureza:    ehBP
             ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
-            : (r.valor.greaterThanOrEqualTo(0) ? 'CREDOR' : 'DEVEDOR'),
+            : (r.valor >= 0 ? 'CREDOR' : 'DEVEDOR'),
           fonte:       registroEcf.toLowerCase(),
         })),
       };

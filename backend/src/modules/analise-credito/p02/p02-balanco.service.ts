@@ -6,6 +6,7 @@
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { EcfDataSourceService } from '../infrastructure/ecf-data-source.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
 export interface BalancoRow {
@@ -94,7 +95,10 @@ function classificarSubgrupo(grupo: string, nome: string): string {
 
 @Injectable()
 export class P02BalancoService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma:        PrismaService,
+    private readonly ecfDataSource: EcfDataSourceService,
+  ) {}
 
   /**
    * Monta o BP com prioridade: ECF (regime-aware: L100/P100/U100) → ECD J100.
@@ -157,25 +161,17 @@ export class P02BalancoService {
 
     for (const registroEcf of candidatos) {
       // Usa Q4 (trimestre=4) quando disponível — posição 31/dez; fallback trimestre=0 (anual)
-      const trimestresDisp = await this.prisma.creditoEcfRegistro.findMany({
-        where:    { empresaId, exercicio, registroEcf },
-        select:   { trimestre: true },
-        distinct: ['trimestre'],
-        orderBy:  { trimestre: 'desc' },
-      });
-      if (trimestresDisp.length === 0) continue;
-      const trims = trimestresDisp.map(t => t.trimestre);
-      const trimestre = trims.includes(4) ? 4 : trims[0]!;
+      // EcfDataSource roteia: Parquet (novo) → banco relacional (fallback legado)
+      const trims = await this.ecfDataSource.trimestresDisponiveis(empresaId, exercicio, registroEcf);
+      if (trims.length === 0) continue;
+      const trimestre = trims.includes(4) ? 4 : Math.max(...trims);
 
-      const registros = await this.prisma.creditoEcfRegistro.findMany({
-        where:   { empresaId, exercicio, registroEcf, trimestre },
-        orderBy: { linhaCodigo: 'asc' },
-      });
-      if (registros.length === 0) continue;
+      const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
+      if (rows.length === 0) continue;
 
       // Identifica nós-folha (sem filhos): apenas eles entram no balanço
       const codigosComFilhos = new Set<string>();
-      for (const { linhaCodigo } of registros) {
+      for (const { linhaCodigo } of rows) {
         const parts = linhaCodigo.split('.');
         for (let i = 1; i < parts.length; i++) {
           codigosComFilhos.add(parts.slice(0, i).join('.'));
@@ -183,11 +179,11 @@ export class P02BalancoService {
       }
 
       const linhas: BalancoRow[] = [];
-      for (const r of registros) {
+      for (const r of rows) {
         if (codigosComFilhos.has(r.linhaCodigo)) continue; // nó sintético — pular
         const grupo = this.detectarGrupo(r.linhaCodigo, r.descricao);
         if (!grupo) continue;
-        const vAbs = r.valor.abs();
+        const vAbs = new Decimal(r.valor).abs();
         if (vAbs.isZero()) continue;
         linhas.push({
           contaCodigo: r.linhaCodigo,

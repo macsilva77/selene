@@ -1539,6 +1539,7 @@ model CreditoEmpresa {
   planoContas      CreditoPlanoConta[]
   ecdSaldos        CreditoEcdSaldo[]
   ecfRegistros     CreditoEcfRegistro[]
+  ecfArquivos      CreditoEcfArquivo[]
   inconsistencias  CreditoInconsistencia[]
   processamentos   CreditoProcessamento[]
   balanco           CreditoBalanco[]
@@ -1609,6 +1610,25 @@ model CreditoEcfRegistro {
   @@unique([empresaId, exercicio, registroEcf, trimestre, linhaCodigo])
   @@index([empresaId, exercicio])
   @@map("credito_ecf_registros")
+}
+
+model CreditoEcfArquivo {
+  id           String         @id @default(uuid())
+  empresaId    String         @map("empresa_id")
+  exercicio    Int
+  gcsPath      String         @map("gcs_path")     @db.Text     // path do Parquet no GCS
+  gcsPathEcf   String         @map("gcs_path_ecf") @db.Text     // path do ECF .txt original
+  trimestres   Int[]                                             // trimestres disponíveis: 0=anual, 1..4=Q1..Q4
+  registros    Int            @default(0)                        // total de linhas no Parquet
+  hashMd5      String         @map("hash_md5")     @db.VarChar(32)
+  criadoEm     DateTime       @default(now())       @map("criado_em")
+  atualizadoEm DateTime       @updatedAt            @map("atualizado_em")
+
+  empresa      CreditoEmpresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, exercicio])
+  @@index([empresaId])
+  @@map("credito_ecf_arquivos")
 }
 
 model CreditoInconsistencia {

@@ -164,4 +164,10 @@ export class P01GcsService implements OnModuleInit {
     const hash = crypto.createHash('md5').update(buffer).digest('hex');
     return { buffer, hash };
   }
+
+  /** Faz upload de um buffer para o bucket com o path informado */
+  async upload(gcsPath: string, buffer: Buffer, contentType = 'application/octet-stream'): Promise<void> {
+    const file = this.bucket.file(gcsPath);
+    await file.save(buffer, { contentType, resumable: false });
+  }
 }

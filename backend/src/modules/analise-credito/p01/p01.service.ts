@@ -1,11 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService }      from '../../../database/prisma.service';
 import { P01GcsService, GcsArquivoMeta } from './p01-gcs.service';
+import { EcfParquetWriter }   from './p01-ecf-parquet.writer';
+import { ParquetCacheService } from '../infrastructure/cache/parquet-cache.service';
 import { parseEcd }           from './p01-ecd.parser';
 import { parseEcf }           from './p01-ecf.parser';
 import { Decimal }            from '@prisma/client/runtime/library';
+import { withRetry }          from '../shared/with-retry';
 
-const VERSAO_PROMPT = 'P01-v4';
+const VERSAO_PROMPT = 'P01-v5'; // incrementado após migração para Parquet
 
 interface ExercicioCtx {
   tenantId:  string;
@@ -37,24 +40,29 @@ export class P01Service {
   private readonly logger = new Logger(P01Service.name);
 
   constructor(
-    private readonly prisma:  PrismaService,
-    private readonly gcs:     P01GcsService,
+    private readonly prisma:         PrismaService,
+    private readonly gcs:            P01GcsService,
+    private readonly parquetWriter:  EcfParquetWriter,
+    private readonly parquetCache:   ParquetCacheService,
   ) {}
 
   // ─── API pública ───────────────────────────────────────────────────────────
 
-  /** Descobre CNPJs do bucket e processa todos para o tenantId informado */
+  /**
+   * Processa todos os CNPJs em paralelo.
+   * Promise.all garante que todos os exercícios de CNPJs distintos rodem ao mesmo tempo;
+   * dentro de cada CNPJ os exercícios ainda são sequenciais (dependência de dados).
+   */
   async processarTodos(tenantId: string, opcoes?: P01ProcessarOpcoes): Promise<P01Resultado[]> {
-    const cnpjs    = await this.gcs.listarCnpjs();
-    const resultados: P01Resultado[] = [];
-    for (const cnpj of cnpjs) {
-      const res = await this.processarCnpj(tenantId, cnpj, opcoes);
-      resultados.push(...res);
-    }
-    return resultados;
+    const cnpjs = await this.gcs.listarCnpjs();
+    this.logger.log(`[P01] ${cnpjs.length} CNPJs encontrados — processando em paralelo`);
+
+    const grupos = await Promise.all(
+      cnpjs.map(cnpj => this.processarCnpj(tenantId, cnpj, opcoes)),
+    );
+    return grupos.flat();
   }
 
-  /** Processa todos os exercícios de um único CNPJ */
   async processarCnpj(
     tenantId: string,
     cnpj:     string,
@@ -77,7 +85,7 @@ export class P01Service {
     return resultados;
   }
 
-  // ─── Core: processa um exercício ───────────────────────────────────────────
+  // ─── Core ──────────────────────────────────────────────────────────────────
 
   private async processarExercicio(
     tenantId:    string,
@@ -101,8 +109,12 @@ export class P01Service {
     const incs: Inconsistencia[] = [];
 
     const ctx: ExercicioCtx = { tenantId, cnpj, exercicio, empresaId: empresa.id };
-    await this.processarEcf(ctx, ecfArquivo, resultado, incs, t0);
-    await this.processarEcd(ctx, ecdArquivos, resultado, incs, t0);
+
+    // ECF e ECD podem rodar em paralelo — arquivos independentes
+    await Promise.all([
+      this.processarEcf(ctx, ecfArquivo, resultado, incs, t0),
+      this.processarEcd(ctx, ecdArquivos, resultado, incs, t0),
+    ]);
 
     if (incs.length > 0) {
       await this.prisma.creditoInconsistencia.createMany({
@@ -115,7 +127,7 @@ export class P01Service {
     return resultado;
   }
 
-  // ─── ECF ──────────────────────────────────────────────────────────────────
+  // ─── ECF → Parquet ─────────────────────────────────────────────────────────
 
   private async processarEcf(
     ctx:       ExercicioCtx,
@@ -129,22 +141,50 @@ export class P01Service {
       incs.push({ tipoErro: 'ECF_AUSENTE', descricao: `Nenhum ECF para ${cnpj}/${exercicio}`, severidade: 'alerta' });
       return;
     }
+
     try {
-      const { buffer, hash } = await this.gcs.download(arquivo.gcsPath);
+      // 1. Download com retry (resiliência a falhas transitórias de rede)
+      const { buffer, hash } = await withRetry(
+        () => this.gcs.download(arquivo.gcsPath),
+        { label: `GCS download ECF ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 500 },
+      );
+
+      // 2. Parse do arquivo .txt ECF (rápido — operação em memória)
       const ecfResult = parseEcf(buffer);
 
+      // 3. Validação de CNPJ
       if (ecfResult.cnpjArquivo && ecfResult.cnpjArquivo !== cnpj) {
-        incs.push({ tipoErro: 'CNPJ_DIVERGENTE_ECF',
-          descricao: `ECF contém CNPJ ${ecfResult.cnpjArquivo} mas a pasta é ${cnpj}`, severidade: 'bloqueio' });
+        incs.push({
+          tipoErro: 'CNPJ_DIVERGENTE_ECF',
+          descricao: `ECF contém CNPJ ${ecfResult.cnpjArquivo} mas a pasta é ${cnpj}`,
+          severidade: 'bloqueio',
+        });
         resultado.tabelas['tb_ecf_registros'] = { total: 0, ok: 0, alerta: 0, bloqueados: 1 };
         await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_ecf_registros',
           total: 0, ok: 0, alerta: 0, bloqueados: 1, hash, duracaoMs: Date.now() - t0 });
         return;
       }
 
+      // 4. Atualiza empresa com regime tributário extraído do arquivo
       if (ecfResult.razaoSocial || ecfResult.regimeTributario)
         await this.upsertEmpresa(tenantId, cnpj, ecfResult.razaoSocial, ecfResult.regimeTributario);
-      await this.upsertEcfRegistros(empresaId, exercicio, ecfResult.registros);
+
+      // 5. Converte para Parquet (DuckDB Appender — bulk insert, sem SQL por linha)
+      const parquetBuffer = await this.parquetWriter.escrever(ecfResult.registros);
+
+      // 6. Upload do Parquet para GCS com retry
+      const parquetPath = `ECF/${cnpj}/parquet/${exercicio}.parquet`;
+      await withRetry(
+        () => this.gcs.upload(parquetPath, parquetBuffer),
+        { label: `GCS upload Parquet ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 1000 },
+      );
+
+      // 7. Invalida cache para forçar leitura do novo arquivo
+      this.parquetCache.invalidate(parquetPath);
+
+      // 8. Salva apenas metadados no banco (rápido — 1 row)
+      const trimestres = [...new Set(ecfResult.registros.map(r => r.trimestre))].sort((a, b) => a - b);
+      await this.salvarMetadataEcf(empresaId, exercicio, parquetPath, arquivo.gcsPath, trimestres, ecfResult.registros.length, hash);
 
       const alertas = ecfResult.inconsistencias.filter(i => i.severidade === 'alerta').length;
       incs.push(...ecfResult.inconsistencias);
@@ -152,7 +192,8 @@ export class P01Service {
       resultado.tabelas['tb_ecf_registros'] = { total, ok: total - alertas, alerta: alertas, bloqueados: 0 };
       await this.gravarProcessamento({ empresaId, exercicio, tabela: 'tb_ecf_registros',
         total, ok: total - alertas, alerta: alertas, bloqueados: 0, hash, duracaoMs: Date.now() - t0 });
-      this.logger.log(`[P01] ${cnpj}/${exercicio} ECF: ${total} registros`);
+
+      this.logger.log(`[P01] ${cnpj}/${exercicio} ECF: ${total} registros → Parquet ${parquetPath}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`[P01] ${cnpj}/${exercicio} ECF erro: ${msg}`, err instanceof Error ? err.stack : undefined);
@@ -183,7 +224,10 @@ export class P01Service {
       const hashes: string[] = [];
 
       for (const arq of arquivos) {
-        const { buffer, hash } = await this.gcs.download(arq.gcsPath);
+        const { buffer, hash } = await withRetry(
+          () => this.gcs.download(arq.gcsPath),
+          { label: `GCS download ECD ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 500 },
+        );
         hashes.push(hash);
         const r = parseEcd(buffer);
         if (r.razaoSocial) await this.upsertEmpresa(tenantId, cnpj, r.razaoSocial);
@@ -219,9 +263,9 @@ export class P01Service {
   // ─── Helpers de DB ─────────────────────────────────────────────────────────
 
   private async upsertEmpresa(
-    tenantId:         string,
-    cnpj:             string,
-    razaoSocial:      string,
+    tenantId:          string,
+    cnpj:              string,
+    razaoSocial:       string,
     regimeTributario?: string | null,
   ) {
     const update: Record<string, string> = {};
@@ -238,11 +282,26 @@ export class P01Service {
     const registros = await this.prisma.creditoProcessamento.findMany({
       where: { empresaId, exercicio, versaoPrompt: VERSAO_PROMPT, registrosBloqueados: 0 },
     });
-    // Considera processado se pelo menos ECF ou ECD foram gravados sem bloqueio
     return registros.some(r =>
       ['tb_ecf_registros', 'tb_ecd_saldos'].includes(r.tabelaDestino) &&
       r.registrosBloqueados === 0
     );
+  }
+
+  private async salvarMetadataEcf(
+    empresaId:   string,
+    exercicio:   number,
+    gcsPath:     string,
+    gcsPathEcf:  string,
+    trimestres:  number[],
+    registros:   number,
+    hashMd5:     string,
+  ) {
+    await this.prisma.creditoEcfArquivo.upsert({
+      where:  { empresaId_exercicio: { empresaId, exercicio } },
+      create: { empresaId, exercicio, gcsPath, gcsPathEcf, trimestres, registros, hashMd5 },
+      update: { gcsPath, gcsPathEcf, trimestres, registros, hashMd5 },
+    });
   }
 
   private async upsertPlanoContas(
@@ -287,42 +346,6 @@ export class P01Service {
     }, { timeout: 30000 });
   }
 
-  private async upsertEcfRegistros(
-    empresaId: string,
-    exercicio: number,
-    rows: ReturnType<typeof parseEcf>['registros'],
-  ) {
-    // Armazena todos os registros por trimestre (campo `trimestre` = 1..4 para BP/DRE,
-    // 0 para LALUR/não-trimestrais). A unicidade é garantida por
-    // (empresaId, exercicio, registroEcf, trimestre, linhaCodigo).
-    const trimCount = new Map<number, number>();
-    for (const r of rows) trimCount.set(r.trimestre, (trimCount.get(r.trimestre) ?? 0) + 1);
-    this.logger.log(
-      `[P01] ${empresaId}/${exercicio} ECF: ${rows.length} registros` +
-      ` (Q1=${trimCount.get(1) ?? 0} Q2=${trimCount.get(2) ?? 0}` +
-      ` Q3=${trimCount.get(3) ?? 0} Q4=${trimCount.get(4) ?? 0} anual=${trimCount.get(0) ?? 0})`,
-    );
-
-    // Sem transação para evitar timeout com grandes volumes trimestrais (4× registros).
-    // deleteMany primeiro garante idempotência; createMany em batches de 1000.
-    await this.prisma.creditoEcfRegistro.deleteMany({ where: { empresaId, exercicio } });
-    const BATCH = 1000;
-    for (let i = 0; i < rows.length; i += BATCH) {
-      await this.prisma.creditoEcfRegistro.createMany({
-        data: rows.slice(i, i + BATCH).map(r => ({
-            empresaId, exercicio,
-            registroEcf: r.registroEcf,
-            trimestre:   r.trimestre,
-            linhaCodigo: r.linhaCodigo,
-            descricao:   r.descricao,
-            valor:       new Decimal(r.valor),
-            status:      r.status,
-          })),
-          skipDuplicates: true,
-        });
-    }
-  }
-
   private async gravarProcessamento(p: {
     empresaId:  string;
     exercicio:  number;
@@ -365,15 +388,13 @@ export class P01Service {
     });
   }
 
-  /** Retorna status do pipeline P01 por CNPJ */
   async statusPorCnpj(tenantId: string, cnpj: string) {
-    const empresa = await this.prisma.creditoEmpresa.findUnique({
+    return this.prisma.creditoEmpresa.findUnique({
       where: { tenantId_cnpj: { tenantId, cnpj } },
       include: {
         processamentos:  { orderBy: { exercicio: 'desc' } },
         inconsistencias: { orderBy: { criadoEm: 'desc' }, take: 20 },
       },
     });
-    return empresa;
   }
 }
