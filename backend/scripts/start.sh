@@ -1,14 +1,16 @@
 #!/bin/sh
 set -e
 
-MIGRATION="20260605000001_add_ecf_trimestre"
+# Grava o SQL de fix em arquivo temporário para evitar problemas de quoting
+cat > /tmp/fix_migration.sql << 'ENDSQL'
+DELETE FROM _prisma_migrations WHERE migration_name = '20260605000001_add_ecf_trimestre' AND finished_at IS NULL;
+ENDSQL
 
-# Se houver uma migration com falha registrada, marca como rolled-back via SQL direto
-# para que o prisma migrate deploy possa re-executá-la com o SQL corrigido.
-printf 'UPDATE "_prisma_migrations" SET rolled_back_at = NOW() WHERE migration_name = '"'"'%s'"'"' AND finished_at IS NULL;\n' "$MIGRATION" \
-  | npx prisma db execute --url "$DATABASE_URL" --stdin 2>/dev/null || true
+# Tenta corrigir o estado da migration falha antes de rodar o deploy
+npx prisma db execute --url "$DATABASE_URL" --file /tmp/fix_migration.sql 2>/dev/null || true
+rm -f /tmp/fix_migration.sql
 
-# Aplica todas as migrations pendentes (inclusive a corrigida acima)
+# Aplica todas as migrations pendentes (inclusive a corrigida)
 npx prisma migrate deploy
 
 # Inicia a aplicação
