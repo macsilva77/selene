@@ -4,7 +4,7 @@ import { P02BalancoService }  from './p02-balanco.service';
 import { P02DreService }      from './p02-dre.service';
 
 const VERSAO_PROMPT  = 'P02-v4';
-const VERSAO_P01     = 'P01-v3';
+const VERSAO_P01     = 'P01-v4';
 
 export interface P02Resultado {
   empresaId: string;

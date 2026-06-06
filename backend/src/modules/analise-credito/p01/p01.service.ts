@@ -5,7 +5,7 @@ import { parseEcd }           from './p01-ecd.parser';
 import { parseEcf }           from './p01-ecf.parser';
 import { Decimal }            from '@prisma/client/runtime/library';
 
-const VERSAO_PROMPT = 'P01-v3';
+const VERSAO_PROMPT = 'P01-v4';
 
 interface ExercicioCtx {
   tenantId:  string;
@@ -303,11 +303,13 @@ export class P01Service {
       ` Q3=${trimCount.get(3) ?? 0} Q4=${trimCount.get(4) ?? 0} anual=${trimCount.get(0) ?? 0})`,
     );
 
-    await this.prisma.$transaction(async tx => {
-      await tx.creditoEcfRegistro.deleteMany({ where: { empresaId, exercicio } });
-      if (rows.length > 0) {
-        await tx.creditoEcfRegistro.createMany({
-          data: rows.map(r => ({
+    // Sem transação para evitar timeout com grandes volumes trimestrais (4× registros).
+    // deleteMany primeiro garante idempotência; createMany em batches de 1000.
+    await this.prisma.creditoEcfRegistro.deleteMany({ where: { empresaId, exercicio } });
+    const BATCH = 1000;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      await this.prisma.creditoEcfRegistro.createMany({
+        data: rows.slice(i, i + BATCH).map(r => ({
             empresaId, exercicio,
             registroEcf: r.registroEcf,
             trimestre:   r.trimestre,
@@ -318,8 +320,7 @@ export class P01Service {
           })),
           skipDuplicates: true,
         });
-      }
-    }, { timeout: 60000 });
+    }
   }
 
   private async gravarProcessamento(p: {
