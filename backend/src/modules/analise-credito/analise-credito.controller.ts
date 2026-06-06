@@ -53,6 +53,7 @@ export class AnaliseCreditoController {
     @Param('cnpj') cnpj: string,
     @Query('forcar') forcar?: string,
   ) {
+    this.validarCnpj(cnpj);
     void this.p01Service.processarCnpj(tenantId, cnpj, {
       forcarReprocessamento: forcar === 'true',
     }).catch(err => this.logger.error(`[P01] Erro em background (${cnpj})`, err instanceof Error ? err.stack : String(err)));
@@ -372,7 +373,10 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    const [ecfRows, balRows] = await Promise.all([
+    const [ecfArqRows, ecfRows, balRows] = await Promise.all([
+      this.prisma.creditoEcfArquivo.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
       this.prisma.creditoEcfRegistro.findMany({
         where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
       }),
@@ -381,7 +385,7 @@ export class AnaliseCreditoController {
       }),
     ]);
 
-    const anos = new Set([...ecfRows, ...balRows].map(r => r.exercicio));
+    const anos = new Set([...ecfArqRows, ...ecfRows, ...balRows].map(r => r.exercicio));
     return [...anos].sort((a, b) => b - a);
   }
 
@@ -403,36 +407,27 @@ export class AnaliseCreditoController {
     const exercicio = this.parseExercicio(exercicioStr);
     if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
 
-    // trimestre=0 → anual (não trimestral); 1..4 → Q1..Q4; undefined → último trimestre disponível
-    const trimestreReq = trimestreStr !== undefined ? parseInt(trimestreStr, 10) : undefined;
+    // trimestre=0 → anual; 1..4 → Q1..Q4; undefined → último disponível
+    const trimestreReq = trimestreStr !== undefined ? Number.parseInt(trimestreStr, 10) : undefined;
 
     // ── Fonte primária: ECF via EcfDataSource (Parquet → fallback DB) ─────────
+    // consultarComTrimestres: buffer Parquet escrito em /tmp apenas 1× por candidato
     const candidatos = this.registrosPorRegime(empresa.regimeTributario, tipo === 'dre' ? 'dre' : 'bp');
 
     for (const registroEcf of candidatos) {
-      // Descobre trimestres disponíveis — transparente se vier do Parquet ou DB
-      const trims = await this.ecfDataSource.trimestresDisponiveis(empresa.id, exercicio, registroEcf);
-      if (trims.length === 0) continue;
+      const resultado = await this.ecfDataSource.consultarComTrimestres(
+        empresa.id, exercicio, registroEcf, trimestreReq, contaRef?.trim() || undefined,
+      );
+      if (!resultado || resultado.registros.length === 0) continue;
 
-      // Resolve qual trimestre usar: solicitado → último disponível
-      const trimestre = trimestreReq !== undefined && trims.includes(trimestreReq)
-        ? trimestreReq
-        : Math.max(...trims);
-
-      const registros = await this.ecfDataSource.consultar(empresa.id, exercicio, {
-        registroEcf,
-        trimestre,
-        linhaCodigoPrefixo: contaRef?.trim() || undefined,
-      });
-      if (registros.length === 0) continue;
-
+      const { trimestres, trimestreAtivo, registros } = resultado;
       const ehBP = ['L100', 'P100', 'U100'].includes(registroEcf);
       const parentCodes = new Set(
         registros.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
       );
       return {
-        trimestres:     trims,
-        trimestreAtivo: trimestre,
+        trimestres,
+        trimestreAtivo,
         linhas: registros.map(r => ({
           linhaCodigo: r.linhaCodigo,
           descricao:   r.descricao,
@@ -603,12 +598,20 @@ export class AnaliseCreditoController {
     return rows;
   }
 
-  // ─── Helper ───────────────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private parseExercicio(value?: string): number | undefined {
     if (!value) return undefined;
     const n = Number.parseInt(value, 10);
     if (!Number.isFinite(n)) throw new BadRequestException('exercicio deve ser um número inteiro');
+    const anoAtual = new Date().getFullYear();
+    if (n < 2000 || n > anoAtual + 1)
+      throw new BadRequestException(`exercicio deve estar entre 2000 e ${anoAtual + 1}`);
     return n;
+  }
+
+  private validarCnpj(cnpj: string): void {
+    if (!/^\d{14}$/.test(cnpj))
+      throw new BadRequestException('CNPJ deve ter exatamente 14 dígitos numéricos');
   }
 }

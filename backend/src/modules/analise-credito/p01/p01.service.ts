@@ -6,9 +6,29 @@ import { ParquetCacheService } from '../infrastructure/cache/parquet-cache.servi
 import { parseEcd }           from './p01-ecd.parser';
 import { parseEcf }           from './p01-ecf.parser';
 import { Decimal }            from '@prisma/client/runtime/library';
-import { withRetry }          from '../shared/with-retry';
+import { withRetry, isGcsPermanentError } from '../shared/with-retry';
 
-const VERSAO_PROMPT = 'P01-v5'; // incrementado após migração para Parquet
+import { VERSAO_P01 } from '../shared/versoes';
+
+const VERSAO_PROMPT    = VERSAO_P01;
+const P01_CONCORRENCIA = 5; // máx CNPJs simultâneos — evita OOM com muitos CNPJs
+
+/** Executa fn para cada item com no máximo `concurrency` promessas ativas. */
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (item !== undefined) await fn(item);
+      }
+    }),
+  );
+}
 
 interface ExercicioCtx {
   tenantId:  string;
@@ -55,12 +75,14 @@ export class P01Service {
    */
   async processarTodos(tenantId: string, opcoes?: P01ProcessarOpcoes): Promise<P01Resultado[]> {
     const cnpjs = await this.gcs.listarCnpjs();
-    this.logger.log(`[P01] ${cnpjs.length} CNPJs encontrados — processando em paralelo`);
+    this.logger.log(`[P01] ${cnpjs.length} CNPJs encontrados — concorrência máx. ${P01_CONCORRENCIA}`);
 
-    const grupos = await Promise.all(
-      cnpjs.map(cnpj => this.processarCnpj(tenantId, cnpj, opcoes)),
-    );
-    return grupos.flat();
+    const resultados: P01Resultado[] = [];
+    await runWithConcurrency(cnpjs, P01_CONCORRENCIA, async (cnpj) => {
+      const res = await this.processarCnpj(tenantId, cnpj, opcoes);
+      resultados.push(...res);
+    });
+    return resultados;
   }
 
   async processarCnpj(
@@ -106,16 +128,18 @@ export class P01Service {
     }
 
     const resultado: P01Resultado = { cnpj, exercicio, status: 'ok', tabelas: {} };
-    const incs: Inconsistencia[] = [];
+    const incsEcf: Inconsistencia[] = [];
+    const incsEcd: Inconsistencia[] = [];
 
     const ctx: ExercicioCtx = { tenantId, cnpj, exercicio, empresaId: empresa.id };
 
-    // ECF e ECD podem rodar em paralelo — arquivos independentes
+    // ECF e ECD em paralelo — incs separados para evitar contagem cruzada
     await Promise.all([
-      this.processarEcf(ctx, ecfArquivo, resultado, incs, t0),
-      this.processarEcd(ctx, ecdArquivos, resultado, incs, t0),
+      this.processarEcf(ctx, ecfArquivo, resultado, incsEcf, t0),
+      this.processarEcd(ctx, ecdArquivos, resultado, incsEcd, t0),
     ]);
 
+    const incs = [...incsEcf, ...incsEcd];
     if (incs.length > 0) {
       await this.prisma.creditoInconsistencia.createMany({
         data: incs.map(i => ({ empresaId: empresa.id, exercicio, ...i })),
@@ -146,7 +170,8 @@ export class P01Service {
       // 1. Download com retry (resiliência a falhas transitórias de rede)
       const { buffer, hash } = await withRetry(
         () => this.gcs.download(arquivo.gcsPath),
-        { label: `GCS download ECF ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 500 },
+        { label: `GCS download ECF ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 500,
+          logger: this.logger, isRetryable: (err) => !isGcsPermanentError(err) },
       );
 
       // 2. Parse do arquivo .txt ECF (rápido — operação em memória)
@@ -176,7 +201,8 @@ export class P01Service {
       const parquetPath = `ECF/${cnpj}/parquet/${exercicio}.parquet`;
       await withRetry(
         () => this.gcs.upload(parquetPath, parquetBuffer),
-        { label: `GCS upload Parquet ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 1000 },
+        { label: `GCS upload Parquet ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 1000,
+          logger: this.logger, isRetryable: (err) => !isGcsPermanentError(err) },
       );
 
       // 7. Invalida cache para forçar leitura do novo arquivo
@@ -226,7 +252,8 @@ export class P01Service {
       for (const arq of arquivos) {
         const { buffer, hash } = await withRetry(
           () => this.gcs.download(arq.gcsPath),
-          { label: `GCS download ECD ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 500 },
+          { label: `GCS download ECD ${cnpj}/${exercicio}`, maxAttempts: 3, baseDelayMs: 500,
+            logger: this.logger, isRetryable: (err) => !isGcsPermanentError(err) },
         );
         hashes.push(hash);
         const r = parseEcd(buffer);

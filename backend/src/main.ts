@@ -5,6 +5,9 @@ import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
+import * as fs   from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os   from 'node:os';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -77,6 +80,21 @@ async function bootstrap() {
 
   Logger.log(`Selene Backend rodando na porta ${port}`, 'Bootstrap');
   Logger.log(`Ambiente: ${config.get<string>('nodeEnv')}`, 'Bootstrap');
+
+  // Limpa arquivos temporários Parquet ao encerrar (SIGTERM do Cloud Run)
+  process.on('SIGTERM', async () => {
+    Logger.log('SIGTERM recebido — limpando /tmp e encerrando', 'Bootstrap');
+    try {
+      const tmpDir = os.tmpdir();
+      const entries = await fs.readdir(tmpDir);
+      await Promise.allSettled(
+        entries
+          .filter(f => f.startsWith('selene-ecf-') && f.endsWith('.parquet'))
+          .map(f => fs.unlink(path.join(tmpDir, f))),
+      );
+    } catch { /* ignora erros de limpeza */ }
+    await app.close();
+  });
 }
 
 bootstrap();

@@ -6,8 +6,9 @@ import {
   calcularIndicadores, calcularEstruturaCapital,
 } from './p03-formulas';
 
-const VERSAO_PROMPT = 'P03-v2';
-const VERSAO_P02    = 'P02-v4';
+import { VERSAO_P02, VERSAO_P03 } from '../shared/versoes';
+
+const VERSAO_PROMPT = VERSAO_P03;
 
 export interface P03Resultado {
   empresaId: string;

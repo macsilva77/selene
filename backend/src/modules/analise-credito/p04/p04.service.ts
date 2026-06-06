@@ -3,8 +3,9 @@ import { PrismaService }       from '../../../database/prisma.service';
 import { Decimal }             from '@prisma/client/runtime/library';
 import { avaliarRegras, classificar, RegraCtx } from './p04-regras';
 
-const VERSAO_PROMPT = 'P04-v2';
-const VERSAO_P03    = 'P03-v2';
+import { VERSAO_P03, VERSAO_P04 } from '../shared/versoes';
+
+const VERSAO_PROMPT = VERSAO_P04;
 
 export interface P04Resultado {
   empresaId: string;

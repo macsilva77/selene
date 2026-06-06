@@ -9,8 +9,12 @@ interface CacheEntry {
  * Cache LRU in-memory para buffers Parquet.
  * Evita downloads repetidos do GCS para a mesma empresa/exercício.
  *
+ * Chave de cache: `${gcsPath}:${hashMd5}` — quando o arquivo muda no GCS
+ * e o P01 grava um novo hash, o cache miss ocorre automaticamente.
+ * Isso torna a invalidação explícita desnecessária em cenários normais.
+ *
  * Limite: MAX_ENTRIES × ~5 MB ≈ 100 MB RAM.
- * Para escala horizontal (múltiplas instâncias), substituir por Redis.
+ * Para escala horizontal (múltiplas instâncias Cloud Run): substituir por Redis.
  */
 @Injectable()
 export class ParquetCacheService {
@@ -19,6 +23,11 @@ export class ParquetCacheService {
 
   private readonly cache = new Map<string, CacheEntry>();
 
+  /** Chave canônica: inclui hash para invalidação automática ao reprocessar. */
+  static buildKey(gcsPath: string, hashMd5: string): string {
+    return `${gcsPath}:${hashMd5}`;
+  }
+
   get(key: string): Buffer | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
@@ -26,7 +35,7 @@ export class ParquetCacheService {
       this.cache.delete(key);
       return null;
     }
-    // Promove para "mais recente" (semântica LRU)
+    // Promove para "mais recente" (semântica LRU via Map insertion order)
     this.cache.delete(key);
     this.cache.set(key, entry);
     return entry.buffer;
@@ -34,13 +43,16 @@ export class ParquetCacheService {
 
   set(key: string, buffer: Buffer): void {
     if (this.cache.size >= ParquetCacheService.MAX_ENTRIES) {
-      // Evicta o mais antigo (Map preserva ordem de inserção)
-      this.cache.delete(this.cache.keys().next().value!);
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.cache.delete(oldest);
     }
     this.cache.set(key, { buffer, expiresAt: Date.now() + ParquetCacheService.TTL_MS });
   }
 
-  invalidate(key: string): void {
-    this.cache.delete(key);
+  /** Invalida manualmente — útil em testes ou forçar refresh. */
+  invalidate(gcsPath: string): void {
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${gcsPath}:`)) this.cache.delete(key);
+    }
   }
 }

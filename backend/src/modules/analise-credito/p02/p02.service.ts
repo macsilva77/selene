@@ -3,8 +3,9 @@ import { PrismaService }      from '../../../database/prisma.service';
 import { P02BalancoService }  from './p02-balanco.service';
 import { P02DreService }      from './p02-dre.service';
 
-const VERSAO_PROMPT  = 'P02-v4';
-const VERSAO_P01     = 'P01-v4';
+import { VERSAO_P01, VERSAO_P02 } from '../shared/versoes';
+
+const VERSAO_PROMPT = VERSAO_P02;
 
 export interface P02Resultado {
   empresaId: string;

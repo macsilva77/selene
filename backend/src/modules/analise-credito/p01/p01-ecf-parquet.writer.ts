@@ -59,12 +59,13 @@ export class EcfParquetWriter {
       await conn.run(
         `COPY ${tableId} TO '${toDuckPath(outPath)}' (FORMAT PARQUET, CODEC ZSTD)`,
       );
-      await conn.run(`DROP TABLE ${tableId}`);
 
       const buffer = await fs.readFile(outPath);
       this.logger.debug(`Parquet gerado: ${rows.length} registros, ${buffer.length} bytes`);
       return buffer;
     } finally {
+      // DROP TABLE no finally garante limpeza mesmo em caso de exceção entre COPY e return
+      await conn.run(`DROP TABLE IF EXISTS ${tableId}`).catch(() => {});
       conn.closeSync();
       await fs.unlink(outPath).catch(() => {});
     }

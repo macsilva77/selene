@@ -3,7 +3,7 @@ import * as os   from 'node:os';
 import * as path from 'node:path';
 import * as fs   from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { DuckDbService } from './duckdb.service';
+import { DuckDbService, DuckDbParams } from './duckdb.service';
 import { EcfRegistroRow } from '../../p01/p01-ecf.parser';
 
 export interface EcfConsultaOptions {
@@ -12,43 +12,100 @@ export interface EcfConsultaOptions {
   linhaCodigoPrefixo?: string;
 }
 
+export interface EcfConsultaResult {
+  trimestres:     number[];
+  trimestreAtivo: number;
+  registros:      EcfRegistroRow[];
+}
+
 /**
- * Repositório de consulta a arquivos Parquet de ECF via DuckDB.
- * Cada método recebe um Buffer (baixado do GCS), escreve em tmp e consulta.
- * O arquivo temporário é sempre removido no finally.
+ * Repositório de consulta a arquivos Parquet ECF via DuckDB.
+ *
+ * SEGURANÇA: todas as queries usam parâmetros posicionais ($1, $2…) —
+ * zero interpolação de valores controlados pelo usuário no SQL.
+ * O único valor interpolado é o filePath, gerado internamente via UUID.
  */
 @Injectable()
 export class EcfParquetRepository {
   constructor(private readonly duckdb: DuckDbService) {}
 
+  /**
+   * Consulta otimizada: uma única escrita em /tmp, duas queries DuckDB na mesma
+   * conexão. Evita o problema anterior de escrever o buffer duas vezes por candidato.
+   *
+   * Retorna null se não há dados para o registroEcf informado.
+   */
+  async consultarComTrimestres(
+    buffer: Buffer,
+    opts: EcfConsultaOptions & { registroEcf: string },
+  ): Promise<EcfConsultaResult | null> {
+    return this.withTempFile(buffer, async (fp) => {
+      const p    = toDuckPath(fp);
+      const conn = await this.duckdb.connect();
+      try {
+        // 1. Trimestres disponíveis para este tipo de registro
+        const trimReader = await conn.runAndReadAll(
+          `SELECT DISTINCT trimestre FROM read_parquet($1)
+           WHERE registro_ecf = $2 ORDER BY trimestre ASC`,
+          [p, opts.registroEcf] as DuckDbParams,
+        );
+        const trimestres = (trimReader.getRowObjects() as { trimestre: number }[])
+          .map(r => Number(r.trimestre));
+
+        if (trimestres.length === 0) return null;
+
+        const trimestreAtivo = opts.trimestre !== undefined && trimestres.includes(opts.trimestre)
+          ? opts.trimestre
+          : Math.max(...trimestres);
+
+        // 2. Registros do trimestre ativo (+ filtro de prefixo opcional)
+        const hasPrefixo = Boolean(opts.linhaCodigoPrefixo);
+        const sql = hasPrefixo
+          ? `SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
+             FROM read_parquet($1)
+             WHERE registro_ecf = $2 AND trimestre = $3 AND starts_with(linha_codigo, $4)
+             ORDER BY linha_codigo ASC`
+          : `SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
+             FROM read_parquet($1)
+             WHERE registro_ecf = $2 AND trimestre = $3
+             ORDER BY linha_codigo ASC`;
+
+        const params: unknown[] = hasPrefixo
+          ? [p, opts.registroEcf, trimestreAtivo, opts.linhaCodigoPrefixo]
+          : [p, opts.registroEcf, trimestreAtivo];
+
+        const regReader = await conn.runAndReadAll(sql, params as DuckDbParams);
+        const registros = (regReader.getRowObjects() as unknown as RawRow[]).map(toEcfRow);
+
+        return { trimestres, trimestreAtivo, registros };
+      } finally {
+        conn.closeSync();
+      }
+    });
+  }
+
+  /** Consulta genérica — para uso em P02 que não precisa de trimestres. */
   async consultar(buffer: Buffer, opts: EcfConsultaOptions = {}): Promise<EcfRegistroRow[]> {
     return this.withTempFile(buffer, async (fp) => {
-      const where = this.buildWhere(opts);
-      const sql = `
-        SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
-        FROM read_parquet('${toDuckPath(fp)}')
-        WHERE ${where}
-        ORDER BY linha_codigo ASC
-      `;
-      const rows = await this.duckdb.query<RawRow>(sql);
+      const p      = toDuckPath(fp);
+      const params = buildParams(p, opts);
+      const sql    = buildSql(params.count, opts);
+      const rows   = await this.duckdb.query<RawRow>(sql, params.values);
       return rows.map(toEcfRow);
     });
   }
 
   async trimestresDisponiveis(buffer: Buffer, registroEcf: string): Promise<number[]> {
     return this.withTempFile(buffer, async (fp) => {
-      const sql = `
-        SELECT DISTINCT trimestre
-        FROM read_parquet('${toDuckPath(fp)}')
-        WHERE registro_ecf = '${escapeSql(registroEcf)}'
-        ORDER BY trimestre ASC
-      `;
-      const rows = await this.duckdb.query<{ trimestre: number }>(sql);
+      const rows = await this.duckdb.query<{ trimestre: number }>(
+        `SELECT DISTINCT trimestre FROM read_parquet($1)
+         WHERE registro_ecf = $2 ORDER BY trimestre ASC`,
+        [toDuckPath(fp), registroEcf] as DuckDbParams,
+      );
       return rows.map(r => Number(r.trimestre));
     });
   }
 
-  /** Executa `fn` com um arquivo .parquet temporário; limpa no finally. */
   private async withTempFile<T>(buffer: Buffer, fn: (filePath: string) => Promise<T>): Promise<T> {
     const fp = path.join(os.tmpdir(), `selene-ecf-${randomUUID()}.parquet`);
     await fs.writeFile(fp, buffer);
@@ -58,20 +115,9 @@ export class EcfParquetRepository {
       await fs.unlink(fp).catch(() => {});
     }
   }
-
-  private buildWhere(opts: EcfConsultaOptions): string {
-    const clauses: string[] = ['1=1'];
-    if (opts.registroEcf)
-      clauses.push(`registro_ecf = '${escapeSql(opts.registroEcf)}'`);
-    if (opts.trimestre !== undefined)
-      clauses.push(`trimestre = ${opts.trimestre}`);
-    if (opts.linhaCodigoPrefixo)
-      clauses.push(`starts_with(linha_codigo, '${escapeSql(opts.linhaCodigoPrefixo)}')`);
-    return clauses.join(' AND ');
-  }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Tipos e helpers internos ─────────────────────────────────────────────────
 
 interface RawRow {
   registro_ecf: string;
@@ -97,6 +143,22 @@ function toDuckPath(filePath: string): string {
   return filePath.replaceAll('\\', '/');
 }
 
-function escapeSql(s: string): string {
-  return s.replaceAll("'", "''");
+function buildParams(filePath: string, opts: EcfConsultaOptions): { count: number; values: DuckDbParams } {
+  const values: (string | number)[] = [filePath];
+  if (opts.registroEcf)             values.push(opts.registroEcf);
+  if (opts.trimestre !== undefined)  values.push(opts.trimestre);
+  if (opts.linhaCodigoPrefixo)      values.push(opts.linhaCodigoPrefixo);
+  return { count: values.length, values };
+}
+
+function buildSql(paramCount: number, opts: EcfConsultaOptions): string {
+  const clauses: string[] = [];
+  let i = 2; // $1 = filePath
+  if (opts.registroEcf)             clauses.push(`registro_ecf = $${i++}`);
+  if (opts.trimestre !== undefined)  clauses.push(`trimestre = $${i++}`);
+  if (opts.linhaCodigoPrefixo)      clauses.push(`starts_with(linha_codigo, $${i++})`);
+
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+  return `SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
+          FROM read_parquet($1) ${where} ORDER BY linha_codigo ASC`;
 }
