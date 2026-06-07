@@ -94,8 +94,9 @@ export function DemonstracoesFinanceiras() {
   const [aba, setAba]                     = useState<Aba>('balanco');
   const [contaRef, setContaRef]           = useState('');
   const [contaRefAtiva, setContaRefAtiva] = useState('');
-  const [apenasComValores, setApenasComValores]     = useState(false);
-  const [mostrarAnoAnterior, setMostrarAnoAnterior] = useState(false);
+  const [apenasComValores, setApenasComValores]         = useState(false);
+  const [mostrarAnoAnterior, setMostrarAnoAnterior]     = useState(false);
+  const [mostrarMovimentacao, setMostrarMovimentacao]   = useState(false);
   const [trimestres, setTrimestres]       = useState<number[]>([]);
   const [trimestreAtivo, setTrimestreAtivo] = useState<number>(0); // retornado pela API
   const [trimestreSel, setTrimestre]      = useState<number | undefined>(undefined); // seleção do usuário
@@ -184,6 +185,14 @@ export function DemonstracoesFinanceiras() {
 
   function handleFiltrar() { setContaRefAtiva(contaRef.trim()); }
 
+  // expand/collapse btn + código + descrição + saldo final + D/C + (mov: tipo+saldoAnt+DC+deb+cred) + (ant)
+  function calcColSpan() {
+    let n = 5; // base: btn + código + descrição + saldo final + D/C
+    if (mostrarMovimentacao && aba === 'balanco') n += 5; // tipo + saldoAnt + DC + déb + cré
+    if (mostrarAnoAnterior) n += 1;
+    return n;
+  }
+
   return (
     <div className="space-y-4">
       {/* Filtros */}
@@ -256,6 +265,13 @@ export function DemonstracoesFinanceiras() {
                 onChange={e => setMostrarAnoAnterior(e.target.checked)} className="rounded" />
               Mostrar Ano Anterior
             </label>
+            {aba === 'balanco' && (
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" checked={mostrarMovimentacao}
+                  onChange={e => setMostrarMovimentacao(e.target.checked)} className="rounded" />
+                Movimentação
+              </label>
+            )}
             <button type="button" onClick={expandirTudo}
               className="text-xs text-slate-500 underline hover:text-slate-700">
               Expandir tudo
@@ -339,21 +355,28 @@ export function DemonstracoesFinanceiras() {
                 </th>
                 <th className="text-left px-3 py-2.5 w-36 font-mono">Código</th>
                 <th className="text-left px-4 py-2.5">Descrição da Conta</th>
-                <th className="text-right px-4 py-2.5 w-52">Saldo Final</th>
+                {mostrarMovimentacao && aba === 'balanco' && (<>
+                  <th className="text-center px-2 py-2.5 w-10">Tipo</th>
+                  <th className="text-right px-4 py-2.5 w-44">Saldo Inicial</th>
+                  <th className="text-center px-2 py-2.5 w-10">D/C</th>
+                  <th className="text-right px-4 py-2.5 w-44">Total Débitos</th>
+                  <th className="text-right px-4 py-2.5 w-44">Total Créditos</th>
+                </>)}
+                <th className="text-right px-4 py-2.5 w-44">Saldo Final</th>
+                <th className="text-center px-2 py-2.5 w-10">D/C</th>
                 {mostrarAnoAnterior && (
-                  <th className="text-right px-4 py-2.5 w-52 text-slate-400">
-                    Ano Anterior ({exercicio ? exercicio - 1 : '—'})
+                  <th className="text-right px-4 py-2.5 w-44 text-slate-400">
+                    {exercicio ? exercicio - 1 : '—'}
                   </th>
                 )}
-                <th className="text-right px-4 py-2.5 w-28">Natureza</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={mostrarAnoAnterior ? 6 : 5} className="py-10 text-center text-slate-400">Carregando...</td></tr>
+                <tr><td colSpan={calcColSpan()} className="py-10 text-center text-slate-400">Carregando...</td></tr>
               )}
               {!loading && registrosVisiveis.length === 0 && (
-                <tr><td colSpan={mostrarAnoAnterior ? 6 : 5} className="py-12 text-center text-slate-400">
+                <tr><td colSpan={calcColSpan()} className="py-12 text-center text-slate-400">
                   {emptyMessage(cnpj, exercicio)}
                 </td></tr>
               )}
@@ -399,6 +422,31 @@ export function DemonstracoesFinanceiras() {
                       </span>
                     </td>
 
+                    {/* Colunas de movimentação — só BP com toggle ativo */}
+                    {mostrarMovimentacao && aba === 'balanco' && (<>
+                      <td className="px-2 py-1.5 text-center">
+                        <span className="text-xs text-slate-400">{row.tipo ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-1.5 text-right">
+                        {row.saldoAnterior
+                          ? <span className="tabular-nums text-slate-600">{formatCurrency(row.saldoAnterior)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <span className="text-xs text-slate-400">{row.naturezaAnterior ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-1.5 text-right">
+                        {row.totalDebitos
+                          ? <span className="tabular-nums text-slate-600">{formatCurrency(row.totalDebitos)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-1.5 text-right">
+                        {row.totalCreditos
+                          ? <span className="tabular-nums text-slate-600">{formatCurrency(row.totalCreditos)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                    </>)}
+
                     {/* Saldo Final */}
                     <td className="px-4 py-1.5 text-right">
                       {valor === 0
@@ -406,6 +454,20 @@ export function DemonstracoesFinanceiras() {
                         : <span className={cn('tabular-nums',
                             row.nivel <= 2 ? 'font-semibold text-slate-800' : 'text-slate-700')}>
                             {formatCurrency(valor)}
+                          </span>
+                      }
+                    </td>
+
+                    {/* D/C do saldo final */}
+                    <td className="px-2 py-1.5 text-center">
+                      {row.naturezaFinal || (mostrarMovimentacao && aba === 'balanco')
+                        ? <span className={cn('text-xs font-medium',
+                            (row.naturezaFinal ?? row.naturezaAnterior) === 'C' ? 'text-emerald-600' : 'text-blue-600')}>
+                            {row.naturezaFinal ?? row.naturezaAnterior ?? '—'}
+                          </span>
+                        : <span className={cn('text-xs font-medium',
+                            row.natureza === 'DEVEDOR' ? 'text-blue-600' : 'text-emerald-600')}>
+                            {row.natureza === 'DEVEDOR' ? 'D' : 'C'}
                           </span>
                       }
                     </td>
@@ -419,14 +481,6 @@ export function DemonstracoesFinanceiras() {
                         }
                       </td>
                     )}
-
-                    {/* Natureza */}
-                    <td className="px-4 py-1.5 text-right">
-                      <span className={cn('text-xs font-medium',
-                        row.natureza === 'DEVEDOR' ? 'text-blue-600' : 'text-emerald-600')}>
-                        {row.natureza}
-                      </span>
-                    </td>
                   </tr>
                 );
               })}

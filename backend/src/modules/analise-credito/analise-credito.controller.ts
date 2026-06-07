@@ -429,15 +429,22 @@ export class AnaliseCreditoController {
         trimestres,
         trimestreAtivo,
         linhas: registros.map(r => ({
-          linhaCodigo: r.linhaCodigo,
-          descricao:   r.descricao,
-          valor:       new Decimal(r.valor),
-          nivel:       r.linhaCodigo.split('.').length,
-          haFilhos:    parentCodes.has(r.linhaCodigo),
-          natureza:    ehBP
+          linhaCodigo:     r.linhaCodigo,
+          descricao:       r.descricao,
+          valor:           new Decimal(r.valor),
+          nivel:           r.linhaCodigo.split('.').length,
+          haFilhos:        parentCodes.has(r.linhaCodigo),
+          tipo:            parentCodes.has(r.linhaCodigo) ? 'S' : 'A',
+          natureza:        ehBP
             ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
             : (r.valor >= 0 ? 'CREDOR' : 'DEVEDOR'),
-          fonte:       registroEcf.toLowerCase(),
+          fonte:           registroEcf.toLowerCase(),
+          // Campos de movimentação — disponíveis apenas via ECD (fallback)
+          saldoAnterior:   null as Decimal | null,
+          naturezaAnterior: null as string | null,
+          totalDebitos:    null as Decimal | null,
+          totalCreditos:   null as Decimal | null,
+          naturezaFinal:   null as string | null,
         })),
       };
     }
@@ -475,11 +482,39 @@ export class AnaliseCreditoController {
   }
 
   private async demonstracoesBalancoFallback(empresaId: string, exercicio: number, contaRef?: string) {
-    const linhas = await this.prisma.creditoBalanco.findMany({
-      where:   { empresaId, exercicio },
-      orderBy: [{ grupo: 'asc' }, { subgrupo: 'asc' }, { contaNome: 'asc' }],
-      select:  { grupo: true, subgrupo: true, contaCodigo: true, contaNome: true, valor: true, fonte: true },
-    });
+    const [linhas, periodoMax] = await Promise.all([
+      this.prisma.creditoBalanco.findMany({
+        where:   { empresaId, exercicio },
+        orderBy: [{ grupo: 'asc' }, { subgrupo: 'asc' }, { contaNome: 'asc' }],
+        select:  { grupo: true, subgrupo: true, contaCodigo: true, contaNome: true, valor: true, fonte: true },
+      }),
+      this.prisma.creditoEcdSaldo.findFirst({
+        where:   { empresaId, exercicio },
+        orderBy: { periodo: 'desc' },
+        select:  { periodo: true },
+      }),
+    ]);
+
+    // Mapa de movimentação por contaCodigo (período final do exercício)
+    const movMap = new Map<string, {
+      saldoAnterior: Decimal; naturezaAnterior: string | null;
+      debitos: Decimal; creditos: Decimal; naturezaFinal: string | null;
+    }>();
+    if (periodoMax) {
+      const saldos = await this.prisma.creditoEcdSaldo.findMany({
+        where:  { empresaId, exercicio, periodo: periodoMax.periodo },
+        select: { contaCodigo: true, saldoAnterior: true, debitos: true, creditos: true, saldoFinal: true, naturezaSaldo: true },
+      });
+      for (const s of saldos) {
+        movMap.set(s.contaCodigo, {
+          saldoAnterior:    s.saldoAnterior,
+          naturezaAnterior: s.naturezaSaldo,
+          debitos:          s.debitos,
+          creditos:         s.creditos,
+          naturezaFinal:    s.naturezaSaldo,
+        });
+      }
+    }
 
     const GRUPO_LABEL: Record<string, string> = {
       AC:  'ATIVO CIRCULANTE',     ANC: 'ATIVO NÃO CIRCULANTE',
@@ -490,15 +525,26 @@ export class AnaliseCreditoController {
     const NATUREZA: Record<string, 'DEVEDOR' | 'CREDOR'> = {
       AC: 'DEVEDOR', ANC: 'DEVEDOR', PC: 'CREDOR', PNC: 'CREDOR', PL: 'CREDOR',
     };
-    type Row = { linhaCodigo: string; descricao: string; valor: unknown; nivel: number; haFilhos: boolean; natureza: 'DEVEDOR' | 'CREDOR'; fonte: string };
+    type Row = {
+      linhaCodigo: string; descricao: string; valor: unknown;
+      nivel: number; haFilhos: boolean; tipo: 'S' | 'A';
+      natureza: 'DEVEDOR' | 'CREDOR'; fonte: string;
+      saldoAnterior: Decimal | null; naturezaAnterior: string | null;
+      totalDebitos: Decimal | null; totalCreditos: Decimal | null;
+      naturezaFinal: string | null;
+    };
+    const grupoRow = (linhaCodigo: string, descricao: string, valor: Decimal, natureza: 'DEVEDOR' | 'CREDOR'): Row => ({
+      linhaCodigo, descricao, valor, nivel: linhaCodigo.split('.').length, haFilhos: true,
+      tipo: 'S', natureza, fonte: 'p02',
+      saldoAnterior: null, naturezaAnterior: null, totalDebitos: null, totalCreditos: null, naturezaFinal: null,
+    });
     const rows: Row[] = [];
 
-    // Raízes: ATIVO e PASSIVO + PL
     const totalAtivo     = linhas.filter(l => ['AC','ANC'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new Decimal(0));
     const totalPassivoPl = linhas.filter(l => ['PC','PNC','PL'].includes(l.grupo)).reduce((s, l) => s.add(l.valor), new Decimal(0));
 
-    rows.push({ linhaCodigo: '1',     descricao: 'ATIVO',          valor: totalAtivo,     nivel: 1, haFilhos: true, natureza: 'DEVEDOR', fonte: 'p02' });
-    rows.push({ linhaCodigo: '2',     descricao: 'PASSIVO E PL',   valor: totalPassivoPl, nivel: 1, haFilhos: true, natureza: 'CREDOR',  fonte: 'p02' });
+    rows.push(grupoRow('1', 'ATIVO',        totalAtivo,     'DEVEDOR'));
+    rows.push(grupoRow('2', 'PASSIVO E PL', totalPassivoPl, 'CREDOR'));
 
     // Grupos e subgrupos
     const byGrupo = new Map<string, typeof linhas>();
@@ -516,9 +562,8 @@ export class AnaliseCreditoController {
       const grupoCode  = ['AC','ANC'].includes(grupo) ? `1.0${gi}` : `2.0${gi - 2}`;
       const nat        = NATUREZA[grupo] ?? 'DEVEDOR';
 
-      rows.push({ linhaCodigo: grupoCode, descricao: GRUPO_LABEL[grupo] ?? grupo, valor: grupoTotal, nivel: 2, haFilhos: true, natureza: nat, fonte: 'p02' });
+      rows.push(grupoRow(grupoCode, GRUPO_LABEL[grupo] ?? grupo, grupoTotal, nat));
 
-      // Subgrupos
       const bySubgrupo = new Map<string, typeof linhas>();
       for (const l of grupoLinhas) {
         if (!bySubgrupo.has(l.subgrupo)) bySubgrupo.set(l.subgrupo, []);
@@ -530,17 +575,24 @@ export class AnaliseCreditoController {
         si++;
         const subTotal = subLinhas.reduce((s, l) => s.add(l.valor), new Decimal(0));
         const subCode  = `${grupoCode}.${String(si).padStart(2, '0')}`;
-        rows.push({ linhaCodigo: subCode, descricao: subgrupo, valor: subTotal, nivel: 3, haFilhos: true, natureza: nat, fonte: 'p02' });
+        rows.push(grupoRow(subCode, subgrupo, subTotal, nat));
 
         subLinhas.forEach((l, idx) => {
+          const mov = movMap.get(l.contaCodigo) ?? null;
           rows.push({
-            linhaCodigo: `${subCode}.${String(idx + 1).padStart(2, '0')}`,
-            descricao:   l.contaNome,
-            valor:       l.valor,
-            nivel:       4,
-            haFilhos:    false,
-            natureza:    nat,
-            fonte:       l.fonte,
+            linhaCodigo:     `${subCode}.${String(idx + 1).padStart(2, '0')}`,
+            descricao:       l.contaNome,
+            valor:           l.valor,
+            nivel:           4,
+            haFilhos:        false,
+            tipo:            'A',
+            natureza:        nat,
+            fonte:           l.fonte,
+            saldoAnterior:   mov?.saldoAnterior    ?? null,
+            naturezaAnterior: mov?.naturezaAnterior ?? null,
+            totalDebitos:    mov?.debitos           ?? null,
+            totalCreditos:   mov?.creditos          ?? null,
+            naturezaFinal:   mov?.naturezaFinal     ?? null,
           });
         });
       }

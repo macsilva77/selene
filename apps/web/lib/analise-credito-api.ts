@@ -83,13 +83,20 @@ export interface ResumoFinanceiro {
 }
 
 export interface DemonstracaoRow {
-  linhaCodigo: string;
-  descricao:   string;
-  valor:       string;   // Decimal serializado como string
-  nivel:       number;
-  haFilhos:    boolean;
-  natureza:    'DEVEDOR' | 'CREDOR';
-  fonte?:      string;
+  linhaCodigo:     string;
+  descricao:       string;
+  valor:           string;   // Decimal serializado como string (saldo final)
+  nivel:           number;
+  haFilhos:        boolean;
+  tipo?:           'S' | 'A' | null;  // Sintética / Analítica
+  natureza:        'DEVEDOR' | 'CREDOR';
+  fonte?:          string;
+  // Campos de movimentação — preenchidos apenas via ECD (fallback)
+  saldoAnterior?:   string | null;
+  naturezaAnterior?: string | null; // 'D' | 'C'
+  totalDebitos?:    string | null;
+  totalCreditos?:   string | null;
+  naturezaFinal?:   string | null;  // 'D' | 'C'
 }
 
 export interface DemonstracaoResult {
