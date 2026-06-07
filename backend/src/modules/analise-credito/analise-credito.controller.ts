@@ -11,6 +11,12 @@ import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
 import { P03Service }        from './p03/p03.service';
 import { P04Service }        from './p04/p04.service';
+import {
+  calcularIndicadores,
+  calcularEstruturaCapital,
+  type BalData,
+  type DreData,
+} from './p03/p03-formulas';
 import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
 import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard }  from '../../common/guards/jwt-auth.guard';
@@ -273,10 +279,55 @@ export class AnaliseCreditoController {
     const where: Prisma.CreditoIndicadorWhereInput = { empresaId: empresa.id };
     if (exercicio !== undefined) where.exercicio = exercicio;
 
-    return this.prisma.creditoIndicador.findMany({
+    const stored = await this.prisma.creditoIndicador.findMany({
       where,
       orderBy: [{ exercicio: 'desc' }, { indicador: 'asc' }],
     });
+
+    // Exercícios que já têm indicadores no pipeline
+    const comPipeline = new Set(stored.map(i => i.exercicio));
+
+    // Exercícios disponíveis no ECF
+    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
+      where:    { empresaId: empresa.id, ...(exercicio !== undefined ? { exercicio } : {}) },
+      select:   { exercicio: true },
+      distinct: ['exercicio'],
+    });
+
+    const semPipeline = ecfAnos.map(r => r.exercicio).filter(a => !comPipeline.has(a));
+    if (semPipeline.length === 0) return stored;
+
+    // Calcula indicadores on-the-fly a partir do ECF para os exercícios sem pipeline
+    const onTheFly = await Promise.all(semPipeline.map(async ano => {
+      const [bal, dre] = await Promise.all([
+        this.ecfBalData(empresa.id, ano, empresa.regimeTributario),
+        this.ecfDreData(empresa.id, ano, empresa.regimeTributario),
+      ]);
+      if (!bal || !dre) return [];
+
+      // Ano anterior para indicadores de crescimento
+      const [balAnt, dreAnt] = await Promise.all([
+        this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
+        this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),
+      ]);
+
+      return calcularIndicadores(
+        bal, dre,
+        balAnt ?? undefined,
+        dreAnt ?? undefined,
+        1,
+      ).map(i => ({
+        id:        `ecf_${ano}_${i.indicador}`,
+        empresaId: empresa.id,
+        exercicio: ano,
+        indicador: i.indicador,
+        valor:     i.valor?.toString() ?? null,
+        unidade:   i.unidade,
+        fonteOk:   i.fonteOk,
+      }));
+    }));
+
+    return [...stored, ...onTheFly.flat()];
   }
 
   /** Alertas de um CNPJ, opcionalmente filtrados por exercício */
@@ -374,34 +425,41 @@ export class AnaliseCreditoController {
       } catch { /* ECF pode estar ausente — mantém dre vazio */ }
     }
 
-    // Fallback ECF para PL quando P03 ainda não rodou
-    let plEcf: string | null = null;
+    // Fallback ECF para estrutura completa quando P03 ainda não rodou
+    let estruturaEcf: ReturnType<typeof calcularEstruturaCapital> | null = null;
     if (estrutura === null) {
-      try {
-        const balEcf = await this.balancoService.montar(empresa.id, exercicio, empresa.regimeTributario);
-        const plTotal = balEcf.linhas
-          .filter(r => r.grupo === 'PL')
-          .reduce((acc, r) => acc.add(r.valor), new Decimal(0));
-        if (plTotal.gt(0)) plEcf = plTotal.toString();
-      } catch { /* ECF pode estar ausente */ }
+      const [bal, dreMap] = await Promise.all([
+        this.ecfBalData(empresa.id, exercicio, empresa.regimeTributario),
+        dreRows.length > 0
+          ? Promise.resolve((() => { const m: DreData = new Map(); for (const r of dreRows) m.set(r.linhaDre, r.valor); return m; })())
+          : this.ecfDreData(empresa.id, exercicio, empresa.regimeTributario),
+      ]);
+      if (bal && dreMap) estruturaEcf = calcularEstruturaCapital(bal, dreMap);
     }
 
-    const processando = Object.keys(dre).length === 0 && plEcf === null;
+    const processando = Object.keys(dre).length === 0 && estruturaEcf === null && estrutura === null;
 
+    const d = (v: Decimal | null | undefined) => v?.toString() ?? null;
     const estruturaResp = estrutura
       ? {
-          ativoTotal:          estrutura.ativoTotal?.toString()          ?? null,
-          passivoTotal:        estrutura.passivoTotal?.toString()        ?? null,
-          pl:                  estrutura.pl?.toString()                  ?? null,
-          dividaFinanceiraCp:  estrutura.dividaFinanceiraCp?.toString()  ?? null,
-          dividaFinanceiraLp:  estrutura.dividaFinanceiraLp?.toString()  ?? null,
-          dividaFinanceiraTot: estrutura.dividaFinanceiraTot?.toString() ?? null,
-          dividaLiquida:       estrutura.dividaLiquida?.toString()       ?? null,
+          ativoTotal:          d(estrutura.ativoTotal),
+          passivoTotal:        d(estrutura.passivoTotal),
+          pl:                  d(estrutura.pl),
+          dividaFinanceiraCp:  d(estrutura.dividaFinanceiraCp),
+          dividaFinanceiraLp:  d(estrutura.dividaFinanceiraLp),
+          dividaFinanceiraTot: d(estrutura.dividaFinanceiraTot),
+          dividaLiquida:       d(estrutura.dividaLiquida),
         }
-      : plEcf !== null
-        ? { ativoTotal: null, passivoTotal: null, pl: plEcf,
-            dividaFinanceiraCp: null, dividaFinanceiraLp: null,
-            dividaFinanceiraTot: null, dividaLiquida: null }
+      : estruturaEcf !== null
+        ? {
+            ativoTotal:          d(estruturaEcf.ativoTotal),
+            passivoTotal:        d(estruturaEcf.passivoTotal),
+            pl:                  d(estruturaEcf.pl),
+            dividaFinanceiraCp:  d(estruturaEcf.dividaFinanceiraCp),
+            dividaFinanceiraLp:  d(estruturaEcf.dividaFinanceiraLp),
+            dividaFinanceiraTot: d(estruturaEcf.dividaFinanceiraTot),
+            dividaLiquida:       d(estruturaEcf.dividaLiquida),
+          }
         : null;
 
     return { exercicio, dre, estrutura: estruturaResp, processando };
@@ -802,5 +860,29 @@ export class AnaliseCreditoController {
   private validarCnpj(cnpj: string): void {
     if (!/^\d{14}$/.test(cnpj))
       throw new BadRequestException('CNPJ deve ter exatamente 14 dígitos numéricos');
+  }
+
+  // ─── Conversores ECF → BalData / DreData (para cálculo on-the-fly) ───────────
+
+  private async ecfBalData(empresaId: string, exercicio: number, regime: string | null): Promise<BalData | null> {
+    try {
+      const res = await this.balancoService.montar(empresaId, exercicio, regime);
+      const bal: BalData = new Map();
+      for (const row of res.linhas) {
+        if (!bal.has(row.grupo)) bal.set(row.grupo, new Map());
+        const g = bal.get(row.grupo)!;
+        g.set(row.subgrupo, (g.get(row.subgrupo) ?? new Decimal(0)).add(row.valor));
+      }
+      return bal;
+    } catch { return null; }
+  }
+
+  private async ecfDreData(empresaId: string, exercicio: number, regime: string | null): Promise<DreData | null> {
+    try {
+      const res = await this.dreService.montar(empresaId, exercicio, regime);
+      const dre: DreData = new Map();
+      for (const row of res.linhas) dre.set(row.linhaDre, row.valor);
+      return dre;
+    } catch { return null; }
   }
 }
