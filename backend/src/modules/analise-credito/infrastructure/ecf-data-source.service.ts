@@ -144,12 +144,19 @@ export class EcfDataSourceService {
       orderBy: { linhaCodigo: 'asc' },
     });
     return rows.map(r => ({
-      registroEcf: r.registroEcf,
-      trimestre:   r.trimestre,
-      linhaCodigo: r.linhaCodigo,
-      descricao:   r.descricao,
-      valor:       r.valor.toNumber(),
-      status:      r.status,
+      registroEcf:      r.registroEcf,
+      trimestre:        r.trimestre,
+      linhaCodigo:      r.linhaCodigo,
+      descricao:        r.descricao,
+      indCta:           null,
+      nivel:            null,
+      saldoAnterior:    0,
+      naturezaAnterior: 'D',
+      totalDebitos:     null,
+      totalCreditos:    null,
+      valor:            r.valor.toNumber(),
+      naturezaFinal:    'D',
+      status:           r.status,
     }));
   }
 

@@ -9,12 +9,19 @@ export type RegistroEcfDRE = 'L300' | 'P150' | 'U150';
 export type RegistroEcfLalur = 'M300' | 'M350';
 
 export interface EcfRegistroRow {
-  registroEcf: string;
-  trimestre:   number;   // 0 = anual/não-trimestral; 1..4 = Q1..Q4
-  linhaCodigo: string;
-  descricao:   string;
-  valor:       number;
-  status:      string;
+  registroEcf:      string;
+  trimestre:        number;        // 0 = anual/não-trimestral; 1..4 = Q1..Q4
+  linhaCodigo:      string;
+  descricao:        string;
+  indCta:           'S' | 'A' | null; // Sintética / Analítica — campo [3] do L100
+  nivel:            number | null;     // Nível hierárquico — campo [4] do L100
+  saldoAnterior:    number;        // VL_INI — campo [7] do L100
+  naturezaAnterior: string;        // IND_DC_INI — campo [8] do L100 ('D'|'C')
+  totalDebitos:     number | null; // VL_DEB — campo [9] no formato estendido (13 campos)
+  totalCreditos:    number | null; // VL_CRE — campo [10] no formato estendido (13 campos)
+  valor:            number;        // VL_FIN — campo [11] estendido / [9] padrão
+  naturezaFinal:    string;        // IND_DC_FIN — campo [12] estendido / [10] padrão
+  status:           string;
 }
 
 export type RegimeTributario =
@@ -77,15 +84,33 @@ function processarBP(
   incs: EcfParseResult['inconsistencias'],
 ) {
   if (campos.length < 8) return;
-  const cod  = (campos[1] ?? '').trim();
-  const desc = (campos[2] ?? '').trim();
+  // Leiaute L100/P100/U100 (índices):
+  //   [1]=COD_CTA  [2]=DS_CTA  [3]=IND_CTA(S/A)  [4]=NIVEL
+  //   [7]=VAL_INI  [8]=IND_DC_INI  [9]=VAL_FIN  [10]=IND_DC_FIN
+  //   Formato estendido (12+ campos): VAL_FIN=[11]  IND_DC_FIN=[12]
+  const cod    = (campos[1] ?? '').trim();
+  const desc   = (campos[2] ?? '').trim();
+  const raw = campos[3]?.trim() ?? '';
+  const indCta = (raw === 'S' || raw === 'A') ? raw : null;
+  const nivel  = Number.parseInt(campos[4] ?? '', 10) || null;
   try {
-    // Formato padrão P100/L100/U100 — 11 campos (índices 0-10):
-    //   [7]=VAL_INI [8]=IND_INI [9]=VAL_FIN [10]=IND_FIN
-    // Formato estendido (12+ campos): VAL_FIN em [11], IND_FIN em [12]
-    const [colVal, colDc] = campos.length >= 12 ? [11, 12] : [9, 10];
-    const valor = valorComSinal(campos, colVal, colDc, 'D');
-    registros.push({ registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
+    const extended = campos.length >= 12;
+    const [colValFin, colDcFin] = extended ? [11, 12] : [9, 10];
+    registros.push({
+      registroEcf:      reg,
+      trimestre,
+      linhaCodigo:      cod,
+      descricao:        desc,
+      indCta,
+      nivel,
+      saldoAnterior:    parseValorBr(campos[7] ?? ''),
+      naturezaAnterior: (campos[8] ?? 'D').trim() || 'D',
+      totalDebitos:     extended ? parseValorBr(campos[9]  ?? '') : null,
+      totalCreditos:    extended ? parseValorBr(campos[10] ?? '') : null,
+      valor:            valorComSinal(campos, colValFin, colDcFin, 'D'),
+      naturezaFinal:    (campos[colDcFin] ?? 'D').trim() || 'D',
+      status:           'ok',
+    });
   } catch {
     incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
   }
@@ -104,8 +129,15 @@ function processarDRE(
   const cod  = (campos[1] ?? '').trim();
   const desc = (campos[2] ?? '').trim();
   try {
-    const valor = valorComSinal(campos, 7, 8, 'C');
-    registros.push({ registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc, valor, status: 'ok' });
+    registros.push({
+      registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc,
+      indCta: null, nivel: null,
+      saldoAnterior: 0, naturezaAnterior: 'C',
+      totalDebitos: null, totalCreditos: null,
+      valor: valorComSinal(campos, 7, 8, 'C'),
+      naturezaFinal: 'C',
+      status: 'ok',
+    });
   } catch {
     incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
   }
@@ -114,12 +146,16 @@ function processarDRE(
 function processarLalur(rec: 'M300' | 'M350', campos: string[], registros: EcfRegistroRow[]) {
   if (campos.length < 4) return;
   registros.push({
-    registroEcf: rec,
-    trimestre:   0,  // LALUR não é trimestral
-    linhaCodigo: (campos[1] ?? '').trim(),
-    descricao:   (campos[2] ?? '').trim(),
-    valor:       parseValorBr(campos[3] ?? ''),
-    status:      'ok',
+    registroEcf:      rec,
+    trimestre:        0,
+    linhaCodigo:      (campos[1] ?? '').trim(),
+    descricao:        (campos[2] ?? '').trim(),
+    indCta:           null, nivel: null,
+    saldoAnterior:    0,    naturezaAnterior: 'D',
+    totalDebitos:     null, totalCreditos: null,
+    valor:            parseValorBr(campos[3] ?? ''),
+    naturezaFinal:    'D',
+    status:           'ok',
   });
 }
 

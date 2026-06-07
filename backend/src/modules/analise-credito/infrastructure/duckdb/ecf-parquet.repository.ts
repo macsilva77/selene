@@ -61,11 +61,15 @@ export class EcfParquetRepository {
         // 2. Registros do trimestre ativo (+ filtro de prefixo opcional)
         const hasPrefixo = Boolean(opts.linhaCodigoPrefixo);
         const sql = hasPrefixo
-          ? `SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
+          ? `SELECT registro_ecf, trimestre, linha_codigo, descricao,
+                    ind_cta, nivel, saldo_anterior, natureza_anterior,
+                    total_debitos, total_creditos, valor, natureza_final, status
              FROM read_parquet($1)
              WHERE registro_ecf = $2 AND trimestre = $3 AND starts_with(linha_codigo, $4)
              ORDER BY linha_codigo ASC`
-          : `SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
+          : `SELECT registro_ecf, trimestre, linha_codigo, descricao,
+                    ind_cta, nivel, saldo_anterior, natureza_anterior,
+                    total_debitos, total_creditos, valor, natureza_final, status
              FROM read_parquet($1)
              WHERE registro_ecf = $2 AND trimestre = $3
              ORDER BY linha_codigo ASC`;
@@ -89,7 +93,7 @@ export class EcfParquetRepository {
     return this.withTempFile(buffer, async (fp) => {
       const p      = toDuckPath(fp);
       const params = buildParams(p, opts);
-      const sql    = buildSql(params.count, opts);
+      const sql    = buildSelectSql(params.count, opts);
       const rows   = await this.duckdb.query<RawRow>(sql, params.values);
       return rows.map(toEcfRow);
     });
@@ -120,22 +124,36 @@ export class EcfParquetRepository {
 // ─── Tipos e helpers internos ─────────────────────────────────────────────────
 
 interface RawRow {
-  registro_ecf: string;
-  trimestre:    number;
-  linha_codigo: string;
-  descricao:    string;
-  valor:        number;
-  status:       string;
+  registro_ecf:       string;
+  trimestre:          number;
+  linha_codigo:       string;
+  descricao:          string;
+  ind_cta:            string | null;
+  nivel:              number | null;
+  saldo_anterior:     number;
+  natureza_anterior:  string;
+  total_debitos:      number | null;
+  total_creditos:     number | null;
+  valor:              number;
+  natureza_final:     string;
+  status:             string;
 }
 
 function toEcfRow(r: RawRow): EcfRegistroRow {
   return {
-    registroEcf: r.registro_ecf,
-    trimestre:   Number(r.trimestre),
-    linhaCodigo: r.linha_codigo,
-    descricao:   r.descricao,
-    valor:       Number(r.valor),
-    status:      r.status,
+    registroEcf:      r.registro_ecf,
+    trimestre:        Number(r.trimestre),
+    linhaCodigo:      r.linha_codigo,
+    descricao:        r.descricao,
+    indCta:           (r.ind_cta === 'S' || r.ind_cta === 'A') ? r.ind_cta : null,
+    nivel:            r.nivel === null ? null : Number(r.nivel),
+    saldoAnterior:    Number(r.saldo_anterior ?? 0),
+    naturezaAnterior: r.natureza_anterior ?? 'D',
+    totalDebitos:     r.total_debitos === null ? null : Number(r.total_debitos),
+    totalCreditos:    r.total_creditos === null ? null : Number(r.total_creditos),
+    valor:            Number(r.valor),
+    naturezaFinal:    r.natureza_final ?? 'D',
+    status:           r.status,
   };
 }
 
@@ -151,7 +169,7 @@ function buildParams(filePath: string, opts: EcfConsultaOptions): { count: numbe
   return { count: values.length, values };
 }
 
-function buildSql(paramCount: number, opts: EcfConsultaOptions): string {
+function buildSelectSql(paramCount: number, opts: EcfConsultaOptions): string {
   const clauses: string[] = [];
   let i = 2; // $1 = filePath
   if (opts.registroEcf)             clauses.push(`registro_ecf = $${i++}`);
@@ -159,6 +177,8 @@ function buildSql(paramCount: number, opts: EcfConsultaOptions): string {
   if (opts.linhaCodigoPrefixo)      clauses.push(`starts_with(linha_codigo, $${i++})`);
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-  return `SELECT registro_ecf, trimestre, linha_codigo, descricao, valor, status
+  return `SELECT registro_ecf, trimestre, linha_codigo, descricao,
+                 ind_cta, nivel, saldo_anterior, natureza_anterior,
+                 total_debitos, total_creditos, valor, natureza_final, status
           FROM read_parquet($1) ${where} ORDER BY linha_codigo ASC`;
 }

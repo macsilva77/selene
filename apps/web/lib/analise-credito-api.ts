@@ -91,12 +91,12 @@ export interface DemonstracaoRow {
   tipo?:           'S' | 'A' | null;  // Sintética / Analítica
   natureza:        'DEVEDOR' | 'CREDOR';
   fonte?:          string;
-  // Campos de movimentação — preenchidos apenas via ECD (fallback)
-  saldoAnterior?:   string | null;
+  // Campos de movimentação — extraídos do próprio ECF L100 (campos VAL_INI, VL_DEB, VL_CRE, IND_DC)
+  saldoAnterior?:    string | null;
   naturezaAnterior?: string | null; // 'D' | 'C'
-  totalDebitos?:    string | null;
-  totalCreditos?:   string | null;
-  naturezaFinal?:   string | null;  // 'D' | 'C'
+  totalDebitos?:     string | null;
+  totalCreditos?:    string | null;
+  naturezaFinal?:    string | null; // 'D' | 'C'
 }
 
 export interface DemonstracaoResult {

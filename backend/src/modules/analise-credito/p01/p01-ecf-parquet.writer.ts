@@ -32,24 +32,36 @@ export class EcfParquetWriter {
       // 1. Cria tabela temporária na instância in-memory
       await conn.run(`
         CREATE TABLE ${tableId} (
-          registro_ecf VARCHAR NOT NULL,
-          trimestre    INTEGER NOT NULL,
-          linha_codigo VARCHAR NOT NULL,
-          descricao    VARCHAR NOT NULL,
-          valor        DOUBLE  NOT NULL,
-          status       VARCHAR NOT NULL
+          registro_ecf       VARCHAR  NOT NULL,
+          trimestre          INTEGER  NOT NULL,
+          linha_codigo       VARCHAR  NOT NULL,
+          descricao          VARCHAR  NOT NULL,
+          ind_cta            VARCHAR,
+          nivel              INTEGER,
+          saldo_anterior     DOUBLE   NOT NULL DEFAULT 0,
+          natureza_anterior  VARCHAR  NOT NULL DEFAULT 'D',
+          total_debitos      DOUBLE,
+          total_creditos     DOUBLE,
+          valor              DOUBLE   NOT NULL,
+          natureza_final     VARCHAR  NOT NULL DEFAULT 'D',
+          status             VARCHAR  NOT NULL
         )
       `);
 
-      // 2. Bulk insert via Appender — muito mais rápido que INSERT VALUES em loop
-      //    createAppender(table, schema?) — tabela é o primeiro parâmetro
       const appender = await conn.createAppender(tableId);
       for (const row of rows) {
         appender.appendVarchar(row.registroEcf);
         appender.appendInteger(row.trimestre);
         appender.appendVarchar(row.linhaCodigo);
         appender.appendVarchar(row.descricao);
+        row.indCta ? appender.appendVarchar(row.indCta) : appender.appendNull();
+        row.nivel  ? appender.appendInteger(row.nivel)  : appender.appendNull();
+        appender.appendDouble(row.saldoAnterior);
+        appender.appendVarchar(row.naturezaAnterior);
+        row.totalDebitos  !== null ? appender.appendDouble(row.totalDebitos)  : appender.appendNull();
+        row.totalCreditos !== null ? appender.appendDouble(row.totalCreditos) : appender.appendNull();
         appender.appendDouble(row.valor);
+        appender.appendVarchar(row.naturezaFinal);
         appender.appendVarchar(row.status);
         appender.endRow();
       }

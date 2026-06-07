@@ -414,6 +414,8 @@ export class AnaliseCreditoController {
     // consultarComTrimestres: buffer Parquet escrito em /tmp apenas 1× por candidato
     const candidatos = this.registrosPorRegime(empresa.regimeTributario, tipo === 'dre' ? 'dre' : 'bp');
 
+    const ehBP = tipo !== 'dre';
+
     for (const registroEcf of candidatos) {
       const resultado = await this.ecfDataSource.consultarComTrimestres(
         empresa.id, exercicio, registroEcf, trimestreReq, contaRef?.trim() || undefined,
@@ -421,7 +423,6 @@ export class AnaliseCreditoController {
       if (!resultado || resultado.registros.length === 0) continue;
 
       const { trimestres, trimestreAtivo, registros } = resultado;
-      const ehBP = ['L100', 'P100', 'U100'].includes(registroEcf);
       const parentCodes = new Set(
         registros.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
       );
@@ -432,19 +433,20 @@ export class AnaliseCreditoController {
           linhaCodigo:     r.linhaCodigo,
           descricao:       r.descricao,
           valor:           new Decimal(r.valor),
-          nivel:           r.linhaCodigo.split('.').length,
+          // indCta do ECF tem precedência; fallback pela presença de filhos
+          tipo:            r.indCta ?? (parentCodes.has(r.linhaCodigo) ? 'S' : 'A'),
+          nivel:           r.nivel ?? r.linhaCodigo.split('.').length,
           haFilhos:        parentCodes.has(r.linhaCodigo),
-          tipo:            parentCodes.has(r.linhaCodigo) ? 'S' : 'A',
           natureza:        ehBP
             ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
             : (r.valor >= 0 ? 'CREDOR' : 'DEVEDOR'),
           fonte:           registroEcf.toLowerCase(),
-          // Campos de movimentação — disponíveis apenas via ECD (fallback)
-          saldoAnterior:   null as Decimal | null,
-          naturezaAnterior: null as string | null,
-          totalDebitos:    null as Decimal | null,
-          totalCreditos:   null as Decimal | null,
-          naturezaFinal:   null as string | null,
+          // Campos de movimentação — extraídos do próprio ECF (campos [7-12])
+          saldoAnterior:   r.saldoAnterior !== 0 ? new Decimal(r.saldoAnterior) : null,
+          naturezaAnterior: r.naturezaAnterior || null,
+          totalDebitos:    r.totalDebitos !== null ? new Decimal(r.totalDebitos) : null,
+          totalCreditos:   r.totalCreditos !== null ? new Decimal(r.totalCreditos) : null,
+          naturezaFinal:   r.naturezaFinal || null,
         })),
       };
     }
