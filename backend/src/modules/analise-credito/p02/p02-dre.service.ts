@@ -188,15 +188,7 @@ export class P02DreService {
     registros: { linhaCodigo: string; descricao: string; valor: Decimal }[],
     alertas: string[],
   ) {
-    const lucroLiq = acc.get('lucro_liquido') ?? null;
-    if (lucroLiq === null) return;
-
-    const irCsll  = acc.get('ir_csll')         ?? new Decimal(0);
-    const despFin = acc.get('desp_financeiras') ?? new Decimal(0);
-    const recFin  = acc.get('rec_financeiras')  ?? new Decimal(0);
-    const ebit    = lucroLiq.add(irCsll).add(despFin).minus(recFin);
-    acc.set('ebit', ebit);
-
+    // Depreciação: mapa ou busca por descrição
     let deprec = acc.get('depreciacao') ?? new Decimal(0);
     if (deprec.isZero()) {
       deprec = registros
@@ -206,15 +198,38 @@ export class P02DreService {
         })
         .reduce((s, r) => s.add(abs(r.valor)), new Decimal(0));
     }
+    if (deprec.greaterThan(0)) acc.set('depreciacao', deprec);
+    else acc.set('depreciacao', new Decimal(0));
 
-    if (deprec.greaterThan(0)) {
-      acc.set('depreciacao', deprec);
-      acc.set('ebitda', ebit.add(deprec));
-    } else {
-      alertas.push('Depreciação não encontrada — EBITDA = EBIT');
-      acc.set('depreciacao', new Decimal(0));
-      acc.set('ebitda', ebit);
+    // ── Caminho primário: top-down a partir da Receita Líquida ────────────────
+    // Mais robusto que o add-back (LL + IR + DespFin - RecFin) porque não depende
+    // de rec_financeiras estar corretamente mapeada no ECF da empresa.
+    const rl = acc.get('receita_liquida');
+    if (rl?.greaterThan(0)) {
+      const cmv  = acc.get('cmv')        ?? new Decimal(0);
+      const dV   = acc.get('desp_vendas')  ?? new Decimal(0);
+      const dA   = acc.get('desp_admin')   ?? new Decimal(0);
+      const oD   = acc.get('outras_desp')  ?? new Decimal(0);
+      const oR   = acc.get('outras_rec')   ?? new Decimal(0);
+      const ebit  = rl.minus(cmv).minus(dV).minus(dA).minus(oD).add(oR).minus(deprec);
+      const ebitda = ebit.add(deprec);
+      acc.set('ebit',   ebit);
+      acc.set('ebitda', ebitda);
+      if (!deprec.greaterThan(0)) alertas.push('Depreciação não encontrada — EBITDA = EBIT');
+      return;
     }
+
+    // ── Fallback: add-back a partir do Lucro Líquido ──────────────────────────
+    const lucroLiq = acc.get('lucro_liquido') ?? null;
+    if (lucroLiq === null) return;
+
+    const irCsll  = acc.get('ir_csll')         ?? new Decimal(0);
+    const despFin = acc.get('desp_financeiras') ?? new Decimal(0);
+    const recFin  = acc.get('rec_financeiras')  ?? new Decimal(0);
+    const ebit    = lucroLiq.add(irCsll).add(despFin).minus(recFin);
+    acc.set('ebit',   ebit);
+    acc.set('ebitda', deprec.greaterThan(0) ? ebit.add(deprec) : ebit);
+    if (!deprec.greaterThan(0)) alertas.push('Depreciação não encontrada — EBITDA = EBIT');
   }
 
   private derivarLucroLiquido(acc: Map<LinhaDre, Decimal>, alertas: string[]) {
