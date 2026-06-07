@@ -862,19 +862,84 @@ export class AnaliseCreditoController {
       throw new BadRequestException('CNPJ deve ter exatamente 14 dígitos numéricos');
   }
 
-  // ─── Conversores ECF → BalData / DreData (para cálculo on-the-fly) ───────────
+  // ─── Conversores ECF → BalData / DreData (cálculo on-the-fly direto do Parquet) ─
 
+  /**
+   * Lê o Balanço Patrimonial direto do ECF (L100/P100/U100) usando a abordagem de
+   * nó-raiz: para cada grupo/subgrupo usa o código de menor profundidade que já
+   * representa o valor agregado — evita dupla contagem de pai + filhos.
+   */
   private async ecfBalData(empresaId: string, exercicio: number, regime: string | null): Promise<BalData | null> {
-    try {
-      const res = await this.balancoService.montar(empresaId, exercicio, regime);
-      const bal: BalData = new Map();
-      for (const row of res.linhas) {
-        if (!bal.has(row.grupo)) bal.set(row.grupo, new Map());
-        const g = bal.get(row.grupo)!;
-        g.set(row.subgrupo, (g.get(row.subgrupo) ?? new Decimal(0)).add(row.valor));
-      }
-      return bal;
-    } catch { return null; }
+    const candidatos = this.registrosPorRegime(regime, 'bp');
+    for (const registroEcf of candidatos) {
+      try {
+        const trims = await this.ecfDataSource.trimestresDisponiveis(empresaId, exercicio, registroEcf);
+        if (trims.length === 0) continue;
+        const trimestre = trims.includes(4) ? 4 : Math.max(...trims);
+        const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
+        if (rows.length === 0) continue;
+
+        // Nó-raiz: menor profundidade entre todos que começam com o prefixo
+        const rootVal = (prefix: string): Decimal => {
+          const matching = rows.filter(r => r.linhaCodigo.startsWith(prefix));
+          if (!matching.length) return new Decimal(0);
+          const root = matching.reduce((best, r) =>
+            r.linhaCodigo.split('.').length < best.linhaCodigo.split('.').length ? r : best,
+          );
+          return new Decimal(root.valor).abs();
+        };
+
+        // Totais por grupo
+        const acTot  = rootVal('1.01');
+        const ancTot = rootVal('1.02');
+        const pcTot  = rootVal('2.01');
+        const pncTot = rootVal('2.02');
+        const plTot  = rootVal('2.03');
+        if (acTot.isZero() && plTot.isZero()) continue; // sem dados úteis
+
+        // Subgrupos AC
+        const caixa    = rootVal('1.01.01');
+        const clientes = rootVal('1.01.02');
+        const estoques = rootVal('1.01.03');
+        const acOutros = Decimal.max(0, acTot.minus(caixa).minus(clientes).minus(estoques));
+
+        // Subgrupos ANC
+        const rlp     = rootVal('1.02.01');
+        const ancOutros = Decimal.max(0, ancTot.minus(rlp));
+
+        // Subgrupos PC
+        const fornec  = rootVal('2.01.01.01');
+        const empCP   = Decimal.min(rootVal('2.01.01.04').add(rootVal('2.01.02')), pcTot);
+        const pcOutros = Decimal.max(0, pcTot.minus(fornec).minus(empCP));
+
+        // Subgrupos PNC
+        const empLP   = Decimal.min(rootVal('2.02.01').add(rootVal('2.02.02')), pncTot);
+        const pncOutros = Decimal.max(0, pncTot.minus(empLP));
+
+        const bal: BalData = new Map();
+        const set = (g: string, s: string, v: Decimal) => {
+          if (!v.greaterThan(0)) return;
+          if (!bal.has(g)) bal.set(g, new Map());
+          bal.get(g)!.set(s, (bal.get(g)!.get(s) ?? new Decimal(0)).add(v));
+        };
+
+        set('AC',  'Caixa e Equivalentes', caixa);
+        set('AC',  'Contas a Receber',     clientes);
+        set('AC',  'Estoques',             estoques);
+        set('AC',  'Outros',               acOutros);
+        set('ANC', 'RLP',                  rlp);
+        set('ANC', 'Outros',               ancOutros);
+        set('PC',  'Fornecedores',         fornec);
+        set('PC',  'Empréstimos CP',       empCP);
+        set('PC',  'Outros',               pcOutros);
+        set('PNC', 'Empréstimos LP',       empLP);
+        set('PNC', 'Outros',               pncOutros);
+        set('PL',  'Total',                plTot);
+
+        return bal;
+      } catch { continue; }
+    }
+    return null;
   }
 
   private async ecfDreData(empresaId: string, exercicio: number, regime: string | null): Promise<DreData | null> {
