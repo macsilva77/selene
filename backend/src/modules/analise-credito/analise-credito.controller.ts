@@ -407,6 +407,87 @@ export class AnaliseCreditoController {
     return { exercicio, dre, estrutura: estruturaResp, processando };
   }
 
+  /** KPIs primários (Receita Líquida, EBITDA, Lucro Líquido, PL) para todos os exercícios */
+  @Get('empresas/:cnpj/kpis-anuais')
+  async kpisAnuais(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+  ) {
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    // Descobre todos os exercícios disponíveis no ECF
+    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
+      where:  { empresaId: empresa.id },
+      select: { exercicio: true },
+      distinct: ['exercicio'],
+    });
+    const exercicios = ecfAnos.map(r => r.exercicio).sort((a, b) => b - a);
+    if (exercicios.length === 0) return [];
+
+    const DRE_LINHAS = ['receita_liquida', 'ebitda', 'lucro_liquido'];
+
+    // Busca pipeline + ECF em paralelo para todos os anos
+    const [dresPipeline, estruturasPipeline] = await Promise.all([
+      this.prisma.creditoDre.findMany({
+        where:  { empresaId: empresa.id, exercicio: { in: exercicios }, linhaDre: { in: DRE_LINHAS } },
+        select: { exercicio: true, linhaDre: true, valor: true },
+      }),
+      this.prisma.creditoEstruturaCapital.findMany({
+        where:  { empresaId: empresa.id, exercicio: { in: exercicios } },
+        select: { exercicio: true, pl: true },
+      }),
+    ]);
+
+    // Indexa os resultados do pipeline
+    const dreMap = new Map<number, Map<string, string>>();
+    for (const r of dresPipeline) {
+      if (!dreMap.has(r.exercicio)) dreMap.set(r.exercicio, new Map());
+      dreMap.get(r.exercicio)!.set(r.linhaDre, r.valor.toString());
+    }
+    const plMap = new Map<number, string>();
+    for (const e of estruturasPipeline) {
+      if (e.pl != null) plMap.set(e.exercicio, e.pl.toString());
+    }
+
+    // Monta KPIs por ano, com fallback ECF quando pipeline não rodou
+    const resultado = await Promise.all(exercicios.map(async ano => {
+      const drePipe = dreMap.get(ano);
+
+      let receitaLiquida: string | null = drePipe?.get('receita_liquida') ?? null;
+      let ebitda:         string | null = drePipe?.get('ebitda')          ?? null;
+      let lucroLiquido:   string | null = drePipe?.get('lucro_liquido')   ?? null;
+      let pl:             string | null = plMap.get(ano)                  ?? null;
+
+      // Fallback ECF se pipeline não tem dados
+      if (!drePipe || drePipe.size === 0) {
+        try {
+          const dreEcf = await this.dreService.montar(empresa.id, ano, empresa.regimeTributario);
+          for (const row of dreEcf.linhas) {
+            if (row.linhaDre === 'receita_liquida') receitaLiquida = row.valor.toString();
+            if (row.linhaDre === 'ebitda')          ebitda         = row.valor.toString();
+            if (row.linhaDre === 'lucro_liquido')   lucroLiquido   = row.valor.toString();
+          }
+        } catch { /* ECF ausente */ }
+      }
+      if (pl === null) {
+        try {
+          const balEcf = await this.balancoService.montar(empresa.id, ano, empresa.regimeTributario);
+          const plTotal = balEcf.linhas
+            .filter(r => r.grupo === 'PL')
+            .reduce((acc, r) => acc.add(r.valor), new Decimal(0));
+          if (plTotal.gt(0)) pl = plTotal.toString();
+        } catch { /* ECF ausente */ }
+      }
+
+      return { exercicio: ano, receitaLiquida, ebitda, lucroLiquido, pl };
+    }));
+
+    return resultado;
+  }
+
   /** Exercícios disponíveis para um CNPJ (ECF ou ECD processados) */
   @Get('empresas/:cnpj/exercicios')
   async exercicios(

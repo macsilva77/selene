@@ -25,8 +25,10 @@ import {
   type Classificacao,
   type Inconsistencia,
   type ResumoFinanceiro,
+  type KpiAnual,
 } from '@/lib/analise-credito-api';
-import { VisaoGeral } from './visao-geral';
+import { VisaoGeral }    from './visao-geral';
+import { KpisAnuais }    from './kpis-anuais';
 import { PipelineStepper } from './pipeline-stepper';
 
 /* ─── Helpers visuais ────────────────────────────────────────────────────── */
@@ -89,6 +91,7 @@ export function AnaliseCreditoDashboard() {
   const [inconsistencias, setInconsistencias] = useState<Inconsistencia[]>([]);
   const [financeiro, setFinanceiro]           = useState<ResumoFinanceiro | null>(null);
   const [financeiroPrevio, setFinanceiroPrevio] = useState<ResumoFinanceiro | null>(null);
+  const [kpisAnuais, setKpisAnuais]           = useState<KpiAnual[]>([]);
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
 
   const pollCountRef = useRef(0);
@@ -118,18 +121,20 @@ export function AnaliseCreditoDashboard() {
     if (!cnpj) return;
     setCarregando(true);
     try {
-      const [status, inds, als, cls, incs] = await Promise.all([
+      const [status, inds, als, cls, incs, kpis] = await Promise.all([
         analiseCreditoApi.statusPipeline(cnpj),
         analiseCreditoApi.indicadores(cnpj),
         analiseCreditoApi.alertas(cnpj),
         analiseCreditoApi.classificacao(cnpj),
         analiseCreditoApi.inconsistencias(cnpj),
+        analiseCreditoApi.kpisAnuais(cnpj).catch(() => [] as KpiAnual[]),
       ]);
       setStatusData(status ?? []);
       setIndicadores(inds);
       setAlertas(als);
       setClassificacao(cls);
       setInconsistencias(incs);
+      setKpisAnuais(kpis);
       const exercicioAlvo = exercicio ?? status?.[0]?.exercicio;
       if (exercicioAlvo) void carregarFinanceiro(cnpj, exercicioAlvo);
     } catch {
@@ -434,13 +439,23 @@ export function AnaliseCreditoDashboard() {
               <>
                 {/* ── Visão geral ── */}
                 {tab === 'visao' && (
-                  <VisaoGeral
-                    exercicio={exercicioAtivo ?? 0}
-                    indicadores={indicadores}
-                    alertas={alertas}
-                    financeiro={financeiro}
-                    financeiroPrevio={financeiroPrevio}
-                  />
+                  <div className="flex flex-col gap-6">
+                    {kpisAnuais.length > 0 && (
+                      <div>
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          KPIs por exercício
+                        </p>
+                        <KpisAnuais kpis={kpisAnuais} />
+                      </div>
+                    )}
+                    <VisaoGeral
+                      exercicio={exercicioAtivo ?? 0}
+                      indicadores={indicadores}
+                      alertas={alertas}
+                      financeiro={financeiro}
+                      financeiroPrevio={financeiroPrevio}
+                    />
+                  </div>
                 )}
 
                 {/* ── Estrutura de capital ── */}

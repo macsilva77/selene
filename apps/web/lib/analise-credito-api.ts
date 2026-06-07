@@ -115,6 +115,14 @@ export interface Inconsistencia {
   criadoEm:   string;
 }
 
+export interface KpiAnual {
+  exercicio:      number;
+  receitaLiquida: string | null;
+  ebitda:         string | null;
+  lucroLiquido:   string | null;
+  pl:             string | null;
+}
+
 /* ─── API calls ──────────────────────────────────────────────────────────── */
 
 export const analiseCreditoApi = {
@@ -161,6 +169,10 @@ export const analiseCreditoApi = {
     api.get<DemonstracaoResult>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/demonstracoes`, {
       params: { tipo, exercicio, ...(contaRef ? { contaRef } : {}), ...(trimestre === undefined ? {} : { trimestre }) },
     }).then(r => r.data),
+
+  /** KPIs primários para todos os exercícios disponíveis */
+  kpisAnuais: (cnpj: string) =>
+    api.get<KpiAnual[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/kpis-anuais`).then(r => r.data),
 
   /** Dispara pipeline completo P01→P04 para o tenant inteiro */
   dispararPipeline: () =>
