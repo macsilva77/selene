@@ -43,7 +43,8 @@ export class EcfParquetRepository {
       const p    = toDuckPath(fp);
       const conn = await this.duckdb.connect();
       try {
-        // 1. Trimestres disponíveis para este tipo de registro
+        const novoSchema = await this.detectarNovoSchema(conn, p);
+
         const trimReader = await conn.runAndReadAll(
           `SELECT DISTINCT trimestre FROM read_parquet($1)
            WHERE registro_ecf = $2 ORDER BY trimestre ASC`,
@@ -58,23 +59,9 @@ export class EcfParquetRepository {
           ? opts.trimestre
           : Math.max(...trimestres);
 
-        // 2. Registros do trimestre ativo (+ filtro de prefixo opcional)
         const hasPrefixo = Boolean(opts.linhaCodigoPrefixo);
-        const sql = hasPrefixo
-          ? `SELECT registro_ecf, trimestre, linha_codigo, descricao,
-                    ind_cta, nivel, saldo_anterior, natureza_anterior,
-                    total_debitos, total_creditos, valor, natureza_final, status
-             FROM read_parquet($1)
-             WHERE registro_ecf = $2 AND trimestre = $3 AND starts_with(linha_codigo, $4)
-             ORDER BY linha_codigo ASC`
-          : `SELECT registro_ecf, trimestre, linha_codigo, descricao,
-                    ind_cta, nivel, saldo_anterior, natureza_anterior,
-                    total_debitos, total_creditos, valor, natureza_final, status
-             FROM read_parquet($1)
-             WHERE registro_ecf = $2 AND trimestre = $3
-             ORDER BY linha_codigo ASC`;
-
-        const params: unknown[] = hasPrefixo
+        const sql    = buildSelectSql(hasPrefixo ? 4 : 3, opts, novoSchema);
+        const params = hasPrefixo
           ? [p, opts.registroEcf, trimestreAtivo, opts.linhaCodigoPrefixo]
           : [p, opts.registroEcf, trimestreAtivo];
 
@@ -91,12 +78,30 @@ export class EcfParquetRepository {
   /** Consulta genérica — para uso em P02 que não precisa de trimestres. */
   async consultar(buffer: Buffer, opts: EcfConsultaOptions = {}): Promise<EcfRegistroRow[]> {
     return this.withTempFile(buffer, async (fp) => {
-      const p      = toDuckPath(fp);
-      const params = buildParams(p, opts);
-      const sql    = buildSelectSql(params.count, opts);
-      const rows   = await this.duckdb.query<RawRow>(sql, params.values);
-      return rows.map(toEcfRow);
+      const p         = toDuckPath(fp);
+      const conn      = await this.duckdb.connect();
+      try {
+        const novoSchema = await this.detectarNovoSchema(conn, p);
+        const params     = buildParams(p, opts);
+        const sql        = buildSelectSql(params.count, opts, novoSchema);
+        const reader     = await conn.runAndReadAll(sql, params.values);
+        return (reader.getRowObjects() as unknown as RawRow[]).map(toEcfRow);
+      } finally {
+        conn.closeSync();
+      }
     });
+  }
+
+  /**
+   * Verifica se o Parquet foi gerado com o novo schema (contém ind_cta).
+   * Parquets antigos (pré-v5) não têm as colunas de movimentação.
+   */
+  private async detectarNovoSchema(conn: import('@duckdb/node-api').DuckDBConnection, filePath: string): Promise<boolean> {
+    const result = await conn.runAndReadAll(
+      `SELECT COUNT(*) > 0 AS tem FROM parquet_schema('${filePath}') WHERE name = 'ind_cta'`,
+    );
+    const rows = result.getRowObjects() as { tem: boolean }[];
+    return rows[0]?.tem === true;
   }
 
   async trimestresDisponiveis(buffer: Buffer, registroEcf: string): Promise<number[]> {
@@ -169,7 +174,7 @@ function buildParams(filePath: string, opts: EcfConsultaOptions): { count: numbe
   return { count: values.length, values };
 }
 
-function buildSelectSql(paramCount: number, opts: EcfConsultaOptions): string {
+function buildSelectSql(paramCount: number, opts: EcfConsultaOptions, novoSchema = true): string {
   const clauses: string[] = [];
   let i = 2; // $1 = filePath
   if (opts.registroEcf)             clauses.push(`registro_ecf = $${i++}`);
@@ -177,8 +182,14 @@ function buildSelectSql(paramCount: number, opts: EcfConsultaOptions): string {
   if (opts.linhaCodigoPrefixo)      clauses.push(`starts_with(linha_codigo, $${i++})`);
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  // Parquets antigos (pré-migração) não têm as colunas de movimentação.
+  // Usamos NULLs e constantes para manter o contrato de EcfRegistroRow.
+  const movCols = novoSchema
+    ? `ind_cta, nivel, saldo_anterior, natureza_anterior, total_debitos, total_creditos, valor, natureza_final`
+    : `NULL AS ind_cta, NULL AS nivel, 0.0 AS saldo_anterior, 'D' AS natureza_anterior, NULL AS total_debitos, NULL AS total_creditos, valor, 'D' AS natureza_final`;
+
   return `SELECT registro_ecf, trimestre, linha_codigo, descricao,
-                 ind_cta, nivel, saldo_anterior, natureza_anterior,
-                 total_debitos, total_creditos, valor, natureza_final, status
+                 ${movCols}, status
           FROM read_parquet($1) ${where} ORDER BY linha_codigo ASC`;
 }
