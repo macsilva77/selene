@@ -143,10 +143,6 @@ export function AnaliseCreditoDashboard() {
     if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
   }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
 
-  // Reseta o flag quando o usuário troca de empresa (fix: pipelineAtivo stale)
-  useEffect(() => {
-    setPipelineAtivo(false);
-  }, [cnpjSelecionado]);
 
   // Polling a cada 4s — com guard de comprimento (fix: every([])===true) e timeout (fix: loop infinito)
   useEffect(() => {
@@ -223,10 +219,7 @@ export function AnaliseCreditoDashboard() {
     }
   }
 
-  const empresaSelecionada = useMemo(
-    () => empresas.find(e => e.cnpj === cnpjSelecionado),
-    [empresas, cnpjSelecionado],
-  );
+  const empresaSelecionada = empresas.find(e => e.cnpj === cnpjSelecionado);
 
   const exerciciosDisponiveis = useMemo(() => (
     [...new Set([
@@ -318,7 +311,7 @@ export function AnaliseCreditoDashboard() {
               id="sel-empresa"
               className="h-9 min-w-[320px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               value={cnpjSelecionado}
-              onChange={e => { setCnpjSelecionado(e.target.value); setExercicioFiltro(undefined); }}
+              onChange={e => { setCnpjSelecionado(e.target.value); setExercicioFiltro(undefined); setPipelineAtivo(false); }}
             >
               <option value="">Selecione uma empresa…</option>
               {empresas.map(e => (
