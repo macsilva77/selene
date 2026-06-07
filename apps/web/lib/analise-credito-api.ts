@@ -70,6 +70,7 @@ export interface ClassificacaoRisco {
 
 export interface ResumoFinanceiro {
   exercicio:      number;
+  processando:    boolean;                  // true = P02 ainda não rodou para este exercício
   dre: Record<string, string | null>;       // linhaDre → valor (string Decimal)
   estrutura: {
     ativoTotal:          string | null;
@@ -161,9 +162,13 @@ export const analiseCreditoApi = {
       params: { tipo, exercicio, ...(contaRef ? { contaRef } : {}), ...(trimestre === undefined ? {} : { trimestre }) },
     }).then(r => r.data),
 
-  /** Dispara pipeline completo P01→P04 */
+  /** Dispara pipeline completo P01→P04 para o tenant inteiro */
   dispararPipeline: () =>
     api.post('/analise-credito/pipeline/processar').then(r => r.data),
+
+  /** Dispara pipeline P01→P04 para um CNPJ específico */
+  dispararPipelineCnpj: (cnpj: string) =>
+    api.post(`/analise-credito/pipeline/processar/${encodeURIComponent(cnpj)}`).then(r => r.data),
 
   /** Apaga dados calculados P02→P04 (balanco, dre, indicadores, alertas, classificações) */
   resetarDados: (): Promise<{ mensagem: string; totais: Record<string, number> }> =>

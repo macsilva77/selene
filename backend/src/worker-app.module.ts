@@ -6,7 +6,8 @@ import configuration from './config/configuration';
 import { AppConfigModule } from './config/app-config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisCacheModule } from './modules/cache/cache.module';
-import { DfeDistribuicaoWorkerModule } from './modules/dfe-distribuicao/dfe-distribuicao-worker.module';
+import { DfeDistribuicaoWorkerModule }    from './modules/dfe-distribuicao/dfe-distribuicao-worker.module';
+import { AnaliseCreditoWorkerModule }     from './modules/analise-credito/analise-credito-worker.module';
 
 /**
  * Módulo raiz do processo Worker.
@@ -32,22 +33,35 @@ import { DfeDistribuicaoWorkerModule } from './modules/dfe-distribuicao/dfe-dist
     ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        redis: {
-          host: config.get<string>('redis.host'),
-          port: config.get<number>('redis.port'),
-          password: config.get<string>('redis.password') || undefined,
-          retryStrategy: (times: number) =>
-            times > 6 ? null : Math.min(times * 2000, 10_000),
-        },
-        defaultJobOptions: {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 5000 },
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const redisPassword = config.get<string>('redis.password') || undefined;
+        const isProduction  = config.get<string>('nodeEnv') === 'production';
+        if (isProduction && !redisPassword) {
+          throw new Error(
+            'REDIS_PASSWORD obrigatória em produção — sem ela qualquer host ' +
+            'que alcance o Redis pode injetar jobs arbitrários na fila.',
+          );
+        }
+        return {
+          redis: {
+            host:          config.get<string>('redis.host'),
+            port:          config.get<number>('redis.port'),
+            password:      redisPassword,
+            retryStrategy: (times: number) =>
+              times > 6 ? null : Math.min(times * 2000, 10_000),
+          },
+          defaultJobOptions: {
+            attempts: 3,
+            backoff:  { type: 'exponential', delay: 5000 },
+            // 5 min — evita que job travado (Prisma pool esgotado) bloqueie a fila indefinidamente
+            timeout:  300_000,
+          },
+        };
+      },
     }),
     PrismaModule,
     DfeDistribuicaoWorkerModule,
+    AnaliseCreditoWorkerModule,
   ],
 })
 export class WorkerAppModule {}

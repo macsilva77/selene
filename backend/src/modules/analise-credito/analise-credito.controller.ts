@@ -54,6 +54,7 @@ export class AnaliseCreditoController {
     @Query('forcar') forcar?: string,
   ) {
     this.validarCnpj(cnpj);
+    await this.verificarPropriedadeCnpj(tenantId, cnpj);
     void this.p01Service.processarCnpj(tenantId, cnpj, {
       forcarReprocessamento: forcar === 'true',
     }).catch(err => this.logger.error(`[P01] Erro em background (${cnpj})`, err instanceof Error ? err.stack : String(err)));
@@ -111,6 +112,20 @@ export class AnaliseCreditoController {
     void this.p01Job.executar(tenantId)
       .catch(err => this.logger.error('[Pipeline] Erro em background', err instanceof Error ? err.stack : String(err)));
     return { mensagem: 'Pipeline P01→P04 iniciado em background', status: 'aceito' };
+  }
+
+  @Post('pipeline/processar/:cnpj')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoPipelineCnpj')
+  async dispararPipelineCnpj(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+  ) {
+    this.validarCnpj(cnpj);
+    await this.verificarPropriedadeCnpj(tenantId, cnpj);
+    void this.p01Job.dispararPorCnpj(tenantId, cnpj)
+      .catch(err => this.logger.error(`[Pipeline/${cnpj}] Erro em background`, err instanceof Error ? err.stack : String(err)));
+    return { mensagem: `Pipeline iniciado para CNPJ ${cnpj}`, status: 'aceito' };
   }
 
   // ─── Admin: reset completo P01→P04 ───────────────────────────────────────────
@@ -347,17 +362,7 @@ export class AnaliseCreditoController {
     const dre: Record<string, string | null> = {};
     for (const r of dreRows) dre[r.linhaDre] = r.valor.toString();
 
-    // ── Fallback on-demand: calcula direto do ECF se P02 ainda não rodou ──────
-    // Garante que a Receita Líquida e demais KPIs apareçam mesmo antes do P02
-    const dreVazio    = dreRows.length === 0;
-    const estruturaOk = estrutura !== null;
-
-    const [dreOnDemand, balOnDemand] = await Promise.all([
-      dreVazio    ? this.p02Service.calcularDreOnDemand(empresa.id, exercicio, empresa.regimeTributario).catch(() => ({} as Record<string, string | null>)) : Promise.resolve(null),
-      !estruturaOk ? this.p02Service.calcularBalancoOnDemand(empresa.id, exercicio, empresa.regimeTributario).catch(() => null) : Promise.resolve(null),
-    ]);
-
-    if (dreVazio && dreOnDemand) Object.assign(dre, dreOnDemand);
+    const processando = dreRows.length === 0 || estrutura === null;
 
     const estruturaResp = estrutura
       ? {
@@ -369,13 +374,9 @@ export class AnaliseCreditoController {
           dividaFinanceiraTot: estrutura.dividaFinanceiraTot?.toString() ?? null,
           dividaLiquida:       estrutura.dividaLiquida?.toString()       ?? null,
         }
-      : balOnDemand
-        ? { ativoTotal: balOnDemand.ativoTotal, pl: balOnDemand.pl,
-            passivoTotal: null, dividaFinanceiraCp: null, dividaFinanceiraLp: null,
-            dividaFinanceiraTot: null, dividaLiquida: null }
-        : null;
+      : null;
 
-    return { exercicio, dre, estrutura: estruturaResp };
+    return { exercicio, dre, estrutura: estruturaResp, processando };
   }
 
   /** Exercícios disponíveis para um CNPJ (ECF ou ECD processados) */
@@ -669,6 +670,15 @@ export class AnaliseCreditoController {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  /** Lança NotFoundException se o CNPJ não pertence ao tenant — previne IDOR em endpoints por-CNPJ. */
+  private async verificarPropriedadeCnpj(tenantId: string, cnpj: string): Promise<void> {
+    const existe = await this.prisma.creditoEmpresa.findUnique({
+      where:  { tenantId_cnpj: { tenantId, cnpj } },
+      select: { id: true },
+    });
+    if (!existe) throw new NotFoundException(`CNPJ ${cnpj} não encontrado para este tenant`);
+  }
 
   private parseExercicio(value?: string): number | undefined {
     if (!value) return undefined;

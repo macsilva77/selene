@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../database/prisma.service';
 import { GcsService } from './gcs.service';
 import {
   StatusProcessamento,
   FinalidadeObrigacao,
+  TipoObrigacao,
 } from './enums/obrigacao-acessoria.enums';
 
 const ATUALIZADO_POR = 'obrigacao-processamento-service';
@@ -20,8 +22,9 @@ export class ObrigacaoProcessamentoService {
   private readonly logger = new Logger(ObrigacaoProcessamentoService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly gcs: GcsService,
+    private readonly prisma:        PrismaService,
+    private readonly gcs:           GcsService,
+    private readonly eventEmitter:  EventEmitter2,
   ) {}
 
   /**
@@ -97,7 +100,15 @@ export class ObrigacaoProcessamentoService {
     log('Hash OK.');
 
     // RN-09: lógica de versão — dentro de transação para evitar race condition
-    return this.aplicarVersaoEProcessar(obrigacao);
+    const resultado = await this.aplicarVersaoEProcessar(obrigacao);
+
+    // ECF processado com sucesso → dispara pipeline de análise de crédito
+    if (resultado.statusFinal === StatusProcessamento.PROCESSADO &&
+        obrigacao.tipoObrigacao === TipoObrigacao.ECF) {
+      this.eventEmitter.emit('ecf.processado', { cnpj: obrigacao.cnpj });
+    }
+
+    return resultado;
   }
 
   /**

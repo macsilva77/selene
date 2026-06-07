@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   PlayIcon,
   ArrowClockwiseIcon,
@@ -27,6 +27,7 @@ import {
   type ResumoFinanceiro,
 } from '@/lib/analise-credito-api';
 import { VisaoGeral } from './visao-geral';
+import { PipelineStepper } from './pipeline-stepper';
 
 /* ─── Helpers visuais ────────────────────────────────────────────────────── */
 
@@ -77,7 +78,9 @@ export function AnaliseCreditoDashboard() {
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [disparando, setDisparando]           = useState(false);
+  const [disparandoCnpj, setDisparandoCnpj]   = useState(false);
   const [resetando, setResetando]             = useState(false);
+  const [pipelineAtivo, setPipelineAtivo]     = useState(false);
 
   const [statusData, setStatusData]           = useState<StatusPipeline[]>([]);
   const [indicadores, setIndicadores]         = useState<Indicador[]>([]);
@@ -87,6 +90,8 @@ export function AnaliseCreditoDashboard() {
   const [financeiro, setFinanceiro]           = useState<ResumoFinanceiro | null>(null);
   const [financeiroPrevio, setFinanceiroPrevio] = useState<ResumoFinanceiro | null>(null);
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
+
+  const pollCountRef = useRef(0);
 
   useEffect(() => {
     analiseCreditoApi.listarEmpresas()
@@ -138,6 +143,43 @@ export function AnaliseCreditoDashboard() {
     if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
   }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
 
+  // Reseta o flag quando o usuário troca de empresa (fix: pipelineAtivo stale)
+  useEffect(() => {
+    setPipelineAtivo(false);
+  }, [cnpjSelecionado]);
+
+  // Polling a cada 4s — com guard de comprimento (fix: every([])===true) e timeout (fix: loop infinito)
+  useEffect(() => {
+    if (!cnpjSelecionado || !pipelineAtivo) {
+      pollCountRef.current = 0;
+      return;
+    }
+    const timer = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > 150) {
+        setPipelineAtivo(false);
+        pollCountRef.current = 0;
+        toastError('Processamento demorou mais que o esperado — verifique o status do serviço');
+        return;
+      }
+      try {
+        const status = await analiseCreditoApi.statusPipeline(cnpjSelecionado);
+        setStatusData(status ?? []);
+        // Exercícios históricos sem p01 (nunca processados) são ignorados na
+        // verificação de conclusão — só exercícios que iniciaram o pipeline contam.
+        const emProcessamento = status?.filter(s => s.p01 !== null) ?? [];
+        const concluido = emProcessamento.length > 0 &&
+          emProcessamento.every(s => s.p04 !== null || s.totalBloqueios > 0);
+        if (concluido) {
+          setPipelineAtivo(false);
+          pollCountRef.current = 0;
+          void carregarDados(cnpjSelecionado, exercicioFiltro);
+        }
+      } catch { /* ignora erros de polling */ }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [cnpjSelecionado, pipelineAtivo, exercicioFiltro, carregarDados, toastError]);
+
   async function resetarDados() {
     if (!window.confirm('Apagar TODOS os dados do pipeline P01→P04?\n\nIsso inclui os registros ECF/ECD importados, balanço, DRE, indicadores e classificações.\n\nApós limpar, execute o Pipeline completo novamente.')) return;
     setResetando(true);
@@ -156,11 +198,28 @@ export function AnaliseCreditoDashboard() {
     setDisparando(true);
     try {
       await analiseCreditoApi.dispararPipeline();
-      success('Pipeline P01→P04 iniciado em background');
+      setPipelineAtivo(true);
+      success('Pipeline P01→P04 iniciado — acompanhe o progresso abaixo');
+      setTab('pipeline');
     } catch {
       toastError('Erro ao disparar pipeline');
     } finally {
       setDisparando(false);
+    }
+  }
+
+  async function dispararPipelineCnpj() {
+    if (!cnpjSelecionado) return;
+    setDisparandoCnpj(true);
+    try {
+      await analiseCreditoApi.dispararPipelineCnpj(cnpjSelecionado);
+      setPipelineAtivo(true);
+      success(`Pipeline iniciado para ${empresaSelecionada?.razaoSocial ?? cnpjSelecionado}`);
+      setTab('pipeline');
+    } catch {
+      toastError('Erro ao disparar pipeline');
+    } finally {
+      setDisparandoCnpj(false);
     }
   }
 
@@ -313,7 +372,23 @@ export function AnaliseCreditoDashboard() {
               </p>
             </div>
 
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 items-center gap-2">
+              {/* Botão de processamento por empresa */}
+              <button
+                type="button"
+                onClick={dispararPipelineCnpj}
+                disabled={disparandoCnpj || disparando}
+                title="Processar esta empresa"
+                className="flex items-center gap-1.5 rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {disparandoCnpj
+                  ? <ArrowClockwiseIcon size={13} className="animate-spin" />
+                  : <PlayIcon size={13} weight="fill" />}
+                Processar
+              </button>
+
+              <div className="h-4 w-px bg-border" />
+
               {TAB_ITEMS.map(t => (
                 <button
                   key={t.id}
@@ -351,6 +426,13 @@ export function AnaliseCreditoDashboard() {
 
           {/* Conteúdo das tabs */}
           <div className="p-6">
+            {/* Banner de processamento em andamento (fix: processando nunca consumido) */}
+            {financeiro?.processando && (
+              <div className="mb-4 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-700">
+                <ArrowClockwiseIcon size={14} className="animate-spin shrink-0" />
+                <span>Dados financeiros em processamento — os indicadores serão exibidos em alguns instantes.</span>
+              </div>
+            )}
             {carregando ? (
               <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 <ArrowClockwiseIcon size={18} className="mr-2 animate-spin" /> Carregando…
@@ -528,55 +610,54 @@ export function AnaliseCreditoDashboard() {
                   </div>
                 )}
 
-                {/* ── Pipeline (diagnóstico) ── */}
+                {/* ── Pipeline (progresso visual) ── */}
                 {tab === 'pipeline' && (
                   <div className="flex flex-col gap-4">
-                    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
-                      <p className="border-b border-border px-4 py-3 text-sm font-medium text-foreground">
-                        Status do Pipeline por Exercício
-                      </p>
-                      {statusData.length === 0 ? (
-                        <p className="p-6 text-sm text-muted-foreground">Nenhum processamento encontrado para esta empresa.</p>
-                      ) : (
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-border bg-muted/40">
-                              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Exercício</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P01</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P02</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P03</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">P04</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground">Bloqueios</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {statusData.map(s => (
-                              <tr key={s.exercicio} className="border-b border-border/50 last:border-0 hover:bg-muted/30">
-                                <td className="px-4 py-2 font-medium text-foreground">{s.exercicio}</td>
-                                {(['p01', 'p02', 'p03', 'p04'] as const).map(p => (
-                                  <td key={p} className="px-4 py-2 text-center">
-                                    {s[p]
-                                      ? <span className="flex items-center justify-center gap-1 text-emerald-600"><CheckCircleIcon weight="fill" size={14} />{s[p]}</span>
-                                      : <span className="text-muted-foreground">—</span>}
-                                  </td>
-                                ))}
-                                <td className="px-4 py-2 text-center">
-                                  {s.totalBloqueios > 0 ? (
-                                    <button type="button" onClick={() => setTab('inconsistencias')} title="Ver inconsistências">
-                                      <Badge className={SEV_COLOR.critico}>
-                                        {s.totalBloqueios}
-                                      </Badge>
-                                    </button>
-                                  ) : (
-                                    <span className="text-muted-foreground">0</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
+                    {statusData.length === 0 ? (
+                      <div className="rounded-xl border border-border bg-card p-8 text-center">
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum processamento encontrado para esta empresa.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={dispararPipelineCnpj}
+                          disabled={disparandoCnpj}
+                          className="mt-4 flex items-center gap-2 mx-auto rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                        >
+                          {disparandoCnpj
+                            ? <ArrowClockwiseIcon size={14} className="animate-spin" />
+                            : <PlayIcon size={14} weight="fill" />}
+                          Iniciar processamento
+                        </button>
+                      </div>
+                    ) : (
+                      statusData.map(s => (
+                        <div key={s.exercicio} className="rounded-xl border border-border bg-card p-5 shadow-sm">
+                          <div className="flex items-center justify-between mb-4">
+                            <p className="text-sm font-semibold text-foreground">
+                              Exercício {s.exercicio}
+                            </p>
+                            {pipelineAtivo && s.p04 === null && (
+                              <span className="flex items-center gap-1.5 text-xs text-blue-600">
+                                <ArrowClockwiseIcon size={12} className="animate-spin" />
+                                Processando…
+                              </span>
+                            )}
+                            {s.p04 !== null && (
+                              <span className="flex items-center gap-1.5 text-xs text-emerald-600">
+                                <CheckCircleIcon weight="fill" size={12} />
+                                Concluído
+                              </span>
+                            )}
+                          </div>
+                          <PipelineStepper
+                            row={s}
+                            isRunning={pipelineAtivo && s.p04 === null}
+                            onVerInconsistencias={() => setTab('inconsistencias')}
+                          />
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
 
