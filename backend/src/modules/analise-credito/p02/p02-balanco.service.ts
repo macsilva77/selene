@@ -202,8 +202,17 @@ export class P02BalancoService {
 
       const totalAtivo     = somarGrupos(['AC', 'ANC']);
       const totalPassivoPl = somarGrupos(['PC', 'PNC', 'PL']);
-      const divergencia    = totalAtivo.minus(totalPassivoPl).abs();
-      const bloqueado      = divergencia.greaterThan(1);
+
+      // Verificação de fechamento usando soma ALGÉBRICA dos valores com sinal
+      // (parser L100: D=positivo → ativo; C=negativo → passivo/PL normal).
+      // Resultado do Exercício com prejuízo tem natureza D (positivo), por isso
+      // abs() inflaria o PL. A soma algébrica = 0 garante o balanço independente
+      // de qual natureza cada conta tem.
+      const somaAlgebrica = rows
+        .filter(r => !codigosComFilhos.has(r.linhaCodigo) && this.detectarGrupo(r.linhaCodigo, r.descricao) !== null)
+        .reduce((s, r) => s.add(new Decimal(r.valor)), new Decimal(0));
+      const divergencia = somaAlgebrica.abs();
+      const bloqueado   = divergencia.greaterThan(1);
 
       return {
         linhas,
