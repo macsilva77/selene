@@ -5,6 +5,7 @@ import {
   ArrowClockwiseIcon,
   BuildingsIcon,
   WarningIcon,
+  GearIcon,
 } from '@phosphor-icons/react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast, ToastContainer } from '@/components/ui/toast';
@@ -36,6 +37,7 @@ export function AnaliseCreditoDashboard() {
   const [cnpjSelecionado, setCnpjSelecionado] = useState<string>('');
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
+  const [calculando, setCalculando]           = useState(false);
 
   const [indicadores, setIndicadores]         = useState<Indicador[]>([]);
   const [alertas, setAlertas]                 = useState<Alerta[]>([]);
@@ -51,6 +53,20 @@ export function AnaliseCreditoDashboard() {
       .then(setEmpresas)
       .catch(() => toastError('Erro ao carregar empresas'));
   }, [toastError]);
+
+  const processarEmpresa = useCallback(async (cnpj: string) => {
+    if (!cnpj || calculando) return;
+    setCalculando(true);
+    try {
+      await analiseCreditoApi.calcular(cnpj);
+      await carregarDados(cnpj, exercicioFiltro);
+    } catch {
+      toastError('Erro ao processar empresa');
+    } finally {
+      setCalculando(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calculando, exercicioFiltro, toastError]);
 
   const carregarFinanceiro = useCallback(async (cnpj: string, exercicioAlvo: number) => {
     try {
@@ -115,7 +131,7 @@ export function AnaliseCreditoDashboard() {
       {/* ── Cabeçalho ── */}
       <div>
         <h1 className="text-xl font-semibold">Análise de Crédito</h1>
-        <p className="text-sm text-muted-foreground">Dados extraídos direto do ECF · sem necessidade de processamento</p>
+        <p className="text-sm text-muted-foreground">Dados extraídos do ECF · clique em Processar para calcular indicadores</p>
       </div>
 
       {/* ── Seletor de empresa ── */}
@@ -153,17 +169,28 @@ export function AnaliseCreditoDashboard() {
             </div>
           )}
 
-          {/* Recarregar */}
+          {/* Ações */}
           {cnpjSelecionado && (
-            <button
-              type="button"
-              onClick={() => carregarDados(cnpjSelecionado, exercicioFiltro)}
-              disabled={carregando}
-              className="mt-4 flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
-            >
-              <ArrowClockwiseIcon size={13} className={carregando ? 'animate-spin' : ''} />
-              Recarregar
-            </button>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => carregarDados(cnpjSelecionado, exercicioFiltro)}
+                disabled={carregando || calculando}
+                className="flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+              >
+                <ArrowClockwiseIcon size={13} className={carregando ? 'animate-spin' : ''} />
+                Recarregar
+              </button>
+              <button
+                type="button"
+                onClick={() => processarEmpresa(cnpjSelecionado)}
+                disabled={carregando || calculando}
+                className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                <GearIcon size={13} className={calculando ? 'animate-spin' : ''} />
+                {calculando ? 'Processando…' : 'Processar'}
+              </button>
+            </div>
           )}
         </CardContent>
       </Card>

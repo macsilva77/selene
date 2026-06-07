@@ -174,21 +174,20 @@ export const analiseCreditoApi = {
   kpisAnuais: (cnpj: string) =>
     api.get<KpiAnual[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/kpis-anuais`).then(r => r.data),
 
-  /** Dispara pipeline completo P01→P04 para o tenant inteiro */
-  dispararPipeline: () =>
-    api.post('/analise-credito/pipeline/processar').then(r => r.data),
+  /**
+   * Lê ECF Parquet → calcula indicadores, DRE, estrutura → salva → roda alertas.
+   * Equivale ao antigo pipeline P02→P03→P04, mas lendo direto da fonte correta.
+   */
+  calcular: (cnpj: string): Promise<{ cnpj: string; resultados: Array<{ exercicio: number; indicadores: number; comDados: boolean }> }> =>
+    api.post(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/calcular`).then(r => r.data),
 
-  /** Dispara pipeline P01→P04 para um CNPJ específico */
-  dispararPipelineCnpj: (cnpj: string) =>
-    api.post(`/analise-credito/pipeline/processar/${encodeURIComponent(cnpj)}`).then(r => r.data),
-
-  /** Apaga dados calculados P02→P04 (balanco, dre, indicadores, alertas, classificações) */
-  resetarDados: (): Promise<{ mensagem: string; totais: Record<string, number> }> =>
-    api.post('/analise-credito/admin/resetar').then(r => r.data),
-
-  /** Dispara apenas P01 para todos os CNPJs */
+  /** Importa ECF para Parquet (P01) — necessário antes de calcular */
   dispararP01: (forcar = false) =>
     api.post('/analise-credito/p01/processar', undefined, {
       params: forcar ? { forcar: 'true' } : undefined,
     }).then(r => r.data),
+
+  /** Apaga todos os dados calculados (ECF + indicadores + alertas) */
+  resetarDados: (): Promise<{ mensagem: string; totais: Record<string, number> }> =>
+    api.post('/analise-credito/admin/resetar').then(r => r.data),
 };

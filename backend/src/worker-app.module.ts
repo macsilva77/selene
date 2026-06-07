@@ -7,7 +7,6 @@ import { AppConfigModule } from './config/app-config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisCacheModule } from './modules/cache/cache.module';
 import { DfeDistribuicaoWorkerModule }    from './modules/dfe-distribuicao/dfe-distribuicao-worker.module';
-import { AnaliseCreditoWorkerModule }     from './modules/analise-credito/analise-credito-worker.module';
 
 /**
  * Módulo raiz do processo Worker.
@@ -61,7 +60,6 @@ import { AnaliseCreditoWorkerModule }     from './modules/analise-credito/analis
     }),
     PrismaModule,
     DfeDistribuicaoWorkerModule,
-    AnaliseCreditoWorkerModule,
   ],
 })
 export class WorkerAppModule {}

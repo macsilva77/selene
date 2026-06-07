@@ -53,7 +53,7 @@ export function ActionsMenu({ actions }: Readonly<{ actions: Action[] }>) {
       >
         <DotsThreeVertical size={16} weight="bold" />
       </button>
-      {open && typeof globalThis.window !== 'undefined' && createPortal(
+      {open && createPortal(
         <div
           ref={menuRef}
           style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}

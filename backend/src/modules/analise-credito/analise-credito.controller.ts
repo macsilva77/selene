@@ -5,11 +5,8 @@ import {
 import { Prisma, AuditAcao } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { P01Service }        from './p01/p01.service';
-import { P01Job }            from './p01/p01.job';
-import { P02Service }        from './p02/p02.service';
 import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
-import { P03Service }        from './p03/p03.service';
 import { P04Service }        from './p04/p04.service';
 import {
   calcularIndicadores,
@@ -30,11 +27,8 @@ export class AnaliseCreditoController {
 
   constructor(
     private readonly p01Service:     P01Service,
-    private readonly p01Job:         P01Job,
-    private readonly p02Service:     P02Service,
     private readonly dreService:     P02DreService,
     private readonly balancoService: P02BalancoService,
-    private readonly p03Service:     P03Service,
     private readonly p04Service:     P04Service,
     private readonly ecfDataSource:  EcfDataSourceService,
     private readonly prisma:         PrismaService,
@@ -79,72 +73,115 @@ export class AnaliseCreditoController {
     return this.p01Service.statusPorCnpj(tenantId, cnpj);
   }
 
-  // ─── P02 ──────────────────────────────────────────────────────────────────────
+  // ─── Calcular (ECF Parquet → indicadores + DRE + estrutura + alertas) ─────────
 
-  @Post('p02/processar')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoP02')
-  async dispararP02(@CurrentUser('tenantId') tenantId: string) {
-    void this.p02Service.processarTodos(tenantId)
-      .catch(err => this.logger.error('[P02] Erro em background', err instanceof Error ? err.stack : String(err)));
-    return { mensagem: 'P02 iniciado em background', status: 'aceito' };
-  }
-
-  // ─── P03 ──────────────────────────────────────────────────────────────────────
-
-  @Post('p03/processar')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoP03')
-  async dispararP03(@CurrentUser('tenantId') tenantId: string) {
-    void this.p03Service.processarTodos(tenantId)
-      .catch(err => this.logger.error('[P03] Erro em background', err instanceof Error ? err.stack : String(err)));
-    return { mensagem: 'P03 iniciado em background', status: 'aceito' };
-  }
-
-  // ─── P04 ──────────────────────────────────────────────────────────────────────
-
-  @Post('p04/processar')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoP04')
-  async dispararP04(@CurrentUser('tenantId') tenantId: string) {
-    void this.p04Service.processarTodos(tenantId)
-      .catch(err => this.logger.error('[P04] Erro em background', err instanceof Error ? err.stack : String(err)));
-    return { mensagem: 'P04 iniciado em background', status: 'aceito' };
-  }
-
-  // ─── Pipeline completo P01→P04 ────────────────────────────────────────────────
-  // Usa P01Job.executar para reutilizar o guard de concorrência (this.running)
-
-  @Post('pipeline/processar')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoPipeline')
-  async dispararPipeline(@CurrentUser('tenantId') tenantId: string) {
-    void this.p01Job.executar(tenantId)
-      .catch(err => this.logger.error('[Pipeline] Erro em background', err instanceof Error ? err.stack : String(err)));
-    return { mensagem: 'Pipeline P01→P04 iniciado em background', status: 'aceito' };
-  }
-
-  @Post('pipeline/processar/:cnpj')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoPipelineCnpj')
-  async dispararPipelineCnpj(
+  /**
+   * Lê o ECF Parquet de todos os exercícios da empresa, calcula indicadores,
+   * estrutura de capital e DRE, salva nas tabelas e roda P04 (alertas).
+   * Equivale ao antigo P02→P03→P04, mas lendo direto da fonte correta.
+   */
+  @Post('empresas/:cnpj/calcular')
+  @HttpCode(HttpStatus.OK)
+  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoCalcular')
+  async calcular(
     @CurrentUser('tenantId') tenantId: string,
     @Param('cnpj') cnpj: string,
   ) {
     this.validarCnpj(cnpj);
-    await this.verificarPropriedadeCnpj(tenantId, cnpj);
-    void this.p01Job.dispararPorCnpj(tenantId, cnpj)
-      .catch(err => this.logger.error(`[Pipeline/${cnpj}] Erro em background`, err instanceof Error ? err.stack : String(err)));
-    return { mensagem: `Pipeline iniciado para CNPJ ${cnpj}`, status: 'aceito' };
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
+      where:    { empresaId: empresa.id },
+      select:   { exercicio: true },
+      distinct: ['exercicio'],
+      orderBy:  { exercicio: 'asc' },
+    });
+
+    const anos = ecfAnos.map(r => r.exercicio);
+    const resultados: Array<{ exercicio: number; indicadores: number; comDados: boolean }> = [];
+
+    for (const ano of anos) {
+      const [bal, dre] = await Promise.all([
+        this.ecfBalData(empresa.id, ano, empresa.regimeTributario),
+        this.ecfDreData(empresa.id, ano, empresa.regimeTributario),
+      ]);
+
+      if (!bal || !dre) {
+        resultados.push({ exercicio: ano, indicadores: 0, comDados: false });
+        continue;
+      }
+
+      const [balAnt, dreAnt] = await Promise.all([
+        this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
+        this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),
+      ]);
+
+      const indicadores = calcularIndicadores(bal, dre, balAnt ?? undefined, dreAnt ?? undefined, 1);
+      const estrutura   = calcularEstruturaCapital(bal, dre);
+
+      // DRE lines para persistir
+      const dreResult = await this.dreService.montar(empresa.id, ano, empresa.regimeTributario);
+
+      await this.prisma.$transaction(async tx => {
+        // Indicadores
+        await tx.creditoIndicador.deleteMany({ where: { empresaId: empresa.id, exercicio: ano } });
+        if (indicadores.length > 0) {
+          await tx.creditoIndicador.createMany({
+            data: indicadores.map(i => ({
+              empresaId: empresa.id,
+              exercicio: ano,
+              indicador: i.indicador,
+              valor:     i.valor,
+              unidade:   i.unidade,
+              fonteOk:   i.fonteOk,
+            })),
+          });
+        }
+
+        // Estrutura de capital
+        await tx.creditoEstruturaCapital.upsert({
+          where:  { empresaId_exercicio: { empresaId: empresa.id, exercicio: ano } },
+          create: { empresaId: empresa.id, exercicio: ano, ...estrutura },
+          update: estrutura,
+        });
+
+        // DRE
+        await tx.creditoDre.deleteMany({ where: { empresaId: empresa.id, exercicio: ano } });
+        if (dreResult.linhas.length > 0) {
+          await tx.creditoDre.createMany({
+            data: dreResult.linhas.map(l => ({
+              empresaId: empresa.id,
+              exercicio: ano,
+              linhaDre:  l.linhaDre,
+              valor:     l.valor,
+              fonte:     l.fonte,
+            })),
+          });
+        }
+      }, { timeout: 30_000 });
+
+      resultados.push({ exercicio: ano, indicadores: indicadores.length, comDados: true });
+    }
+
+    // P04 — alertas e classificação
+    const anosComDados = resultados.filter(r => r.comDados).map(r => r.exercicio);
+    for (const ano of anosComDados) {
+      try {
+        await this.p04Service.processarExercicio(empresa.id, ano);
+      } catch (err) {
+        this.logger.warn(`[Calcular] P04 exercicio=${ano}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    this.logger.log(`[Calcular] ${cnpj} — ${anosComDados.length} exercícios processados`);
+    return { cnpj, resultados };
   }
 
-  // ─── Admin: reset completo P01→P04 ───────────────────────────────────────────
+  // ─── Admin: reset completo ────────────────────────────────────────────────────
 
-  /**
-   * Apaga todos os dados do pipeline P01→P04 para o tenant.
-   * Inclui dados brutos ECF/ECD (P01) e todos os outputs calculados (P02→P04).
-   * Após o reset, é necessário rodar o pipeline completo novamente.
-   */
   @Post('admin/resetar')
   @HttpCode(HttpStatus.OK)
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoReset')
@@ -158,15 +195,12 @@ export class AnaliseCreditoController {
 
     const [
       ecfReg, ecdSaldo, planoConta,
-      balanco, dre, estrutura, indicador, alerta, classificacao,
+      dre, estrutura, indicador, alerta, classificacao,
       inconsistencia, processamento,
     ] = await Promise.all([
-      // P01 — dados brutos
       this.prisma.creditoEcfRegistro.deleteMany({ where: { empresaId: { in: ids } } }),
       this.prisma.creditoEcdSaldo.deleteMany({ where: { empresaId: { in: ids } } }),
       this.prisma.creditoPlanoConta.deleteMany({ where: { empresaId: { in: ids } } }),
-      // P02→P04 — outputs calculados
-      this.prisma.creditoBalanco.deleteMany({ where: { empresaId: { in: ids } } }),
       this.prisma.creditoDre.deleteMany({ where: { empresaId: { in: ids } } }),
       this.prisma.creditoEstruturaCapital.deleteMany({ where: { empresaId: { in: ids } } }),
       this.prisma.creditoIndicador.deleteMany({ where: { empresaId: { in: ids } } }),
@@ -176,18 +210,13 @@ export class AnaliseCreditoController {
       this.prisma.creditoProcessamento.deleteMany({ where: { empresaId: { in: ids } } }),
     ]);
 
-    this.logger.warn(
-      `[Admin] Reset COMPLETO pelo tenant ${tenantId}: ` +
-      `ecf=${ecfReg.count} ecd=${ecdSaldo.count} plano=${planoConta.count} ` +
-      `balanco=${balanco.count} dre=${dre.count} indicador=${indicador.count}`,
-    );
+    this.logger.warn(`[Admin] Reset pelo tenant ${tenantId}: ecf=${ecfReg.count} dre=${dre.count} indicador=${indicador.count}`);
     return {
-      mensagem: 'Reset completo (P01→P04) executado com sucesso',
+      mensagem: 'Reset executado com sucesso',
       totais: {
         ecfRegistros:   ecfReg.count,
         ecdSaldos:      ecdSaldo.count,
         planoContas:    planoConta.count,
-        balanco:        balanco.count,
         dre:            dre.count,
         estrutura:      estrutura.count,
         indicadores:    indicador.count,
@@ -201,7 +230,6 @@ export class AnaliseCreditoController {
 
   // ─── Leitura para o dashboard ─────────────────────────────────────────────────
 
-  /** Lista todas as empresas do tenant com última classificação — alimenta o seletor */
   @Get('empresas')
   async listarEmpresas(@CurrentUser('tenantId') tenantId: string) {
     const empresas = await this.prisma.creditoEmpresa.findMany({
@@ -217,7 +245,6 @@ export class AnaliseCreditoController {
     }));
   }
 
-  /** Status do pipeline por exercício para um CNPJ */
   @Get('empresas/:cnpj/status')
   async statusPipeline(
     @CurrentUser('tenantId') tenantId: string,
@@ -228,42 +255,36 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    // Ordenação por timestampProcessamento desc: primeiro registro por tabelaDestino = mais recente
-    const procs = await this.prisma.creditoProcessamento.findMany({
-      where:   { empresaId: empresa.id },
-      orderBy: [{ exercicio: 'desc' }, { timestampProcessamento: 'desc' }],
+    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
+      where:    { empresaId: empresa.id },
+      select:   { exercicio: true },
+      distinct: ['exercicio'],
     });
 
-    // Indexa o registro mais recente por exercício × tabelaDestino
-    type ProcRow = (typeof procs)[number];
-    const porAno = new Map<number, Map<string, ProcRow>>();
-    for (const p of procs) {
-      if (!porAno.has(p.exercicio)) porAno.set(p.exercicio, new Map());
-      porAno.get(p.exercicio)!.set(p.tabelaDestino, p);
-      // Map.get sempre retorna value após o set acima — não há risco de undefined
-    }
+    const indicadores = await this.prisma.creditoIndicador.findMany({
+      where:    { empresaId: empresa.id },
+      select:   { exercicio: true, valor: true },
+    });
 
-    return Array.from(porAno.entries())
-      .sort(([a], [b]) => b - a)
-      .map(([exercicio, tabelas]) => {
-        const versaoOk = (chave: string) => {
-          const r = tabelas.get(chave);
-          return r?.registrosBloqueados === 0 ? r.versaoPrompt : null;
-        };
-        const totalBloqueios = [...tabelas.values()]
-          .reduce((s, r) => s + r.registrosBloqueados, 0);
-        return {
-          exercicio,
-          p01: versaoOk('tb_ecd_saldos'),
-          p02: versaoOk('tb_balanco'),
-          p03: versaoOk('tb_indicadores'),
-          p04: versaoOk('tb_classificacoes'),
-          totalBloqueios,
-        };
-      });
+    const alertas = await this.prisma.creditoClassificacao.findMany({
+      where:    { empresaId: empresa.id },
+      select:   { exercicio: true },
+    });
+
+    const indPorAno = new Map<number, boolean>();
+    for (const i of indicadores) {
+      if (i.valor !== null) indPorAno.set(i.exercicio, true);
+    }
+    const alertaAnos = new Set(alertas.map(a => a.exercicio));
+
+    return ecfAnos.map(({ exercicio }) => ({
+      exercicio,
+      ecfImportado:  true,
+      calculado:     indPorAno.has(exercicio),
+      comAlertas:    alertaAnos.has(exercicio),
+    })).sort((a, b) => b.exercicio - a.exercicio);
   }
 
-  /** Indicadores financeiros de um CNPJ, opcionalmente filtrados por exercício */
   @Get('empresas/:cnpj/indicadores')
   async indicadores(
     @CurrentUser('tenantId') tenantId: string,
@@ -284,8 +305,8 @@ export class AnaliseCreditoController {
       orderBy: [{ exercicio: 'desc' }, { indicador: 'asc' }],
     });
 
-    // Exercícios que já têm indicadores no pipeline
-    const comPipeline = new Set(stored.map(i => i.exercicio));
+    // Exercícios com pelo menos um indicador não-null no banco
+    const comDados = new Set(stored.filter(i => i.valor !== null).map(i => i.exercicio));
 
     // Exercícios disponíveis no ECF
     const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
@@ -294,29 +315,24 @@ export class AnaliseCreditoController {
       distinct: ['exercicio'],
     });
 
-    const semPipeline = ecfAnos.map(r => r.exercicio).filter(a => !comPipeline.has(a));
-    if (semPipeline.length === 0) return stored;
+    // Para anos sem dados calculados, tenta ECF on-the-fly (não salva — só para visualização imediata)
+    const semDados = ecfAnos.map(r => r.exercicio).filter(a => !comDados.has(a));
+    if (semDados.length === 0) return stored;
 
-    // Calcula indicadores on-the-fly a partir do ECF para os exercícios sem pipeline
-    const onTheFly = await Promise.all(semPipeline.map(async ano => {
+    const semDadosSet = new Set(semDados);
+    const onTheFly = await Promise.all(semDados.map(async ano => {
       const [bal, dre] = await Promise.all([
         this.ecfBalData(empresa.id, ano, empresa.regimeTributario),
         this.ecfDreData(empresa.id, ano, empresa.regimeTributario),
       ]);
       if (!bal || !dre) return [];
 
-      // Ano anterior para indicadores de crescimento
       const [balAnt, dreAnt] = await Promise.all([
         this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
         this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),
       ]);
 
-      return calcularIndicadores(
-        bal, dre,
-        balAnt ?? undefined,
-        dreAnt ?? undefined,
-        1,
-      ).map(i => ({
+      return calcularIndicadores(bal, dre, balAnt ?? undefined, dreAnt ?? undefined, 1).map(i => ({
         id:        `ecf_${ano}_${i.indicador}`,
         empresaId: empresa.id,
         exercicio: ano,
@@ -327,10 +343,12 @@ export class AnaliseCreditoController {
       }));
     }));
 
-    return [...stored, ...onTheFly.flat()];
+    return [
+      ...stored.filter(i => !semDadosSet.has(i.exercicio)),
+      ...onTheFly.flat(),
+    ];
   }
 
-  /** Alertas de um CNPJ, opcionalmente filtrados por exercício */
   @Get('empresas/:cnpj/alertas')
   async alertas(
     @CurrentUser('tenantId') tenantId: string,
@@ -352,7 +370,6 @@ export class AnaliseCreditoController {
     });
   }
 
-  /** Histórico de classificações de risco de um CNPJ */
   @Get('empresas/:cnpj/classificacao')
   async classificacao(
     @CurrentUser('tenantId') tenantId: string,
@@ -369,7 +386,6 @@ export class AnaliseCreditoController {
     });
   }
 
-  /** Inconsistências de um CNPJ (últimas 100) */
   @Get('empresas/:cnpj/inconsistencias')
   async inconsistencias(
     @CurrentUser('tenantId') tenantId: string,
@@ -387,7 +403,6 @@ export class AnaliseCreditoController {
     });
   }
 
-  /** Resumo financeiro: DRE principal + Estrutura de Capital para um exercício */
   @Get('empresas/:cnpj/financeiro')
   async financeiro(
     @CurrentUser('tenantId') tenantId: string,
@@ -417,15 +432,14 @@ export class AnaliseCreditoController {
     const dre: Record<string, string | null> = {};
     for (const r of dreRows) dre[r.linhaDre] = r.valor.toString();
 
-    // Fallback ECF para DRE quando P02 ainda não rodou
+    // Fallback ECF quando calcular ainda não rodou
     if (dreRows.length === 0) {
       try {
         const dreEcf = await this.dreService.montar(empresa.id, exercicio, empresa.regimeTributario);
         for (const row of dreEcf.linhas) dre[row.linhaDre] = row.valor.toString();
-      } catch { /* ECF pode estar ausente — mantém dre vazio */ }
+      } catch { /* ECF ausente — mantém dre vazio */ }
     }
 
-    // Fallback ECF para estrutura completa quando P03 ainda não rodou
     let estruturaEcf: ReturnType<typeof calcularEstruturaCapital> | null = null;
     if (estrutura === null) {
       const [bal, dreMap] = await Promise.all([
@@ -465,7 +479,6 @@ export class AnaliseCreditoController {
     return { exercicio, dre, estrutura: estruturaResp, processando };
   }
 
-  /** KPIs primários (Receita Líquida, EBITDA, Lucro Líquido, PL) para todos os exercícios */
   @Get('empresas/:cnpj/kpis-anuais')
   async kpisAnuais(
     @CurrentUser('tenantId') tenantId: string,
@@ -476,10 +489,9 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    // Descobre todos os exercícios disponíveis no ECF
     const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
-      where:  { empresaId: empresa.id },
-      select: { exercicio: true },
+      where:    { empresaId: empresa.id },
+      select:   { exercicio: true },
       distinct: ['exercicio'],
     });
     const exercicios = ecfAnos.map(r => r.exercicio).sort((a, b) => b - a);
@@ -487,7 +499,6 @@ export class AnaliseCreditoController {
 
     const DRE_LINHAS = ['receita_liquida', 'ebitda', 'lucro_liquido'];
 
-    // Busca pipeline + ECF em paralelo para todos os anos
     const [dresPipeline, estruturasPipeline] = await Promise.all([
       this.prisma.creditoDre.findMany({
         where:  { empresaId: empresa.id, exercicio: { in: exercicios }, linhaDre: { in: DRE_LINHAS } },
@@ -499,7 +510,6 @@ export class AnaliseCreditoController {
       }),
     ]);
 
-    // Indexa os resultados do pipeline
     const dreMap = new Map<number, Map<string, string>>();
     for (const r of dresPipeline) {
       if (!dreMap.has(r.exercicio)) dreMap.set(r.exercicio, new Map());
@@ -510,7 +520,6 @@ export class AnaliseCreditoController {
       if (e.pl != null) plMap.set(e.exercicio, e.pl.toString());
     }
 
-    // Monta KPIs por ano, com fallback ECF quando pipeline não rodou
     const resultado = await Promise.all(exercicios.map(async ano => {
       const drePipe = dreMap.get(ano);
 
@@ -519,7 +528,7 @@ export class AnaliseCreditoController {
       let lucroLiquido:   string | null = drePipe?.get('lucro_liquido')   ?? null;
       let pl:             string | null = plMap.get(ano)                  ?? null;
 
-      // Fallback ECF se pipeline não tem dados
+      // Fallback ECF quando calcular ainda não rodou
       if (!drePipe || drePipe.size === 0) {
         try {
           const dreEcf = await this.dreService.montar(empresa.id, ano, empresa.regimeTributario);
@@ -532,11 +541,11 @@ export class AnaliseCreditoController {
       }
       if (pl === null) {
         try {
-          const balEcf = await this.balancoService.montar(empresa.id, ano, empresa.regimeTributario);
-          const plTotal = balEcf.linhas
-            .filter(r => r.grupo === 'PL')
-            .reduce((acc, r) => acc.add(r.valor), new Decimal(0));
-          if (plTotal.gt(0)) pl = plTotal.toString();
+          const bal = await this.ecfBalData(empresa.id, ano, empresa.regimeTributario);
+          if (bal) {
+            const plTotal = [...(bal.get('PL')?.values() ?? [])].reduce((s, v) => s.add(v), new Decimal(0));
+            if (plTotal.gt(0)) pl = plTotal.toString();
+          }
         } catch { /* ECF ausente */ }
       }
 
@@ -546,7 +555,6 @@ export class AnaliseCreditoController {
     return resultado;
   }
 
-  /** Exercícios disponíveis para um CNPJ (ECF ou ECD processados) */
   @Get('empresas/:cnpj/exercicios')
   async exercicios(
     @CurrentUser('tenantId') tenantId: string,
@@ -557,23 +565,22 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    const [ecfArqRows, ecfRows, balRows] = await Promise.all([
+    const [ecfArqRows, ecfRows, dreRows] = await Promise.all([
       this.prisma.creditoEcfArquivo.findMany({
         where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
       }),
       this.prisma.creditoEcfRegistro.findMany({
         where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
       }),
-      this.prisma.creditoBalanco.findMany({
+      this.prisma.creditoDre.findMany({
         where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
       }),
     ]);
 
-    const anos = new Set([...ecfArqRows, ...ecfRows, ...balRows].map(r => r.exercicio));
+    const anos = new Set([...ecfArqRows, ...ecfRows, ...dreRows].map(r => r.exercicio));
     return [...anos].sort((a, b) => b - a);
   }
 
-  /** Balanço Patrimonial ou DRE — ECF primário (regime-aware), fallback ECD via P02 */
   @Get('empresas/:cnpj/demonstracoes')
   async demonstracoes(
     @CurrentUser('tenantId') tenantId: string,
@@ -591,13 +598,8 @@ export class AnaliseCreditoController {
     const exercicio = this.parseExercicio(exercicioStr);
     if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
 
-    // trimestre=0 → anual; 1..4 → Q1..Q4; undefined → último disponível
     const trimestreReq = trimestreStr !== undefined ? Number.parseInt(trimestreStr, 10) : undefined;
-
-    // ── Fonte primária: ECF via EcfDataSource (Parquet → fallback DB) ─────────
-    // consultarComTrimestres: buffer Parquet escrito em /tmp apenas 1× por candidato
     const candidatos = this.registrosPorRegime(empresa.regimeTributario, tipo === 'dre' ? 'dre' : 'bp');
-
     const ehBP = tipo !== 'dre';
 
     for (const registroEcf of candidatos) {
@@ -614,45 +616,34 @@ export class AnaliseCreditoController {
         trimestres,
         trimestreAtivo,
         linhas: registros.map(r => ({
-          linhaCodigo:     r.linhaCodigo,
-          descricao:       r.descricao,
-          valor:           new Decimal(r.valor),
-          // indCta do ECF tem precedência; fallback pela presença de filhos
-          tipo:            r.indCta ?? (parentCodes.has(r.linhaCodigo) ? 'S' : 'A'),
-          nivel:           r.nivel ?? r.linhaCodigo.split('.').length,
-          haFilhos:        parentCodes.has(r.linhaCodigo),
-          natureza:        ehBP
+          linhaCodigo:      r.linhaCodigo,
+          descricao:        r.descricao,
+          valor:            new Decimal(r.valor),
+          tipo:             r.indCta ?? (parentCodes.has(r.linhaCodigo) ? 'S' : 'A'),
+          nivel:            r.nivel ?? r.linhaCodigo.split('.').length,
+          haFilhos:         parentCodes.has(r.linhaCodigo),
+          natureza:         ehBP
             ? (r.linhaCodigo.startsWith('1') ? 'DEVEDOR' : 'CREDOR')
             : (r.valor >= 0 ? 'CREDOR' : 'DEVEDOR'),
-          fonte:           registroEcf.toLowerCase(),
-          // Campos de movimentação — extraídos do próprio ECF (campos [7-12])
-          saldoAnterior:   r.saldoAnterior !== 0 ? new Decimal(r.saldoAnterior) : null,
+          fonte:            registroEcf.toLowerCase(),
+          saldoAnterior:    r.saldoAnterior !== 0 ? new Decimal(r.saldoAnterior) : null,
           naturezaAnterior: r.naturezaAnterior || null,
-          totalDebitos:    r.totalDebitos !== null ? new Decimal(r.totalDebitos) : null,
-          totalCreditos:   r.totalCreditos !== null ? new Decimal(r.totalCreditos) : null,
-          naturezaFinal:   r.naturezaFinal || null,
+          totalDebitos:     r.totalDebitos !== null ? new Decimal(r.totalDebitos) : null,
+          totalCreditos:    r.totalCreditos !== null ? new Decimal(r.totalCreditos) : null,
+          naturezaFinal:    r.naturezaFinal || null,
         })),
       };
     }
 
-    // ── Fallback: ECD via P02 (creditoBalanco / creditoDre) ───────────────────
+    // Fallback ECD via creditoDre / creditoBalanco (legado)
     const linhas = tipo === 'dre'
       ? await this.demonstracoesDreFallback(empresa.id, exercicio)
       : await this.demonstracoesBalancoFallback(empresa.id, exercicio, contaRef);
     return { trimestres: [0], trimestreAtivo: 0, linhas };
   }
 
-  /**
-   * Retorna os registros ECF de BP ou DRE em ordem de prioridade:
-   * primeiro o específico do regime, depois os demais como fallback.
-   *
-   * Regime          BP     DRE
-   * lucro_real      L100   L300
-   * lucro_presumido P100   P150
-   * lucro_arbitrado P100   P150
-   * imune_isenta    U100   U150
-   * simples_nacional P100  P150  (DEFIS não tem ECF, mas guardamos P caso haja)
-   */
+  // ─── Helpers privados ─────────────────────────────────────────────────────────
+
   private registrosPorRegime(regimeTributario: string | null, tipo: 'bp' | 'dre'): string[] {
     const MAPA: Record<string, { bp: string; dre: string }> = {
       lucro_real:       { bp: 'L100', dre: 'L300' },
@@ -681,7 +672,6 @@ export class AnaliseCreditoController {
       }),
     ]);
 
-    // Mapa de movimentação por contaCodigo (período final do exercício)
     const movMap = new Map<string, {
       saldoAnterior: Decimal; naturezaAnterior: string | null;
       debitos: Decimal; creditos: Decimal; naturezaFinal: string | null;
@@ -732,7 +722,6 @@ export class AnaliseCreditoController {
     rows.push(grupoRow('1', 'ATIVO',        totalAtivo,     'DEVEDOR'));
     rows.push(grupoRow('2', 'PASSIVO E PL', totalPassivoPl, 'CREDOR'));
 
-    // Grupos e subgrupos
     const byGrupo = new Map<string, typeof linhas>();
     for (const l of linhas) {
       if (!byGrupo.has(l.grupo)) byGrupo.set(l.grupo, []);
@@ -766,19 +755,19 @@ export class AnaliseCreditoController {
         subLinhas.forEach((l, idx) => {
           const mov = movMap.get(l.contaCodigo) ?? null;
           rows.push({
-            linhaCodigo:     `${subCode}.${String(idx + 1).padStart(2, '0')}`,
-            descricao:       l.contaNome,
-            valor:           l.valor,
-            nivel:           4,
-            haFilhos:        false,
-            tipo:            'A',
-            natureza:        nat,
-            fonte:           l.fonte,
-            saldoAnterior:   mov?.saldoAnterior    ?? null,
+            linhaCodigo:      `${subCode}.${String(idx + 1).padStart(2, '0')}`,
+            descricao:        l.contaNome,
+            valor:            l.valor,
+            nivel:            4,
+            haFilhos:         false,
+            tipo:             'A',
+            natureza:         nat,
+            fonte:            l.fonte,
+            saldoAnterior:    mov?.saldoAnterior    ?? null,
             naturezaAnterior: mov?.naturezaAnterior ?? null,
-            totalDebitos:    mov?.debitos           ?? null,
-            totalCreditos:   mov?.creditos          ?? null,
-            naturezaFinal:   mov?.naturezaFinal     ?? null,
+            totalDebitos:     mov?.debitos          ?? null,
+            totalCreditos:    mov?.creditos         ?? null,
+            naturezaFinal:    mov?.naturezaFinal    ?? null,
           });
         });
       }
@@ -796,13 +785,13 @@ export class AnaliseCreditoController {
     const dreMap = new Map(linhas.map(l => [l.linhaDre, l]));
 
     const SECOES = [
-      { code: '3.01', label: 'RECEITA',              linhas: ['receita_bruta','deducoes','receita_liquida'] },
-      { code: '3.02', label: 'CUSTOS',               linhas: ['cmv','lucro_bruto'] },
-      { code: '3.03', label: 'DESPESAS OPERACIONAIS',linhas: ['desp_vendas','desp_admin','outras_desp'] },
-      { code: '3.04', label: 'RESULTADO FINANCEIRO', linhas: ['rec_financeiras','desp_financeiras'] },
-      { code: '3.05', label: 'IMPOSTOS',             linhas: ['ir_csll'] },
-      { code: '3.06', label: 'RESULTADO LÍQUIDO',    linhas: ['lucro_liquido'] },
-      { code: '3.07', label: 'EBITDA',               linhas: ['ebit','depreciacao','ebitda'] },
+      { code: '3.01', label: 'RECEITA',               linhas: ['receita_bruta','deducoes','receita_liquida'] },
+      { code: '3.02', label: 'CUSTOS',                linhas: ['cmv','lucro_bruto'] },
+      { code: '3.03', label: 'DESPESAS OPERACIONAIS', linhas: ['desp_vendas','desp_admin','outras_desp'] },
+      { code: '3.04', label: 'RESULTADO FINANCEIRO',  linhas: ['rec_financeiras','desp_financeiras'] },
+      { code: '3.05', label: 'IMPOSTOS',              linhas: ['ir_csll'] },
+      { code: '3.06', label: 'RESULTADO LÍQUIDO',     linhas: ['lucro_liquido'] },
+      { code: '3.07', label: 'EBITDA',                linhas: ['ebit','depreciacao','ebitda'] },
     ];
     const LINHA_LABEL: Record<string, string> = {
       receita_bruta: 'Receita Bruta', deducoes: 'Deduções', receita_liquida: 'Receita Líquida',
@@ -819,7 +808,7 @@ export class AnaliseCreditoController {
     for (const secao of SECOES) {
       const secaoLinhas = secao.linhas.map(k => dreMap.get(k)).filter(Boolean);
       if (!secaoLinhas.length) continue;
-      rows.push({ linhaCodigo: secao.code, descricao: secao.label, valor: 0, nivel: 1, haFilhos: true, natureza: 'CREDOR', fonte: 'p02' });
+      rows.push({ linhaCodigo: secao.code, descricao: secao.label, valor: 0, nivel: 1, haFilhos: true, natureza: 'CREDOR', fonte: 'ecf' });
       secaoLinhas.forEach((l, idx) => {
         const v = l!.valor;
         rows.push({
@@ -836,9 +825,6 @@ export class AnaliseCreditoController {
     return rows;
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-  /** Lança NotFoundException se o CNPJ não pertence ao tenant — previne IDOR em endpoints por-CNPJ. */
   private async verificarPropriedadeCnpj(tenantId: string, cnpj: string): Promise<void> {
     const existe = await this.prisma.creditoEmpresa.findUnique({
       where:  { tenantId_cnpj: { tenantId, cnpj } },
@@ -862,13 +848,8 @@ export class AnaliseCreditoController {
       throw new BadRequestException('CNPJ deve ter exatamente 14 dígitos numéricos');
   }
 
-  // ─── Conversores ECF → BalData / DreData (cálculo on-the-fly direto do Parquet) ─
+  // ─── Leitura ECF Parquet → BalData / DreData ──────────────────────────────────
 
-  /**
-   * Lê o Balanço Patrimonial direto do ECF (L100/P100/U100) usando a abordagem de
-   * nó-raiz: para cada grupo/subgrupo usa o código de menor profundidade que já
-   * representa o valor agregado — evita dupla contagem de pai + filhos.
-   */
   private async ecfBalData(empresaId: string, exercicio: number, regime: string | null): Promise<BalData | null> {
     const candidatos = this.registrosPorRegime(regime, 'bp');
     for (const registroEcf of candidatos) {
@@ -879,7 +860,6 @@ export class AnaliseCreditoController {
         const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
         if (rows.length === 0) continue;
 
-        // Nó-raiz: menor profundidade entre todos que começam com o prefixo
         const rootVal = (prefix: string): Decimal => {
           const matching = rows.filter(r => r.linhaCodigo.startsWith(prefix));
           if (!matching.length) return new Decimal(0);
@@ -889,31 +869,26 @@ export class AnaliseCreditoController {
           return new Decimal(root.valor).abs();
         };
 
-        // Totais por grupo
         const acTot  = rootVal('1.01');
         const ancTot = rootVal('1.02');
         const pcTot  = rootVal('2.01');
         const pncTot = rootVal('2.02');
         const plTot  = rootVal('2.03');
-        if (acTot.isZero() && plTot.isZero()) continue; // sem dados úteis
+        if (acTot.isZero() && plTot.isZero()) continue;
 
-        // Subgrupos AC
         const caixa    = rootVal('1.01.01');
         const clientes = rootVal('1.01.02');
         const estoques = rootVal('1.01.03');
         const acOutros = Decimal.max(0, acTot.minus(caixa).minus(clientes).minus(estoques));
 
-        // Subgrupos ANC
-        const rlp     = rootVal('1.02.01');
+        const rlp       = rootVal('1.02.01');
         const ancOutros = Decimal.max(0, ancTot.minus(rlp));
 
-        // Subgrupos PC
-        const fornec  = rootVal('2.01.01.01');
-        const empCP   = Decimal.min(rootVal('2.01.01.04').add(rootVal('2.01.02')), pcTot);
+        const fornec   = rootVal('2.01.01.01');
+        const empCP    = Decimal.min(rootVal('2.01.01.04').add(rootVal('2.01.02')), pcTot);
         const pcOutros = Decimal.max(0, pcTot.minus(fornec).minus(empCP));
 
-        // Subgrupos PNC
-        const empLP   = Decimal.min(rootVal('2.02.01').add(rootVal('2.02.02')), pncTot);
+        const empLP    = Decimal.min(rootVal('2.02.01').add(rootVal('2.02.02')), pncTot);
         const pncOutros = Decimal.max(0, pncTot.minus(empLP));
 
         const bal: BalData = new Map();

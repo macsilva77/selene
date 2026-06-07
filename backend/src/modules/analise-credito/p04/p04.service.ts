@@ -3,7 +3,7 @@ import { PrismaService }       from '../../../database/prisma.service';
 import { Decimal }             from '@prisma/client/runtime/library';
 import { avaliarRegras, classificar, RegraCtx } from './p04-regras';
 
-import { VERSAO_P03, VERSAO_P04 } from '../shared/versoes';
+import { VERSAO_P04 } from '../shared/versoes';
 
 const VERSAO_PROMPT = VERSAO_P04;
 
@@ -45,12 +45,6 @@ export class P04Service {
   async processarExercicio(empresaId: string, exercicio: number): Promise<P04Resultado> {
     const t0 = Date.now();
     this.logger.log(`[P04] empresa=${empresaId} exercicio=${exercicio}`);
-
-    if (!await this.verificarP03(empresaId, exercicio)) {
-      await this.gravarInc(empresaId, exercicio, 'P04_PREREQ_FALHOU',
-        'P03 não concluído para este exercício', 'bloqueio');
-      return { empresaId, exercicio, status: 'bloqueado', mensagem: 'P03 não concluído' };
-    }
 
     if (await this.jaProcessado(empresaId, exercicio)) {
       this.logger.log(`[P04] empresa=${empresaId}/${exercicio} — pulando`);
@@ -149,19 +143,12 @@ export class P04Service {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private async descobrirExercicios(empresaId: string): Promise<number[]> {
-    const rows = await this.prisma.creditoProcessamento.findMany({
-      where: { empresaId, versaoPrompt: VERSAO_P03, registrosBloqueados: 0,
-               tabelaDestino: 'tb_indicadores' },
-      select: { exercicio: true }, distinct: ['exercicio'],
+    const rows = await this.prisma.creditoIndicador.findMany({
+      where:    { empresaId },
+      select:   { exercicio: true },
+      distinct: ['exercicio'],
     });
     return rows.map(r => r.exercicio);
-  }
-
-  private async verificarP03(empresaId: string, exercicio: number): Promise<boolean> {
-    return !!await this.prisma.creditoProcessamento.findFirst({
-      where: { empresaId, exercicio, versaoPrompt: VERSAO_P03,
-               registrosBloqueados: 0, tabelaDestino: 'tb_indicadores' },
-    });
   }
 
   private async jaProcessado(empresaId: string, exercicio: number): Promise<boolean> {
