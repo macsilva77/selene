@@ -283,20 +283,33 @@ export function DemonstracoesFinanceiras() {
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Trimestres — apenas quando há entrega trimestral (trims > [0]) */}
-            {trimestres.some(t => t > 0) && (
-              <>
-                <span className="text-xs text-slate-500">Trim:</span>
-                {trimestres.filter(t => t > 0).map(t => (
-                  <button type="button" key={t} onClick={() => setTrimestre(t)}
-                    className={cn('px-2 py-1 text-xs font-medium rounded border transition-colors',
-                      t === trimestreAtivo ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}>
-                    Q{t}
-                  </button>
-                ))}
-                <span className="text-xs text-slate-300">|</span>
-              </>
-            )}
+            {/* Trimestres — entrega trimestral (LR) mostra Q1..Q4; entrega anual mostra "Anual" */}
+            {trimestres.some(t => t > 0) && (() => {
+              const empresaAtual  = empresas.find(e => e.cnpj === cnpj);
+              const ehAnual       = empresaAtual?.regimeTributario !== 'lucro_real' && trimestres.filter(t => t > 0).length === 1;
+              const trimsPositivos = trimestres.filter(t => t > 0);
+              return (
+                <>
+                  {ehAnual ? (
+                    <span className="px-2 py-1 text-xs font-medium rounded border bg-blue-700 text-white border-blue-700">
+                      Anual
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-xs text-slate-500">Trim:</span>
+                      {trimsPositivos.map(t => (
+                        <button type="button" key={t} onClick={() => setTrimestre(t)}
+                          className={cn('px-2 py-1 text-xs font-medium rounded border transition-colors',
+                            t === trimestreAtivo ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50')}>
+                          Q{t}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  <span className="text-xs text-slate-300">|</span>
+                </>
+              );
+            })()}
             <span className="text-xs text-slate-500">Anos:</span>
             {exercicios.map(ano => (
               <button type="button" key={ano} onClick={() => { setExercicio(ano); setTrimestre(undefined); }}

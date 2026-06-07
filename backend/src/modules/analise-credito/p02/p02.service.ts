@@ -147,6 +147,45 @@ export class P02Service {
     return { empresaId, exercicio, status: 'ok' };
   }
 
+  // ─── Cálculo on-demand (sem persistência) ──────────────────────────────────
+
+  /**
+   * Calcula a DRE diretamente do ECF/Parquet sem gravar no banco.
+   * Usado pelo endpoint /financeiro quando creditoDre ainda não foi populado pelo P02.
+   */
+  async calcularDreOnDemand(
+    empresaId:        string,
+    exercicio:        number,
+    regimeTributario: string | null | undefined,
+  ): Promise<Record<string, string | null>> {
+    const result = await this.dre.montar(empresaId, exercicio, regimeTributario);
+    const dreMap: Record<string, string | null> = {};
+    for (const row of result.linhas) {
+      dreMap[row.linhaDre] = row.valor.toString();
+    }
+    return dreMap;
+  }
+
+  /**
+   * Calcula PL (Patrimônio Líquido) e Ativo Total diretamente do ECF/Parquet.
+   * Usado pelo endpoint /financeiro quando creditoEstruturaCapital ainda não existe.
+   */
+  async calcularBalancoOnDemand(
+    empresaId:        string,
+    exercicio:        number,
+    regimeTributario: string | null | undefined,
+  ): Promise<{ pl: string | null; ativoTotal: string | null }> {
+    const result     = await this.balanco.montar(empresaId, exercicio, regimeTributario);
+    const plTotal    = result.linhas
+      .filter(l => l.grupo === 'PL')
+      .reduce((sum, l) => sum + l.valor.toNumber(), 0);
+    const ativoTotal = result.totalAtivo.toNumber();
+    return {
+      pl:         plTotal    !== 0 ? String(plTotal)    : null,
+      ativoTotal: ativoTotal !== 0 ? String(ativoTotal) : null,
+    };
+  }
+
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private async descobrirExercicios(empresaId: string): Promise<number[]> {

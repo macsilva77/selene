@@ -347,19 +347,35 @@ export class AnaliseCreditoController {
     const dre: Record<string, string | null> = {};
     for (const r of dreRows) dre[r.linhaDre] = r.valor.toString();
 
-    return {
-      exercicio,
-      dre,
-      estrutura: estrutura ? {
-        ativoTotal:          estrutura.ativoTotal?.toString() ?? null,
-        passivoTotal:        estrutura.passivoTotal?.toString() ?? null,
-        pl:                  estrutura.pl?.toString() ?? null,
-        dividaFinanceiraCp:  estrutura.dividaFinanceiraCp?.toString() ?? null,
-        dividaFinanceiraLp:  estrutura.dividaFinanceiraLp?.toString() ?? null,
-        dividaFinanceiraTot: estrutura.dividaFinanceiraTot?.toString() ?? null,
-        dividaLiquida:       estrutura.dividaLiquida?.toString() ?? null,
-      } : null,
-    };
+    // ── Fallback on-demand: calcula direto do ECF se P02 ainda não rodou ──────
+    // Garante que a Receita Líquida e demais KPIs apareçam mesmo antes do P02
+    const dreVazio    = dreRows.length === 0;
+    const estruturaOk = estrutura !== null;
+
+    const [dreOnDemand, balOnDemand] = await Promise.all([
+      dreVazio    ? this.p02Service.calcularDreOnDemand(empresa.id, exercicio, empresa.regimeTributario).catch(() => ({} as Record<string, string | null>)) : Promise.resolve(null),
+      !estruturaOk ? this.p02Service.calcularBalancoOnDemand(empresa.id, exercicio, empresa.regimeTributario).catch(() => null) : Promise.resolve(null),
+    ]);
+
+    if (dreVazio && dreOnDemand) Object.assign(dre, dreOnDemand);
+
+    const estruturaResp = estrutura
+      ? {
+          ativoTotal:          estrutura.ativoTotal?.toString()          ?? null,
+          passivoTotal:        estrutura.passivoTotal?.toString()        ?? null,
+          pl:                  estrutura.pl?.toString()                  ?? null,
+          dividaFinanceiraCp:  estrutura.dividaFinanceiraCp?.toString()  ?? null,
+          dividaFinanceiraLp:  estrutura.dividaFinanceiraLp?.toString()  ?? null,
+          dividaFinanceiraTot: estrutura.dividaFinanceiraTot?.toString() ?? null,
+          dividaLiquida:       estrutura.dividaLiquida?.toString()       ?? null,
+        }
+      : balOnDemand
+        ? { ativoTotal: balOnDemand.ativoTotal, pl: balOnDemand.pl,
+            passivoTotal: null, dividaFinanceiraCp: null, dividaFinanceiraLp: null,
+            dividaFinanceiraTot: null, dividaLiquida: null }
+        : null;
+
+    return { exercicio, dre, estrutura: estruturaResp };
   }
 
   /** Exercícios disponíveis para um CNPJ (ECF ou ECD processados) */
