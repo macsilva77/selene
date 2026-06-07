@@ -85,11 +85,12 @@ export class P02DreService {
     empresaId: string,
     exercicio: number,
     regimeTributario?: string | null,
+    trimestre?: number,
   ): Promise<DreResult> {
     const candidatos = this.candidatosDre(regimeTributario);
 
     for (const registroEcf of candidatos) {
-      const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf });
+      const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
       if (rows.length === 0) continue;
 
       // Mapeia para o formato interno (valor como Decimal)

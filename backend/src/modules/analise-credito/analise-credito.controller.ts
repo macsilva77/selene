@@ -850,45 +850,68 @@ export class AnaliseCreditoController {
 
   // ─── Leitura ECF Parquet → BalData / DreData ──────────────────────────────────
 
+  /**
+   * Usa consultarComTrimestres (mesma chamada da página Demonstrações) para garantir
+   * que os dados do trimestre correto são lidos numa única conexão DuckDB.
+   *
+   * getAbs() usa 3 estratégias:
+   *   1. Nó exato (código == prefix) com |valor| > 0
+   *   2. Soma das folhas sob o prefix (nós sem filhos)
+   *   3. Zero se nenhuma estratégia retornar valor
+   *
+   * Isso resolve o caso em que o Parquet grava 0 no nó sintético pai
+   * (ex: '2.01' = 0) mas os filhos têm os valores reais.
+   */
   private async ecfBalData(empresaId: string, exercicio: number, regime: string | null): Promise<BalData | null> {
     const candidatos = this.registrosPorRegime(regime, 'bp');
     for (const registroEcf of candidatos) {
       try {
-        const trims = await this.ecfDataSource.trimestresDisponiveis(empresaId, exercicio, registroEcf);
-        if (trims.length === 0) continue;
-        const trimestre = trims.includes(4) ? 4 : Math.max(...trims);
-        const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
-        if (rows.length === 0) continue;
+        const resultado = await this.ecfDataSource.consultarComTrimestres(
+          empresaId, exercicio, registroEcf,
+        );
+        if (!resultado || resultado.registros.length === 0) continue;
 
-        const rootVal = (prefix: string): Decimal => {
-          const matching = rows.filter(r => r.linhaCodigo.startsWith(prefix));
-          if (!matching.length) return new Decimal(0);
-          const root = matching.reduce((best, r) =>
-            r.linhaCodigo.split('.').length < best.linhaCodigo.split('.').length ? r : best,
-          );
-          return new Decimal(root.valor).abs();
+        const rows = resultado.registros;
+
+        // Códigos que têm filhos (são nós sintéticos)
+        const codigosComFilhos = new Set(
+          rows.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
+        );
+
+        // Retorna |valor| de um grupo usando fallback para soma de folhas
+        const getAbs = (prefix: string): Decimal => {
+          // Estratégia 1: nó exato com valor não-nulo
+          const exact = rows.find(r => r.linhaCodigo === prefix);
+          if (exact) {
+            const v = new Decimal(exact.valor).abs();
+            if (v.greaterThan(0)) return v;
+          }
+          // Estratégia 2: soma das folhas (nós sem filhos) sob o prefixo
+          return rows
+            .filter(r => r.linhaCodigo.startsWith(`${prefix}.`) && !codigosComFilhos.has(r.linhaCodigo))
+            .reduce((s, r) => s.add(new Decimal(r.valor).abs()), new Decimal(0));
         };
 
-        const acTot  = rootVal('1.01');
-        const ancTot = rootVal('1.02');
-        const pcTot  = rootVal('2.01');
-        const pncTot = rootVal('2.02');
-        const plTot  = rootVal('2.03');
+        const acTot  = getAbs('1.01');
+        const ancTot = getAbs('1.02');
+        const pcTot  = getAbs('2.01');
+        const pncTot = getAbs('2.02');
+        const plTot  = getAbs('2.03');
         if (acTot.isZero() && plTot.isZero()) continue;
 
-        const caixa    = rootVal('1.01.01');
-        const clientes = rootVal('1.01.02');
-        const estoques = rootVal('1.01.03');
+        const caixa    = getAbs('1.01.01');
+        const clientes = getAbs('1.01.02');
+        const estoques = getAbs('1.01.03');
         const acOutros = Decimal.max(0, acTot.minus(caixa).minus(clientes).minus(estoques));
 
-        const rlp       = rootVal('1.02.01');
+        const rlp       = getAbs('1.02.01');
         const ancOutros = Decimal.max(0, ancTot.minus(rlp));
 
-        const fornec   = rootVal('2.01.01.01');
-        const empCP    = Decimal.min(rootVal('2.01.01.04').add(rootVal('2.01.02')), pcTot);
+        const fornec   = getAbs('2.01.01.01');
+        const empCP    = Decimal.min(getAbs('2.01.01.04').add(getAbs('2.01.02')), pcTot);
         const pcOutros = Decimal.max(0, pcTot.minus(fornec).minus(empCP));
 
-        const empLP    = Decimal.min(rootVal('2.02.01').add(rootVal('2.02.02')), pncTot);
+        const empLP     = Decimal.min(getAbs('2.02.01').add(getAbs('2.02.02')), pncTot);
         const pncOutros = Decimal.max(0, pncTot.minus(empLP));
 
         const bal: BalData = new Map();
@@ -917,12 +940,30 @@ export class AnaliseCreditoController {
     return null;
   }
 
+  /**
+   * Determina o trimestre correto (Q4 ou máximo disponível) para cada candidato
+   * de DRE e passa para dreService.montar, que agora filtra pelo trimestre certo.
+   * Sem esse filtro, dreService.montar mistura Q1-Q4 e pode usar valores de Q1.
+   */
   private async ecfDreData(empresaId: string, exercicio: number, regime: string | null): Promise<DreData | null> {
-    try {
-      const res = await this.dreService.montar(empresaId, exercicio, regime);
-      const dre: DreData = new Map();
-      for (const row of res.linhas) dre.set(row.linhaDre, row.valor);
-      return dre;
-    } catch { return null; }
+    const candidatos = this.registrosPorRegime(regime, 'dre');
+    for (const registroEcf of candidatos) {
+      try {
+        const resultado = await this.ecfDataSource.consultarComTrimestres(
+          empresaId, exercicio, registroEcf,
+        );
+        if (!resultado || resultado.registros.length === 0) continue;
+
+        // Usa o trimestre ativo determinado pelo consultarComTrimestres (Q4 ou máximo)
+        const trimestre = resultado.trimestreAtivo;
+        const res = await this.dreService.montar(empresaId, exercicio, regime, trimestre);
+        if (res.linhas.length === 0) continue;
+
+        const dre: DreData = new Map();
+        for (const row of res.linhas) dre.set(row.linhaDre, row.valor);
+        return dre;
+      } catch { continue; }
+    }
+    return null;
   }
 }
