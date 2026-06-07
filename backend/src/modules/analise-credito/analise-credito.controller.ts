@@ -4,11 +4,13 @@ import {
 } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { P01Service }    from './p01/p01.service';
-import { P01Job }        from './p01/p01.job';
-import { P02Service }    from './p02/p02.service';
-import { P03Service }    from './p03/p03.service';
-import { P04Service }    from './p04/p04.service';
+import { P01Service }        from './p01/p01.service';
+import { P01Job }            from './p01/p01.job';
+import { P02Service }        from './p02/p02.service';
+import { P02DreService }     from './p02/p02-dre.service';
+import { P02BalancoService } from './p02/p02-balanco.service';
+import { P03Service }        from './p03/p03.service';
+import { P04Service }        from './p04/p04.service';
 import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
 import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard }  from '../../common/guards/jwt-auth.guard';
@@ -21,13 +23,15 @@ export class AnaliseCreditoController {
   private readonly logger = new Logger(AnaliseCreditoController.name);
 
   constructor(
-    private readonly p01Service:    P01Service,
-    private readonly p01Job:        P01Job,
-    private readonly p02Service:    P02Service,
-    private readonly p03Service:    P03Service,
-    private readonly p04Service:    P04Service,
-    private readonly ecfDataSource: EcfDataSourceService,
-    private readonly prisma:        PrismaService,
+    private readonly p01Service:     P01Service,
+    private readonly p01Job:         P01Job,
+    private readonly p02Service:     P02Service,
+    private readonly dreService:     P02DreService,
+    private readonly balancoService: P02BalancoService,
+    private readonly p03Service:     P03Service,
+    private readonly p04Service:     P04Service,
+    private readonly ecfDataSource:  EcfDataSourceService,
+    private readonly prisma:         PrismaService,
   ) {}
 
   // ─── P01 ──────────────────────────────────────────────────────────────────────
@@ -362,7 +366,27 @@ export class AnaliseCreditoController {
     const dre: Record<string, string | null> = {};
     for (const r of dreRows) dre[r.linhaDre] = r.valor.toString();
 
-    const processando = dreRows.length === 0 || estrutura === null;
+    // Fallback ECF para DRE quando P02 ainda não rodou
+    if (dreRows.length === 0) {
+      try {
+        const dreEcf = await this.dreService.montar(empresa.id, exercicio, empresa.regimeTributario);
+        for (const row of dreEcf.linhas) dre[row.linhaDre] = row.valor.toString();
+      } catch { /* ECF pode estar ausente — mantém dre vazio */ }
+    }
+
+    // Fallback ECF para PL quando P03 ainda não rodou
+    let plEcf: string | null = null;
+    if (estrutura === null) {
+      try {
+        const balEcf = await this.balancoService.montar(empresa.id, exercicio, empresa.regimeTributario);
+        const plTotal = balEcf.linhas
+          .filter(r => r.grupo === 'PL')
+          .reduce((acc, r) => acc.add(r.valor), new Decimal(0));
+        if (plTotal.gt(0)) plEcf = plTotal.toString();
+      } catch { /* ECF pode estar ausente */ }
+    }
+
+    const processando = Object.keys(dre).length === 0 && plEcf === null;
 
     const estruturaResp = estrutura
       ? {
@@ -374,7 +398,11 @@ export class AnaliseCreditoController {
           dividaFinanceiraTot: estrutura.dividaFinanceiraTot?.toString() ?? null,
           dividaLiquida:       estrutura.dividaLiquida?.toString()       ?? null,
         }
-      : null;
+      : plEcf !== null
+        ? { ativoTotal: null, passivoTotal: null, pl: plEcf,
+            dividaFinanceiraCp: null, dividaFinanceiraLp: null,
+            dividaFinanceiraTot: null, dividaLiquida: null }
+        : null;
 
     return { exercicio, dre, estrutura: estruturaResp, processando };
   }
