@@ -54,20 +54,6 @@ export function AnaliseCreditoDashboard() {
       .catch(() => toastError('Erro ao carregar empresas'));
   }, [toastError]);
 
-  const processarEmpresa = useCallback(async (cnpj: string) => {
-    if (!cnpj || calculando) return;
-    setCalculando(true);
-    try {
-      await analiseCreditoApi.calcular(cnpj);
-      await carregarDados(cnpj, exercicioFiltro);
-    } catch {
-      toastError('Erro ao processar empresa');
-    } finally {
-      setCalculando(false);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calculando, exercicioFiltro, toastError]);
-
   const carregarFinanceiro = useCallback(async (cnpj: string, exercicioAlvo: number) => {
     try {
       const f = await analiseCreditoApi.financeiro(cnpj, exercicioAlvo);
@@ -111,6 +97,19 @@ export function AnaliseCreditoDashboard() {
       setCarregando(false);
     }
   }, [toastError, carregarFinanceiro]);
+
+  const processarEmpresa = useCallback(async (cnpj: string) => {
+    if (!cnpj || calculando) return;
+    setCalculando(true);
+    try {
+      await analiseCreditoApi.calcular(cnpj);
+      await carregarDados(cnpj, exercicioFiltro);
+    } catch {
+      toastError('Erro ao processar empresa');
+    } finally {
+      setCalculando(false);
+    }
+  }, [calculando, carregarDados, exercicioFiltro, toastError]);
 
   useEffect(() => {
     if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
