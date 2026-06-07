@@ -123,13 +123,24 @@ export class P02DreService {
 
   private montarDeL300(registros: { linhaCodigo: string; descricao: string; valor: Decimal }[]): DreResult {
     const alertas: string[] = [];
-    const acc = new Map<LinhaDre, Decimal>();
+
+    // Agrupa candidatos por linha DRE e depois usa SOMENTE o nó de menor
+    // profundidade (nó pai/raiz da hierarquia), que já é o valor agregado.
+    // Somar pai + filhos causaria dupla/tripla contagem (3.01.01.03 = CMV total,
+    // 3.01.01.03.01 = subtotal, 3.01.01.03.01.01 = folha — mesmo valor em 3 níveis).
+    const candidatos = new Map<LinhaDre, { linhaCodigo: string; valor: Decimal }>();
 
     for (const r of registros) {
       const match = L300_PREFIX_MAP.find(m => r.linhaCodigo.startsWith(m.prefixo));
       if (!match) continue;
-      acc.set(match.linha, (acc.get(match.linha) ?? new Decimal(0)).add(abs(r.valor)));
+      const atual = candidatos.get(match.linha);
+      const profAtual  = atual?.linhaCodigo.split('.').length ?? Infinity;
+      const profNovo   = r.linhaCodigo.split('.').length;
+      if (profNovo < profAtual) candidatos.set(match.linha, r);
     }
+
+    const acc = new Map<LinhaDre, Decimal>();
+    for (const [linha, r] of candidatos) acc.set(linha, abs(r.valor));
 
     // lucro_liquido: nó raiz (menor quantidade de segmentos)
     if (!acc.has('lucro_liquido')) {
