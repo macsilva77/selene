@@ -121,13 +121,13 @@ export function KpisAnuais({ kpis }: Readonly<KpisAnuaisProps>) {
     {
       key: 'receitaLiquida',
       label: 'Receita Líquida',
-      sinalFn: (c, p) => calcSinal(c.receitaLiquida, p?.receitaLiquida),
+      sinalFn: (c, p) => calcSinal(c.receitaLiquida, p?.receitaLiquida ?? null),
       pctFn:   (c, p) => calcPct(c.receitaLiquida, p?.receitaLiquida ?? null),
     },
     {
       key: 'ebitda',
       label: 'EBITDA',
-      sinalFn: (c, p) => calcSinal(c.ebitda, p?.ebitda),
+      sinalFn: (c, p) => calcSinal(c.ebitda, p?.ebitda ?? null),
       pctFn:   (c, p) => calcPct(c.ebitda, p?.ebitda ?? null),
     },
     {
@@ -136,14 +136,14 @@ export function KpisAnuais({ kpis }: Readonly<KpisAnuaisProps>) {
       sinalFn: (c, p) => {
         const abs = calcSinalAbsoluto(c.lucroLiquido);
         if (abs !== 'verde') return abs;
-        return calcSinal(c.lucroLiquido, p?.lucroLiquido);
+        return calcSinal(c.lucroLiquido, p?.lucroLiquido ?? null);
       },
       pctFn: (c, p) => calcPct(c.lucroLiquido, p?.lucroLiquido ?? null),
     },
     {
       key: 'pl',
       label: 'Patrimônio Líquido',
-      sinalFn: (c, p) => calcSinal(c.pl, p?.pl),
+      sinalFn: (c, p) => calcSinal(c.pl, p?.pl ?? null),
       pctFn:   (c, p) => calcPct(c.pl, p?.pl ?? null),
     },
   ];
