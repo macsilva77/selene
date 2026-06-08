@@ -108,10 +108,11 @@ function KpiBlock({ titulo, subtitulo, dados, fmtValue = fmtBrl }: Readonly<KpiB
               dataKey="ano"
               type="category"
               width={64}
-              tick={(tickProps: Record<string, unknown>) => {
+              tick={(rawTick) => {
+                const tickProps = rawTick as { x?: number; y?: number; payload?: { value: string } };
                 const x = Number(tickProps.x ?? 0);
                 const y = Number(tickProps.y ?? 0);
-                const payload = tickProps.payload as { value: string } | undefined;
+                const payload = tickProps.payload;
                 const ano = payload?.value ?? '';
                 const d = dados.find(item => item.ano === ano);
                 const yoyColor = d?.yoy.startsWith('+') ? '#16a34a'
@@ -147,7 +148,8 @@ function KpiBlock({ titulo, subtitulo, dados, fmtValue = fmtBrl }: Readonly<KpiB
               <LabelList
                 dataKey="valor"
                 position="right"
-                content={(labelProps: Record<string, unknown>) => {
+                content={(rawLabel) => {
+                  const labelProps = rawLabel as { x?: number; y?: number; width?: number; height?: number; value?: unknown; index?: number };
                   const lx = Number(labelProps.x ?? 0);
                   const ly = Number(labelProps.y ?? 0);
                   const lw = Number(labelProps.width ?? 0);
