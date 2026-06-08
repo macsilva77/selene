@@ -16,17 +16,6 @@ const SEV_META = {
   positivo: { label: 'Positivo', bg: 'bg-emerald-100', text: 'text-emerald-700', icon: CheckCircle,  dot: 'bg-emerald-500' },
 } as const;
 
-function SevBadge({ sev }: { sev: string }) {
-  const m = SEV_META[sev as keyof typeof SEV_META];
-  if (!m) return <span className="text-xs text-muted-foreground">{sev}</span>;
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${m.bg} ${m.text}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />
-      {m.label}
-    </span>
-  );
-}
-
 // ─── Modal de edição ──────────────────────────────────────────────────────────
 
 interface EditModalProps {
