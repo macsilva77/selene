@@ -20,6 +20,7 @@ import {
 import { VisaoGeral }       from './visao-geral';
 import { KpisAnuais }       from './kpis-anuais';
 import { EstruturaCapital } from './estrutura-capital';
+import { Alertas }          from './alertas';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -27,7 +28,7 @@ function formatarCnpj(cnpj: string) {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
-type Tab = 'visao' | 'estrutura' | 'evolucao';
+type Tab = 'visao' | 'estrutura' | 'evolucao' | 'alertas';
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
 
@@ -119,10 +120,15 @@ export function AnaliseCreditoDashboard() {
   const empresaSelecionada = empresas.find(e => e.cnpj === cnpjSelecionado);
   const exercicioAtivo = exercicioFiltro ?? exercicios[0];
 
-  const TAB_ITEMS: { id: Tab; label: string }[] = [
+  const qtdAlertas = alertas.filter(
+    a => exercicioAtivo ? a.exercicio === exercicioAtivo : true,
+  ).length;
+
+  const TAB_ITEMS: { id: Tab; label: string; badge?: number }[] = [
     { id: 'visao',     label: 'Visão geral'          },
     { id: 'estrutura', label: 'Estrutura de capital' },
-    { id: 'evolucao',  label: 'Evolução'              },
+    { id: 'evolucao',  label: 'Evolução'             },
+    { id: 'alertas',   label: 'Alertas', badge: qtdAlertas > 0 ? qtdAlertas : undefined },
   ];
 
   return (
@@ -219,13 +225,20 @@ export function AnaliseCreditoDashboard() {
                   key={t.id}
                   type="button"
                   onClick={() => setTab(t.id)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                     tab === t.id
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                   }`}
                 >
                   {t.label}
+                  {t.badge !== undefined && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                      tab === t.id ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {t.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -278,6 +291,13 @@ export function AnaliseCreditoDashboard() {
                       : <p className="text-sm text-muted-foreground">Nenhum dado disponível.</p>
                     }
                   </div>
+                )}
+
+                {tab === 'alertas' && (
+                  <Alertas
+                    alertas={alertas}
+                    exercicio={exercicioAtivo ?? 0}
+                  />
                 )}
               </>
             )}
