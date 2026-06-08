@@ -93,14 +93,18 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
-      where:    { empresaId: empresa.id },
-      select:   { exercicio: true },
-      distinct: ['exercicio'],
-      orderBy:  { exercicio: 'asc' },
-    });
-
-    const anos = ecfAnos.map(r => r.exercicio);
+    // Usa creditoEcfArquivo (Parquet GCS) como fonte primária de exercícios.
+    // creditoEcfRegistro era a fonte antiga (pré-migração Parquet) — pode estar vazio.
+    const [arqRows, regRows] = await Promise.all([
+      this.prisma.creditoEcfArquivo.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
+      this.prisma.creditoEcfRegistro.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
+    ]);
+    const anosSet = new Set([...arqRows, ...regRows].map(r => r.exercicio));
+    const anos = [...anosSet].sort((a, b) => a - b);
     const resultados: Array<{ exercicio: number; indicadores: number; comDados: boolean }> = [];
 
     for (const ano of anos) {
@@ -308,12 +312,21 @@ export class AnaliseCreditoController {
     // Exercícios com pelo menos um indicador não-null no banco
     const comDados = new Set(stored.filter(i => i.valor !== null).map(i => i.exercicio));
 
-    // Exercícios disponíveis no ECF
-    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
-      where:    { empresaId: empresa.id, ...(exercicio !== undefined ? { exercicio } : {}) },
-      select:   { exercicio: true },
-      distinct: ['exercicio'],
-    });
+    // Exercícios disponíveis no ECF (Parquet GCS ou legado DB)
+    const [ecfArqAnos, ecfRegAnos] = await Promise.all([
+      this.prisma.creditoEcfArquivo.findMany({
+        where:    { empresaId: empresa.id, ...(exercicio !== undefined ? { exercicio } : {}) },
+        select:   { exercicio: true },
+        distinct: ['exercicio'],
+      }),
+      this.prisma.creditoEcfRegistro.findMany({
+        where:    { empresaId: empresa.id, ...(exercicio !== undefined ? { exercicio } : {}) },
+        select:   { exercicio: true },
+        distinct: ['exercicio'],
+      }),
+    ]);
+    const ecfAnosSet = new Set([...ecfArqAnos, ...ecfRegAnos].map(r => r.exercicio));
+    const ecfAnos = [...ecfAnosSet].map(exercicio => ({ exercicio }));
 
     // Para anos sem dados calculados, tenta ECF on-the-fly (não salva — só para visualização imediata)
     const semDados = ecfAnos.map(r => r.exercicio).filter(a => !comDados.has(a));
