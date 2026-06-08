@@ -17,8 +17,9 @@ import {
   type ResumoFinanceiro,
   type KpiAnual,
 } from '@/lib/analise-credito-api';
-import { VisaoGeral }     from './visao-geral';
-import { KpisAnuais }     from './kpis-anuais';
+import { VisaoGeral }       from './visao-geral';
+import { KpisAnuais }       from './kpis-anuais';
+import { EstruturaCapital } from './estrutura-capital';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -26,7 +27,7 @@ function formatarCnpj(cnpj: string) {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
-type Tab = 'visao' | 'evolucao';
+type Tab = 'visao' | 'estrutura' | 'evolucao';
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
 
@@ -119,8 +120,9 @@ export function AnaliseCreditoDashboard() {
   const exercicioAtivo = exercicioFiltro ?? exercicios[0];
 
   const TAB_ITEMS: { id: Tab; label: string }[] = [
-    { id: 'visao',    label: 'Visão geral'  },
-    { id: 'evolucao', label: 'Evolução'     },
+    { id: 'visao',     label: 'Visão geral'          },
+    { id: 'estrutura', label: 'Estrutura de capital' },
+    { id: 'evolucao',  label: 'Evolução'              },
   ];
 
   return (
@@ -257,6 +259,15 @@ export function AnaliseCreditoDashboard() {
                     alertas={alertas}
                     financeiro={financeiro}
                     financeiroPrevio={financeiroPrevio}
+                  />
+                )}
+
+                {tab === 'estrutura' && (
+                  <EstruturaCapital
+                    exercicio={exercicioAtivo ?? 0}
+                    financeiro={financeiro}
+                    indicadores={indicadores}
+                    kpisAnuais={kpisAnuais}
                   />
                 )}
 
