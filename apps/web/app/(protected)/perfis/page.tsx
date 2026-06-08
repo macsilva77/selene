@@ -66,7 +66,7 @@ const PERMISSION_GROUPS = [
   { group: 'Auditoria',    module: 'auditoria',    label: 'Auditoria',    permissions: [{ key: 'auditoria.view', label: 'Visualizar' }] },
   { group: 'Relatórios',   module: 'relatorios',   label: 'Relatórios',   permissions: [{ key: 'relatorios.view', label: 'Visualizar' }] },
   { group: 'Obrigações Acessórias', module: 'obrigacoes', label: 'Obrigações Acessórias', permissions: [{ key: 'obrigacoes-acessorias.view', label: 'Visualizar / Upload' }] },
-  { group: 'Análise de Crédito',   module: 'analise-credito', label: 'Análise de Crédito', permissions: [{ key: 'analise-credito.view', label: 'Visualizar' }, { key: 'analise-credito.processar', label: 'Processar pipeline' }] },
+  { group: 'Análise de Crédito',   module: 'analise-credito', label: 'Análise de Crédito', permissions: [{ key: 'analise-credito.view', label: 'Visualizar' }, { key: 'analise-credito.processar', label: 'Processar pipeline' }, { key: 'analise-credito.regras', label: 'Manter regras de crédito' }] },
 ];
 
 
