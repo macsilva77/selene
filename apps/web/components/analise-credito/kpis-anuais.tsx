@@ -130,7 +130,7 @@ function KpiBlock({ titulo, subtitulo, dados, fmtValue = fmtBrl }: Readonly<KpiB
               <LabelList
                 dataKey="valor"
                 position="right"
-                formatter={(v: number) => fmtValue(v)}
+                formatter={(v) => fmtValue(Number(v))}
                 className="text-[11px] font-semibold fill-foreground"
               />
             </Bar>
