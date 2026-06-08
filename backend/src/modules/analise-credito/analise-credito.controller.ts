@@ -885,13 +885,13 @@ export class AnaliseCreditoController {
    * Usa consultarComTrimestres (mesma chamada da página Demonstrações) para garantir
    * que os dados do trimestre correto são lidos numa única conexão DuckDB.
    *
-   * getAbs() usa 3 estratégias:
+   * getAbs() usa 2 estratégias:
    *   1. Nó exato (código == prefix) com |valor| > 0
-   *   2. Soma das folhas sob o prefix (nós sem filhos)
-   *   3. Zero se nenhuma estratégia retornar valor
+   *   2. Soma assinada das folhas respeitando natureza_final (nova schema) ou abs puro (legado)
    *
    * Isso resolve o caso em que o Parquet grava 0 no nó sintético pai
-   * (ex: '2.01' = 0) mas os filhos têm os valores reais.
+   * (ex: '2.03' = 0) mas os filhos têm os valores reais, e evita inflar o PL
+   * com contas de contra-patrimônio (ex: Prejuízos Acumulados, natureza 'D').
    */
   private async ecfBalData(empresaId: string, exercicio: number, regime: string | null): Promise<BalData | null> {
     const candidatos = this.registrosPorRegime(regime, 'bp');
@@ -909,18 +909,32 @@ export class AnaliseCreditoController {
           rows.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
         );
 
-        // Retorna |valor| de um grupo usando fallback para soma de folhas
+        // Parquets novos têm natureza_final real; antigos fixam 'D' em todas as linhas.
+        const temNatureza = rows.some(r => r.naturezaFinal === 'C');
+
+        // Retorna o valor líquido de um grupo.
+        // Estratégia 1: nó exato com |valor| > 0 — abs() do saldo líquido já é correto.
+        // Estratégia 2: soma assinada das folhas respeitando natureza_final.
+        //   Contas ativo (1.xx) têm natureza normal 'D'; passivo/PL (2.xx) têm 'C'.
+        //   Conta com natureza oposta à normal (ex: Prejuízos Acumulados em 2.03 com 'D')
+        //   é subtraída, evitando inflação do PL ou do Ativo.
         const getAbs = (prefix: string): Decimal => {
-          // Estratégia 1: nó exato com valor não-nulo
           const exact = rows.find(r => r.linhaCodigo === prefix);
           if (exact) {
             const v = new Decimal(exact.valor).abs();
             if (v.greaterThan(0)) return v;
           }
-          // Estratégia 2: soma das folhas (nós sem filhos) sob o prefixo
-          return rows
-            .filter(r => r.linhaCodigo.startsWith(`${prefix}.`) && !codigosComFilhos.has(r.linhaCodigo))
-            .reduce((s, r) => s.add(new Decimal(r.valor).abs()), new Decimal(0));
+          const leaves = rows.filter(
+            r => r.linhaCodigo.startsWith(`${prefix}.`) && !codigosComFilhos.has(r.linhaCodigo),
+          );
+          if (temNatureza) {
+            const natNormal = prefix.startsWith('1') ? 'D' : 'C';
+            return leaves.reduce((s, r) => {
+              const v = new Decimal(r.valor).abs();
+              return r.naturezaFinal === natNormal ? s.add(v) : s.minus(v);
+            }, new Decimal(0));
+          }
+          return leaves.reduce((s, r) => s.add(new Decimal(r.valor).abs()), new Decimal(0));
         };
 
         const acTot  = getAbs('1.01');
