@@ -107,16 +107,33 @@ function KpiBlock({ titulo, subtitulo, dados, fmtValue = fmtBrl }: Readonly<KpiB
             <YAxis
               dataKey="ano"
               type="category"
-              width={36}
-              tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+              width={64}
+              tick={(tickProps: Record<string, unknown>) => {
+                const x = Number(tickProps.x ?? 0);
+                const y = Number(tickProps.y ?? 0);
+                const payload = tickProps.payload as { value: string } | undefined;
+                const ano = payload?.value ?? '';
+                const d = dados.find(item => item.ano === ano);
+                const yoyColor = d?.yoy.startsWith('+') ? '#16a34a'
+                  : d?.yoy.startsWith('-') ? '#dc2626'
+                  : '#94a3b8';
+                return (
+                  <g>
+                    <text x={x} y={y - 5} textAnchor="end" fill="hsl(var(--muted-foreground))" fontSize={11}>
+                      {ano}
+                    </text>
+                    {d?.yoy && (
+                      <text x={x} y={y + 8} textAnchor="end" fill={yoyColor} fontSize={10} fontWeight={500}>
+                        {d.yoy}
+                      </text>
+                    )}
+                  </g>
+                );
+              }}
               axisLine={false}
               tickLine={false}
             />
-            <XAxis
-              type="number"
-              hide
-              domain={[0, 'dataMax']}
-            />
+            <XAxis type="number" hide domain={[0, 'dataMax']} />
             <ChartTooltip
               cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
               content={
@@ -130,32 +147,42 @@ function KpiBlock({ titulo, subtitulo, dados, fmtValue = fmtBrl }: Readonly<KpiB
               <LabelList
                 dataKey="valor"
                 position="right"
-                formatter={(v) => fmtValue(Number(v))}
-                className="text-[11px] font-semibold fill-foreground"
+                content={(labelProps: Record<string, unknown>) => {
+                  const lx = Number(labelProps.x ?? 0);
+                  const ly = Number(labelProps.y ?? 0);
+                  const lw = Number(labelProps.width ?? 0);
+                  const lh = Number(labelProps.height ?? 22);
+                  const value = Number(labelProps.value ?? 0);
+                  const index = Number(labelProps.index ?? 0);
+                  const d = dados[index];
+                  const cx = lx + lw + 6;
+                  const cy = ly + lh / 2;
+                  const hasExtra = Boolean(d?.extra);
+                  return (
+                    <g>
+                      <text
+                        x={cx}
+                        y={cy + (hasExtra ? -5 : 0)}
+                        dominantBaseline="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill="hsl(var(--foreground))"
+                      >
+                        {fmtValue(value)}
+                      </text>
+                      {hasExtra && (
+                        <text x={cx} y={cy + 8} dominantBaseline="middle" fontSize={10} fill="hsl(var(--muted-foreground))">
+                          {d?.extra}
+                        </text>
+                      )}
+                    </g>
+                  );
+                }}
               />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartContainer>
-
-      {/* YoY + extra — pl-10 alinha com YAxis(36px)+margin(4px), pr-20 com margin right(80px) */}
-      <div className="flex flex-col gap-0 pl-10 pr-20">
-        {dados.map(d => {
-          let yoyCls = 'text-muted-foreground';
-          if (d.yoy.startsWith('+')) yoyCls = 'text-emerald-600';
-          if (d.yoy.startsWith('-')) yoyCls = 'text-red-600';
-          return (
-          <div key={d.ano} className="flex h-11 items-center justify-between">
-            <span className={`text-[11px] font-medium ${yoyCls}`}>
-              {d.yoy}
-            </span>
-            {d.extra && (
-              <span className="text-[11px] text-muted-foreground">{d.extra}</span>
-            )}
-          </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
