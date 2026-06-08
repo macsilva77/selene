@@ -502,12 +502,17 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    const ecfAnos = await this.prisma.creditoEcfRegistro.findMany({
-      where:    { empresaId: empresa.id },
-      select:   { exercicio: true },
-      distinct: ['exercicio'],
-    });
-    const exercicios = ecfAnos.map(r => r.exercicio).sort((a, b) => b - a);
+    // Descobre exercícios (Parquet GCS + legado DB)
+    const [arqKpi, regKpi] = await Promise.all([
+      this.prisma.creditoEcfArquivo.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
+      this.prisma.creditoEcfRegistro.findMany({
+        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
+      }),
+    ]);
+    const kpiAnosSet = new Set([...arqKpi, ...regKpi].map(r => r.exercicio));
+    const exercicios = [...kpiAnosSet].sort((a, b) => b - a);
     if (exercicios.length === 0) return [];
 
     const DRE_LINHAS = ['receita_liquida', 'ebitda', 'lucro_liquido'];
@@ -519,7 +524,7 @@ export class AnaliseCreditoController {
       }),
       this.prisma.creditoEstruturaCapital.findMany({
         where:  { empresaId: empresa.id, exercicio: { in: exercicios } },
-        select: { exercicio: true, pl: true },
+        select: { exercicio: true, pl: true, dividaFinanceiraTot: true },
       }),
     ]);
 
@@ -528,18 +533,21 @@ export class AnaliseCreditoController {
       if (!dreMap.has(r.exercicio)) dreMap.set(r.exercicio, new Map());
       dreMap.get(r.exercicio)!.set(r.linhaDre, r.valor.toString());
     }
-    const plMap = new Map<number, string>();
+    const plMap    = new Map<number, string>();
+    const dividaMap = new Map<number, string>();
     for (const e of estruturasPipeline) {
-      if (e.pl != null) plMap.set(e.exercicio, e.pl.toString());
+      if (e.pl != null)                 plMap.set(e.exercicio, e.pl.toString());
+      if (e.dividaFinanceiraTot != null) dividaMap.set(e.exercicio, e.dividaFinanceiraTot.toString());
     }
 
     const resultado = await Promise.all(exercicios.map(async ano => {
       const drePipe = dreMap.get(ano);
 
-      let receitaLiquida: string | null = drePipe?.get('receita_liquida') ?? null;
-      let ebitda:         string | null = drePipe?.get('ebitda')          ?? null;
-      let lucroLiquido:   string | null = drePipe?.get('lucro_liquido')   ?? null;
-      let pl:             string | null = plMap.get(ano)                  ?? null;
+      let receitaLiquida:    string | null = drePipe?.get('receita_liquida') ?? null;
+      let ebitda:            string | null = drePipe?.get('ebitda')          ?? null;
+      let lucroLiquido:      string | null = drePipe?.get('lucro_liquido')   ?? null;
+      let pl:                string | null = plMap.get(ano)                  ?? null;
+      let dividaFinanceira:  string | null = dividaMap.get(ano)              ?? null;
 
       // Fallback ECF quando calcular ainda não rodou
       if (!drePipe || drePipe.size === 0) {
@@ -552,17 +560,25 @@ export class AnaliseCreditoController {
           }
         } catch { /* ECF ausente */ }
       }
-      if (pl === null) {
+      if (pl === null || dividaFinanceira === null) {
         try {
           const bal = await this.ecfBalData(empresa.id, ano, empresa.regimeTributario);
           if (bal) {
-            const plTotal = [...(bal.get('PL')?.values() ?? [])].reduce((s, v) => s.add(v), new Decimal(0));
-            if (plTotal.gt(0)) pl = plTotal.toString();
+            if (pl === null) {
+              const plTotal = [...(bal.get('PL')?.values() ?? [])].reduce((s, v) => s.add(v), new Decimal(0));
+              if (plTotal.gt(0)) pl = plTotal.toString();
+            }
+            if (dividaFinanceira === null) {
+              const empCP = bal.get('PC')?.get('Empréstimos CP') ?? new Decimal(0);
+              const empLP = bal.get('PNC')?.get('Empréstimos LP') ?? new Decimal(0);
+              const tot   = empCP.add(empLP);
+              if (tot.gt(0)) dividaFinanceira = tot.toString();
+            }
           }
         } catch { /* ECF ausente */ }
       }
 
-      return { exercicio: ano, receitaLiquida, ebitda, lucroLiquido, pl };
+      return { exercicio: ano, receitaLiquida, ebitda, lucroLiquido, pl, dividaFinanceira };
     }));
 
     return resultado;

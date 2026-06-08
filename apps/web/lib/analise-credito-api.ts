@@ -116,11 +116,12 @@ export interface Inconsistencia {
 }
 
 export interface KpiAnual {
-  exercicio:      number;
-  receitaLiquida: string | null;
-  ebitda:         string | null;
-  lucroLiquido:   string | null;
-  pl:             string | null;
+  exercicio:         number;
+  receitaLiquida:    string | null;
+  ebitda:            string | null;
+  lucroLiquido:      string | null;
+  pl:                string | null;
+  dividaFinanceira:  string | null;
 }
 
 /* ─── API calls ──────────────────────────────────────────────────────────── */
