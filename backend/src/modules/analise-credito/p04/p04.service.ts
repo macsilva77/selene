@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService }       from '../../../database/prisma.service';
 import { Decimal }             from '@prisma/client/runtime/library';
-import { avaliarRegras, classificar, RegraCtx } from './p04-regras';
+import { avaliarRegras, classificar, RegraCtx, ConfigMap } from './p04-regras';
+import { CreditoRegraService } from '../credito-regra.service';
 
 import { VERSAO_P04 } from '../shared/versoes';
 
@@ -18,11 +19,15 @@ export interface P04Resultado {
 export class P04Service {
   private readonly logger = new Logger(P04Service.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma:       PrismaService,
+    private readonly regraService: CreditoRegraService,
+  ) {}
 
   // ─── API pública ───────────────────────────────────────────────────────────
 
   async processarTodos(tenantId: string): Promise<P04Resultado[]> {
+    const configMap: ConfigMap = await this.regraService.loadConfigs();
     const empresas = await this.prisma.creditoEmpresa.findMany({
       where: { tenantId }, select: { id: true },
     });
@@ -31,7 +36,7 @@ export class P04Service {
       const exercicios = await this.descobrirExercicios(e.id);
       for (const exercicio of exercicios) {
         try {
-          resultados.push(await this.processarExercicio(e.id, exercicio));
+          resultados.push(await this.processarExercicio(e.id, exercicio, configMap));
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           this.logger.error(`[P04] empresa=${e.id} exercicio=${exercicio}: ${msg}`, err instanceof Error ? err.stack : undefined);
@@ -42,7 +47,8 @@ export class P04Service {
     return resultados;
   }
 
-  async processarExercicio(empresaId: string, exercicio: number): Promise<P04Resultado> {
+  async processarExercicio(empresaId: string, exercicio: number, configMap?: ConfigMap): Promise<P04Resultado> {
+    const map = configMap ?? await this.regraService.loadConfigs();
     const t0 = Date.now();
     this.logger.log(`[P04] empresa=${empresaId} exercicio=${exercicio}`);
 
@@ -80,8 +86,8 @@ export class P04Service {
       fonte: nome => indAtual.get(nome)?.fonteOk ?? 1,
     };
 
-    // Avalia as 25 regras
-    const alertas = avaliarRegras(ctx);
+    // Avalia as 25 regras com config carregada do banco
+    const alertas = avaliarRegras(ctx, map);
 
     // Calcula confiabilidade
     const totalInds = indAtual.size;

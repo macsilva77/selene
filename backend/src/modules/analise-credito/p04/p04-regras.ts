@@ -1,12 +1,10 @@
 /**
  * P04 — Regras determinísticas de classificação de risco.
  * Todas as funções são puras. Retornam AlertaRow | null.
- * null = indicador requerido ausente (input NULL em tb_indicadores).
+ * null = indicador requerido ausente (input NULL em tb_indicadores) ou regra inativa.
  *
- * Convenções:
- *   ind(nome)     → valor do indicador no exercício atual (Decimal | null)
- *   indAnt(nome)  → valor no exercício anterior (Decimal | null)
- *   série         → array de valores por exercício ASC (para janelas deslizantes)
+ * RegraCfg é carregada da tabela credito_regras (editável via tela de manutenção).
+ * A lógica de avaliação permanece em código; thresholds, mensagem e severidade vêm do banco.
  */
 import { Decimal } from '@prisma/client/runtime/library';
 
@@ -24,27 +22,36 @@ export interface AlertaRow {
   regraOk:     number;
 }
 
-// Contexto de entrada para avaliação das regras
 export interface RegraCtx {
   ind:    (nome: string) => Decimal | null;
   indAnt: (nome: string) => Decimal | null;
-  // Série de valores de um indicador em exercícios ASC (incluindo atual)
   serie:  (nome: string) => (Decimal | null)[];
-  // fonteOk do indicador (0 = inferido)
   fonte:  (nome: string) => number;
 }
+
+export interface RegraCfg {
+  threshold1?:       number | null;
+  threshold2?:       number | null;
+  severidade:        string;
+  templateMensagem:  string;
+  ativo:             boolean;
+}
+
+export type ConfigMap = Map<string, RegraCfg>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const pct = (d: Decimal) => `${d.mul(100).toFixed(1)}%`;
-const val = (d: Decimal, casas = 2) => `R$ ${d.toFixed(casas)}`;
 const rat = (d: Decimal) => `${d.toFixed(2)}x`;
+
+function renderMsg(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
+}
 
 function fonteOk(ctx: RegraCtx, ...nomes: string[]): number {
   return nomes.every(n => ctx.fonte(n) === 1) ? 1 : 0;
 }
 
-// Conta exercícios consecutivos (mais recentes) onde pred é true
 function consecutivosRecentes(serie: (Decimal | null)[], pred: (v: Decimal) => boolean): number {
   let count = 0;
   for (let i = serie.length - 1; i >= 0; i--) {
@@ -55,196 +62,205 @@ function consecutivosRecentes(serie: (Decimal | null)[], pred: (v: Decimal) => b
   return count;
 }
 
-// ─── Regras CRÍTICAS (CR) ─────────────────────────────────────────────────────
-
-function cr01(ctx: RegraCtx): AlertaRow | null {
-  const pl = ctx.ind('pl');
-  if (pl === null) return null;
-  if (!pl.isNegative()) return null;
-  return { codigoRegra: 'CR-01', severidade: 'critico', indicador: 'pl',
-    valorAtual: pl, categoria: 'solvência',
-    mensagem: `Patrimônio Líquido negativo (${val(pl)})`,
-    regraOk: fonteOk(ctx, 'pl') };
+function cfg(map: ConfigMap, code: string): RegraCfg | null {
+  const c = map.get(code);
+  return c?.ativo ? c : null;
 }
 
-function cr02(ctx: RegraCtx): AlertaRow | null {
+// ─── Regras CRÍTICAS ──────────────────────────────────────────────────────────
+
+function cr01(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-01'); if (!c) return null;
+  const pl = ctx.ind('pl');
+  if (pl === null || !pl.isNegative()) return null;
+  return { codigoRegra: 'CR-01', severidade: c.severidade as Severidade, indicador: 'pl',
+    valorAtual: pl, categoria: 'solvência', regraOk: fonteOk(ctx, 'pl'),
+    mensagem: renderMsg(c.templateMensagem, { val: pl.toFixed(2) }) };
+}
+
+function cr02(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-02'); if (!c) return null;
+  const th = c.threshold1 ?? 0.05;
   const pl    = ctx.ind('pl');
-  const ativo = ctx.ind('roa'); // proxy: se roa existe, ativo total foi calculado
-  const grau  = ctx.ind('grau_endividamento');
   const indep = ctx.ind('independencia_financeira');
   if (indep === null || pl === null) return null;
-  if (pl.isNegative() || indep.greaterThanOrEqualTo(0.05)) return null;
-  return { codigoRegra: 'CR-02', severidade: 'critico', indicador: 'independencia_financeira',
-    valorAtual: indep, categoria: 'solvência',
-    mensagem: `PL representa menos de 5% do ativo total (${pct(indep)})`,
-    regraOk: fonteOk(ctx, 'independencia_financeira', 'pl') };
+  if (pl.isNegative() || indep.greaterThanOrEqualTo(th)) return null;
+  return { codigoRegra: 'CR-02', severidade: c.severidade as Severidade, indicador: 'independencia_financeira',
+    valorAtual: indep, categoria: 'solvência', regraOk: fonteOk(ctx, 'independencia_financeira', 'pl'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(indep), th1pct: `${(th * 100).toFixed(0)}%` }) };
 }
 
-function cr03(ctx: RegraCtx): AlertaRow | null {
-  const serie = ctx.serie('lucro_liquido'); // valores ASC
-  // Filtra nulos para evitar quebra de sequência por dado ausente
+function cr03(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-03'); if (!c) return null;
+  const minConsec = c.threshold1 ?? 2;
+  const serie = ctx.serie('lucro_liquido');
   const n = consecutivosRecentes(serie, v => v.isNegative());
-  if (n < 2) return null;
+  if (n < minConsec) return null;
   const atual = ctx.ind('lucro_liquido');
-  return { codigoRegra: 'CR-03', severidade: 'critico', indicador: 'lucro_liquido',
-    valorAtual: atual, categoria: 'rentabilidade',
-    mensagem: `Prejuízo líquido nos últimos ${n} exercícios consecutivos`,
-    regraOk: fonteOk(ctx, 'lucro_liquido') };
+  return { codigoRegra: 'CR-03', severidade: c.severidade as Severidade, indicador: 'lucro_liquido',
+    valorAtual: atual, categoria: 'rentabilidade', regraOk: fonteOk(ctx, 'lucro_liquido'),
+    mensagem: renderMsg(c.templateMensagem, { n: String(n) }) };
 }
 
-function cr04(ctx: RegraCtx): AlertaRow | null {
+function cr04(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-04'); if (!c) return null;
+  const th = c.threshold1 ?? 1;
   const lc = ctx.ind('liquidez_corrente');
-  if (lc === null) return null;
-  if (!lc.lessThan(1)) return null;
-  return { codigoRegra: 'CR-04', severidade: 'critico', indicador: 'liquidez_corrente',
-    valorAtual: lc, categoria: 'liquidez',
-    mensagem: `Liquidez corrente de ${rat(lc)} — passivo circulante supera ativo circulante`,
-    regraOk: fonteOk(ctx, 'liquidez_corrente') };
+  if (lc === null || !lc.lessThan(th)) return null;
+  return { codigoRegra: 'CR-04', severidade: c.severidade as Severidade, indicador: 'liquidez_corrente',
+    valorAtual: lc, categoria: 'liquidez', regraOk: fonteOk(ctx, 'liquidez_corrente'),
+    mensagem: renderMsg(c.templateMensagem, { val: rat(lc), th1: String(th) }) };
 }
 
-function cr05(ctx: RegraCtx): AlertaRow | null {
+function cr05(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-05'); if (!c) return null;
+  const th = c.threshold1 ?? 4;
   const dlE = ctx.ind('dl_ebitda');
-  if (dlE === null) return null;
-  if (!dlE.greaterThan(4)) return null;
-  return { codigoRegra: 'CR-05', severidade: 'critico', indicador: 'dl_ebitda',
-    valorAtual: dlE, categoria: 'endividamento',
-    mensagem: `Dívida Líquida/EBITDA de ${dlE.toFixed(1)}x — acima do limite crítico de 4x`,
-    regraOk: fonteOk(ctx, 'dl_ebitda') };
+  if (dlE === null || !dlE.greaterThan(th)) return null;
+  return { codigoRegra: 'CR-05', severidade: c.severidade as Severidade, indicador: 'dl_ebitda',
+    valorAtual: dlE, categoria: 'endividamento', regraOk: fonteOk(ctx, 'dl_ebitda'),
+    mensagem: renderMsg(c.templateMensagem, { val: dlE.toFixed(1), th1: String(th) }) };
 }
 
-function cr06(ctx: RegraCtx): AlertaRow | null {
+function cr06(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-06'); if (!c) return null;
   const ebitda = ctx.ind('ebitda');
-  if (ebitda === null) return null;
-  if (ebitda.greaterThan(0)) return null;
-  return { codigoRegra: 'CR-06', severidade: 'critico', indicador: 'ebitda',
-    valorAtual: ebitda, categoria: 'geração de caixa',
-    mensagem: `EBITDA negativo ou nulo (${val(ebitda)})`,
-    regraOk: fonteOk(ctx, 'ebitda') };
+  if (ebitda === null || ebitda.greaterThan(0)) return null;
+  return { codigoRegra: 'CR-06', severidade: c.severidade as Severidade, indicador: 'ebitda',
+    valorAtual: ebitda, categoria: 'geração de caixa', regraOk: fonteOk(ctx, 'ebitda'),
+    mensagem: renderMsg(c.templateMensagem, { val: ebitda.toFixed(2) }) };
 }
 
-function cr07(ctx: RegraCtx): AlertaRow | null {
+function cr07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-07'); if (!c) return null;
+  const th = c.threshold1 ?? 1;
   const cj = ctx.ind('cobertura_juros');
-  if (cj === null) return null;
-  if (!cj.lessThan(1)) return null;
-  return { codigoRegra: 'CR-07', severidade: 'critico', indicador: 'cobertura_juros',
-    valorAtual: cj, categoria: 'capacidade de pagamento',
-    mensagem: `Cobertura de juros de ${cj.toFixed(1)}x — EBIT insuficiente para cobrir despesas financeiras`,
-    regraOk: fonteOk(ctx, 'cobertura_juros') };
+  if (cj === null || !cj.lessThan(th)) return null;
+  return { codigoRegra: 'CR-07', severidade: c.severidade as Severidade, indicador: 'cobertura_juros',
+    valorAtual: cj, categoria: 'capacidade de pagamento', regraOk: fonteOk(ctx, 'cobertura_juros'),
+    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(1) }) };
 }
 
-function cr08(ctx: RegraCtx): AlertaRow | null {
+function cr08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-08'); if (!c) return null;
+  const th = c.threshold1 ?? 3;
   const ctcp    = ctx.ind('relacao_ct_cp');
   const ctcpAnt = ctx.indAnt('relacao_ct_cp');
   if (ctcp === null || ctcpAnt === null) return null;
-  if (!ctcp.greaterThan(3)) return null;
-  if (!ctcp.greaterThan(ctcpAnt)) return null;
-  return { codigoRegra: 'CR-08', severidade: 'critico', indicador: 'relacao_ct_cp',
-    valorAtual: ctcp, categoria: 'estrutura de capital',
-    mensagem: `CT/CP de ${ctcp.toFixed(1)}x com tendência crescente — risco estrutural`,
-    regraOk: fonteOk(ctx, 'relacao_ct_cp') };
+  if (!ctcp.greaterThan(th) || !ctcp.greaterThan(ctcpAnt)) return null;
+  return { codigoRegra: 'CR-08', severidade: c.severidade as Severidade, indicador: 'relacao_ct_cp',
+    valorAtual: ctcp, categoria: 'estrutura de capital', regraOk: fonteOk(ctx, 'relacao_ct_cp'),
+    mensagem: renderMsg(c.templateMensagem, { val: ctcp.toFixed(1) }) };
 }
 
-// ─── Regras ATENÇÃO (AT) ──────────────────────────────────────────────────────
+// ─── Regras ATENÇÃO ───────────────────────────────────────────────────────────
 
-function at01(ctx: RegraCtx): AlertaRow | null {
+function at01(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-01'); if (!c) return null;
+  const th = c.threshold1 ?? -0.10;
   const cr = ctx.ind('crescimento_receita');
-  if (cr === null) return null;
-  if (!cr.lessThan(-0.10)) return null;
-  return { codigoRegra: 'AT-01', severidade: 'atencao', indicador: 'crescimento_receita',
-    valorAtual: cr, categoria: 'desempenho operacional',
-    mensagem: `Receita caiu ${pct(cr.abs())} em relação ao exercício anterior`,
-    regraOk: fonteOk(ctx, 'crescimento_receita') };
+  if (cr === null || !cr.lessThan(th)) return null;
+  return { codigoRegra: 'AT-01', severidade: c.severidade as Severidade, indicador: 'crescimento_receita',
+    valorAtual: cr, categoria: 'desempenho operacional', regraOk: fonteOk(ctx, 'crescimento_receita'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(cr), valAbs: pct(cr.abs()) }) };
 }
 
-function at02(ctx: RegraCtx): AlertaRow | null {
+function at02(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-02'); if (!c) return null;
   const cCli = ctx.ind('crescimento_clientes');
   const cRec = ctx.ind('crescimento_receita');
-  if (cCli === null || cRec === null) return null;
-  if (!cCli.greaterThan(cRec)) return null;
-  return { codigoRegra: 'AT-02', severidade: 'atencao', indicador: 'crescimento_clientes',
-    valorAtual: cCli, categoria: 'qualidade do balanço',
-    mensagem: `Clientes cresceram ${pct(cCli)} enquanto receita cresceu ${pct(cRec)}`,
-    regraOk: fonteOk(ctx, 'crescimento_clientes', 'crescimento_receita') };
+  if (cCli === null || cRec === null || !cCli.greaterThan(cRec)) return null;
+  return { codigoRegra: 'AT-02', severidade: c.severidade as Severidade, indicador: 'crescimento_clientes',
+    valorAtual: cCli, categoria: 'qualidade do balanço', regraOk: fonteOk(ctx, 'crescimento_clientes', 'crescimento_receita'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(cCli), val2: pct(cRec) }) };
 }
 
-function at03(ctx: RegraCtx): AlertaRow | null {
+function at03(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-03'); if (!c) return null;
+  const th = c.threshold1 ?? 0.30;
   const cEst = ctx.ind('crescimento_estoques');
   const cRec = ctx.ind('crescimento_receita');
   if (cEst === null || cRec === null) return null;
-  if (!cEst.greaterThan(0.30)) return null;
-  if (!cRec.lessThan(cEst)) return null;
-  return { codigoRegra: 'AT-03', severidade: 'atencao', indicador: 'crescimento_estoques',
-    valorAtual: cEst, categoria: 'qualidade do balanço',
-    mensagem: `Estoques cresceram ${pct(cEst)} sem crescimento equivalente de receita`,
-    regraOk: fonteOk(ctx, 'crescimento_estoques', 'crescimento_receita') };
+  if (!cEst.greaterThan(th) || !cRec.lessThan(cEst)) return null;
+  return { codigoRegra: 'AT-03', severidade: c.severidade as Severidade, indicador: 'crescimento_estoques',
+    valorAtual: cEst, categoria: 'qualidade do balanço', regraOk: fonteOk(ctx, 'crescimento_estoques', 'crescimento_receita'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(cEst) }) };
 }
 
-function at04(ctx: RegraCtx): AlertaRow | null {
+function at04(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-04'); if (!c) return null;
+  const th = c.threshold1 ?? 0.08;
   const mE    = ctx.ind('margem_ebitda');
   const ebitda = ctx.ind('ebitda');
   if (mE === null || ebitda === null) return null;
-  if (!mE.lessThan(0.08) || !ebitda.greaterThan(0)) return null;
-  return { codigoRegra: 'AT-04', severidade: 'atencao', indicador: 'margem_ebitda',
-    valorAtual: mE, categoria: 'rentabilidade',
-    mensagem: `Margem EBITDA de ${pct(mE)} — abaixo do patamar mínimo de 8%`,
-    regraOk: fonteOk(ctx, 'margem_ebitda') };
+  if (!mE.lessThan(th) || !ebitda.greaterThan(0)) return null;
+  return { codigoRegra: 'AT-04', severidade: c.severidade as Severidade, indicador: 'margem_ebitda',
+    valorAtual: mE, categoria: 'rentabilidade', regraOk: fonteOk(ctx, 'margem_ebitda'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(mE), th1pct: `${(th * 100).toFixed(0)}%` }) };
 }
 
-function at05(ctx: RegraCtx): AlertaRow | null {
+function at05(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-05'); if (!c) return null;
+  const lo = c.threshold1 ?? 1.0;
+  const hi = c.threshold2 ?? 1.2;
   const lc = ctx.ind('liquidez_corrente');
-  if (lc === null) return null;
-  if (!lc.greaterThanOrEqualTo(1) || !lc.lessThan(1.2)) return null;
-  return { codigoRegra: 'AT-05', severidade: 'atencao', indicador: 'liquidez_corrente',
-    valorAtual: lc, categoria: 'liquidez',
-    mensagem: `Liquidez corrente de ${rat(lc)} — margem estreita`,
-    regraOk: fonteOk(ctx, 'liquidez_corrente') };
+  if (lc === null || !lc.greaterThanOrEqualTo(lo) || !lc.lessThan(hi)) return null;
+  return { codigoRegra: 'AT-05', severidade: c.severidade as Severidade, indicador: 'liquidez_corrente',
+    valorAtual: lc, categoria: 'liquidez', regraOk: fonteOk(ctx, 'liquidez_corrente'),
+    mensagem: renderMsg(c.templateMensagem, { val: rat(lc) }) };
 }
 
-function at06(ctx: RegraCtx): AlertaRow | null {
+function at06(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-06'); if (!c) return null;
+  const thDcp = c.threshold1 ?? 0.60;
+  const thLc  = c.threshold2 ?? 1.3;
   const dcp = ctx.ind('divida_cp_pct');
   const lc  = ctx.ind('liquidez_corrente');
   if (dcp === null || lc === null) return null;
-  if (!dcp.greaterThan(0.60) || !lc.lessThan(1.3)) return null;
-  return { codigoRegra: 'AT-06', severidade: 'atencao', indicador: 'divida_cp_pct',
-    valorAtual: dcp, categoria: 'estrutura de capital',
-    mensagem: `Dívida CP representa ${pct(dcp)} da dívida com liquidez corrente de ${rat(lc)}`,
-    regraOk: fonteOk(ctx, 'divida_cp_pct', 'liquidez_corrente') };
+  if (!dcp.greaterThan(thDcp) || !lc.lessThan(thLc)) return null;
+  return { codigoRegra: 'AT-06', severidade: c.severidade as Severidade, indicador: 'divida_cp_pct',
+    valorAtual: dcp, categoria: 'estrutura de capital', regraOk: fonteOk(ctx, 'divida_cp_pct', 'liquidez_corrente'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(dcp), val2: rat(lc) }) };
 }
 
-function at07(ctx: RegraCtx): AlertaRow | null {
+function at07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-07'); if (!c) return null;
+  const lo = c.threshold1 ?? 1.0;
+  const hi = c.threshold2 ?? 1.5;
   const cj = ctx.ind('cobertura_juros');
-  if (cj === null) return null;
-  if (!cj.greaterThanOrEqualTo(1) || !cj.lessThan(1.5)) return null;
-  return { codigoRegra: 'AT-07', severidade: 'atencao', indicador: 'cobertura_juros',
-    valorAtual: cj, categoria: 'capacidade de pagamento',
-    mensagem: `Cobertura de juros de ${cj.toFixed(1)}x — margem estreita para servir a dívida`,
-    regraOk: fonteOk(ctx, 'cobertura_juros') };
+  if (cj === null || !cj.greaterThanOrEqualTo(lo) || !cj.lessThan(hi)) return null;
+  return { codigoRegra: 'AT-07', severidade: c.severidade as Severidade, indicador: 'cobertura_juros',
+    valorAtual: cj, categoria: 'capacidade de pagamento', regraOk: fonteOk(ctx, 'cobertura_juros'),
+    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(1) }) };
 }
 
-function at08(ctx: RegraCtx): AlertaRow | null {
+function at08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-08'); if (!c) return null;
+  const th = c.threshold1 ?? 0.15;
   const cf    = ctx.ind('ciclo_financeiro');
   const cfAnt = ctx.indAnt('ciclo_financeiro');
   if (cf === null || cfAnt === null || cfAnt.isZero()) return null;
-  if (!cf.greaterThan(cfAnt.mul(1.15))) return null;
-  return { codigoRegra: 'AT-08', severidade: 'atencao', indicador: 'ciclo_financeiro',
-    valorAtual: cf, categoria: 'eficiência operacional',
-    mensagem: `Ciclo financeiro cresceu de ${cfAnt.toFixed(0)} para ${cf.toFixed(0)} dias — maior consumo de capital de giro`,
-    regraOk: fonteOk(ctx, 'ciclo_financeiro') };
+  if (!cf.greaterThan(cfAnt.mul(1 + th))) return null;
+  return { codigoRegra: 'AT-08', severidade: c.severidade as Severidade, indicador: 'ciclo_financeiro',
+    valorAtual: cf, categoria: 'eficiência operacional', regraOk: fonteOk(ctx, 'ciclo_financeiro'),
+    mensagem: renderMsg(c.templateMensagem, { val: cf.toFixed(0), valAnt: cfAnt.toFixed(0) }) };
 }
 
-function at09(ctx: RegraCtx): AlertaRow | null {
+function at09(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-09'); if (!c) return null;
+  const th = c.threshold1 ?? 2;
   const ebpl = ctx.ind('endiv_bancario_pl');
-  if (ebpl === null) return null;
-  if (!ebpl.greaterThan(2)) return null;
-  return { codigoRegra: 'AT-09', severidade: 'atencao', indicador: 'endiv_bancario_pl',
-    valorAtual: ebpl, categoria: 'endividamento',
-    mensagem: `Dívida bancária/PL de ${rat(ebpl)} — alavancagem financeira elevada`,
-    regraOk: fonteOk(ctx, 'endiv_bancario_pl') };
+  if (ebpl === null || !ebpl.greaterThan(th)) return null;
+  return { codigoRegra: 'AT-09', severidade: c.severidade as Severidade, indicador: 'endiv_bancario_pl',
+    valorAtual: ebpl, categoria: 'endividamento', regraOk: fonteOk(ctx, 'endiv_bancario_pl'),
+    mensagem: renderMsg(c.templateMensagem, { val: rat(ebpl) }) };
 }
 
-// ─── Regras POSITIVAS (PO) ────────────────────────────────────────────────────
+// ─── Regras POSITIVAS ─────────────────────────────────────────────────────────
 
-function po01(ctx: RegraCtx): AlertaRow | null {
+function po01(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-01'); if (!c) return null;
+  const minConsec = c.threshold1 ?? 3;
   const serie = ctx.serie('ebitda');
   let count = 0;
   for (let i = serie.length - 1; i >= 1; i--) {
@@ -253,94 +269,91 @@ function po01(ctx: RegraCtx): AlertaRow | null {
     if (atual !== null && ant !== null && atual.greaterThan(ant)) count++;
     else break;
   }
-  if (count < 3) return null;
+  if (count < minConsec) return null;
   const ebitda = ctx.ind('ebitda');
-  return { codigoRegra: 'PO-01', severidade: 'positivo', indicador: 'ebitda',
-    valorAtual: ebitda, categoria: 'geração de caixa',
-    mensagem: `EBITDA crescente nos últimos ${count} exercícios consecutivos`,
-    regraOk: fonteOk(ctx, 'ebitda') };
+  return { codigoRegra: 'PO-01', severidade: c.severidade as Severidade, indicador: 'ebitda',
+    valorAtual: ebitda, categoria: 'geração de caixa', regraOk: fonteOk(ctx, 'ebitda'),
+    mensagem: renderMsg(c.templateMensagem, { n: String(count) }) };
 }
 
-function po02(ctx: RegraCtx): AlertaRow | null {
+function po02(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-02'); if (!c) return null;
   const cd = ctx.ind('crescimento_divida');
-  if (cd === null) return null;
-  if (!cd.isNegative()) return null;
-  return { codigoRegra: 'PO-02', severidade: 'positivo', indicador: 'crescimento_divida',
-    valorAtual: cd, categoria: 'estrutura de capital',
-    mensagem: `Dívida financeira reduziu ${pct(cd.abs())} em relação ao exercício anterior`,
-    regraOk: fonteOk(ctx, 'crescimento_divida') };
+  if (cd === null || !cd.isNegative()) return null;
+  return { codigoRegra: 'PO-02', severidade: c.severidade as Severidade, indicador: 'crescimento_divida',
+    valorAtual: cd, categoria: 'estrutura de capital', regraOk: fonteOk(ctx, 'crescimento_divida'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(cd), valAbs: pct(cd.abs()) }) };
 }
 
-function po03(ctx: RegraCtx): AlertaRow | null {
+function po03(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-03'); if (!c) return null;
+  const th = c.threshold1 ?? 0.15;
   const mE = ctx.ind('margem_ebitda');
-  if (mE === null) return null;
-  if (!mE.greaterThan(0.15)) return null;
-  return { codigoRegra: 'PO-03', severidade: 'positivo', indicador: 'margem_ebitda',
-    valorAtual: mE, categoria: 'rentabilidade',
-    mensagem: `Margem EBITDA de ${pct(mE)} — acima do patamar de excelência de 15%`,
-    regraOk: fonteOk(ctx, 'margem_ebitda') };
+  if (mE === null || !mE.greaterThan(th)) return null;
+  return { codigoRegra: 'PO-03', severidade: c.severidade as Severidade, indicador: 'margem_ebitda',
+    valorAtual: mE, categoria: 'rentabilidade', regraOk: fonteOk(ctx, 'margem_ebitda'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(mE), th1pct: `${(th * 100).toFixed(0)}%` }) };
 }
 
-function po04(ctx: RegraCtx): AlertaRow | null {
+function po04(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-04'); if (!c) return null;
+  const th = c.threshold1 ?? 1.5;
   const dlE = ctx.ind('dl_ebitda');
-  if (dlE === null) return null;
-  if (!dlE.lessThan(1.5)) return null;
-  return { codigoRegra: 'PO-04', severidade: 'positivo', indicador: 'dl_ebitda',
-    valorAtual: dlE, categoria: 'endividamento',
-    mensagem: `Dívida Líquida/EBITDA de ${dlE.toFixed(1)}x — baixíssima alavancagem`,
-    regraOk: fonteOk(ctx, 'dl_ebitda') };
+  if (dlE === null || !dlE.lessThan(th)) return null;
+  return { codigoRegra: 'PO-04', severidade: c.severidade as Severidade, indicador: 'dl_ebitda',
+    valorAtual: dlE, categoria: 'endividamento', regraOk: fonteOk(ctx, 'dl_ebitda'),
+    mensagem: renderMsg(c.templateMensagem, { val: dlE.toFixed(1) }) };
 }
 
-function po05(ctx: RegraCtx): AlertaRow | null {
+function po05(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-05'); if (!c) return null;
+  const th = c.threshold1 ?? 0.50;
   const indep = ctx.ind('independencia_financeira');
-  if (indep === null) return null;
-  if (!indep.greaterThan(0.50)) return null;
-  return { codigoRegra: 'PO-05', severidade: 'positivo', indicador: 'independencia_financeira',
-    valorAtual: indep, categoria: 'estrutura de capital',
-    mensagem: `Independência financeira de ${pct(indep)} — PL financia a maioria dos ativos`,
-    regraOk: fonteOk(ctx, 'independencia_financeira') };
+  if (indep === null || !indep.greaterThan(th)) return null;
+  return { codigoRegra: 'PO-05', severidade: c.severidade as Severidade, indicador: 'independencia_financeira',
+    valorAtual: indep, categoria: 'estrutura de capital', regraOk: fonteOk(ctx, 'independencia_financeira'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(indep) }) };
 }
 
-function po06(ctx: RegraCtx): AlertaRow | null {
+function po06(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-06'); if (!c) return null;
+  const th = c.threshold1 ?? 3;
   const cj = ctx.ind('cobertura_juros');
-  if (cj === null) return null;
-  if (!cj.greaterThan(3)) return null;
-  return { codigoRegra: 'PO-06', severidade: 'positivo', indicador: 'cobertura_juros',
-    valorAtual: cj, categoria: 'capacidade de pagamento',
-    mensagem: `Cobertura de juros de ${cj.toFixed(1)}x — ampla capacidade de servir a dívida`,
-    regraOk: fonteOk(ctx, 'cobertura_juros') };
+  if (cj === null || !cj.greaterThan(th)) return null;
+  return { codigoRegra: 'PO-06', severidade: c.severidade as Severidade, indicador: 'cobertura_juros',
+    valorAtual: cj, categoria: 'capacidade de pagamento', regraOk: fonteOk(ctx, 'cobertura_juros'),
+    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(1) }) };
 }
 
-function po07(ctx: RegraCtx): AlertaRow | null {
+function po07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-07'); if (!c) return null;
   const cf    = ctx.ind('ciclo_financeiro');
   const cfAnt = ctx.indAnt('ciclo_financeiro');
-  if (cf === null || cfAnt === null) return null;
-  if (!cf.lessThan(cfAnt)) return null;
-  return { codigoRegra: 'PO-07', severidade: 'positivo', indicador: 'ciclo_financeiro',
-    valorAtual: cf, categoria: 'eficiência operacional',
-    mensagem: `Ciclo financeiro reduziu de ${cfAnt.toFixed(0)} para ${cf.toFixed(0)} dias — maior eficiência operacional`,
-    regraOk: fonteOk(ctx, 'ciclo_financeiro') };
+  if (cf === null || cfAnt === null || !cf.lessThan(cfAnt)) return null;
+  return { codigoRegra: 'PO-07', severidade: c.severidade as Severidade, indicador: 'ciclo_financeiro',
+    valorAtual: cf, categoria: 'eficiência operacional', regraOk: fonteOk(ctx, 'ciclo_financeiro'),
+    mensagem: renderMsg(c.templateMensagem, { val: cf.toFixed(0), valAnt: cfAnt.toFixed(0) }) };
 }
 
-function po08(ctx: RegraCtx): AlertaRow | null {
+function po08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-08'); if (!c) return null;
+  const th = c.threshold1 ?? 0.15;
   const cpl = ctx.ind('crescimento_pl');
-  if (cpl === null) return null;
-  if (!cpl.greaterThan(0.15)) return null;
-  return { codigoRegra: 'PO-08', severidade: 'positivo', indicador: 'crescimento_pl',
-    valorAtual: cpl, categoria: 'solvência',
-    mensagem: `Patrimônio Líquido cresceu ${pct(cpl)} — fortalecimento do capital próprio`,
-    regraOk: fonteOk(ctx, 'crescimento_pl') };
+  if (cpl === null || !cpl.greaterThan(th)) return null;
+  return { codigoRegra: 'PO-08', severidade: c.severidade as Severidade, indicador: 'crescimento_pl',
+    valorAtual: cpl, categoria: 'solvência', regraOk: fonteOk(ctx, 'crescimento_pl'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(cpl) }) };
 }
 
 // ─── Avaliador principal ──────────────────────────────────────────────────────
 
-export function avaliarRegras(ctx: RegraCtx): AlertaRow[] {
+export function avaliarRegras(ctx: RegraCtx, configMap: ConfigMap): AlertaRow[] {
   const fns = [
     cr01, cr02, cr03, cr04, cr05, cr06, cr07, cr08,
     at01, at02, at03, at04, at05, at06, at07, at08, at09,
     po01, po02, po03, po04, po05, po06, po07, po08,
   ];
-  return fns.map(fn => fn(ctx)).filter((a): a is AlertaRow => a !== null);
+  return fns.map(fn => fn(ctx, configMap)).filter((a): a is AlertaRow => a !== null);
 }
 
 // ─── Matriz de classificação ──────────────────────────────────────────────────
@@ -358,27 +371,24 @@ export interface ClassificacaoResult {
 }
 
 export function classificar(
-  alertas:  AlertaRow[],
-  percInferido: number,   // fração de indicadores com fonte_ok=0
+  alertas:      AlertaRow[],
+  percInferido: number,
 ): { classificacao: ClassificacaoResult; confiabilidade: string } {
   const criticos  = alertas.filter(a => a.severidade === 'critico').map(a => a.codigoRegra);
   const atencao   = alertas.filter(a => a.severidade === 'atencao');
-  const positivos = alertas.filter(a => a.severidade === 'positivo');
   const nc = criticos.length;
   const na = atencao.length;
 
-  // Matriz base
   let cls: Classificacao;
-  if (nc >= 3)                    cls = 'ALTO';
-  else if (nc >= 1 && na >= 3)    cls = 'ALTO';
-  else if (nc === 2)              cls = 'MEDIO_ALTO';
-  else if (nc === 1 && na >= 1)   cls = 'MEDIO_ALTO';
-  else if (nc === 1)              cls = 'MEDIO';
-  else if (na >= 4)               cls = 'MEDIO';
-  else if (na >= 2)               cls = 'MEDIO_BAIXO';
-  else                            cls = 'BAIXO';
+  if (nc >= 3)                  cls = 'ALTO';
+  else if (nc >= 1 && na >= 3)  cls = 'ALTO';
+  else if (nc === 2)            cls = 'MEDIO_ALTO';
+  else if (nc === 1 && na >= 1) cls = 'MEDIO_ALTO';
+  else if (nc === 1)            cls = 'MEDIO';
+  else if (na >= 4)             cls = 'MEDIO';
+  else if (na >= 2)             cls = 'MEDIO_BAIXO';
+  else                          cls = 'BAIXO';
 
-  // Override imediato
   let override = 0;
   let motivoOverride: string | null = null;
 
@@ -396,16 +406,11 @@ export function classificar(
   }
 
   const confiabilidade =
-    percInferido === 0    ? 'alta'  :
-    percInferido <= 0.20  ? 'media' : 'baixa';
+    percInferido === 0   ? 'alta'  :
+    percInferido <= 0.20 ? 'media' : 'baixa';
 
   return {
-    classificacao: {
-      classificacao:    cls,
-      classificacaoNum: CLASS_NUM[cls],
-      overrideAplicado: override,
-      motivoOverride,
-    },
+    classificacao: { classificacao: cls, classificacaoNum: CLASS_NUM[cls], overrideAplicado: override, motivoOverride },
     confiabilidade,
   };
 }

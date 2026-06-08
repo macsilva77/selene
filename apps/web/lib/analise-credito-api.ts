@@ -192,3 +192,43 @@ export const analiseCreditoApi = {
   resetarDados: (): Promise<{ mensagem: string; totais: Record<string, number> }> =>
     api.post('/analise-credito/admin/resetar').then(r => r.data),
 };
+
+/* ─── Regras de Crédito ────────────────────────────────────────────────────── */
+
+export interface CreditoRegra {
+  id:               string;
+  codigoRegra:      string;
+  nome:             string;
+  descricao:        string | null;
+  severidade:       'critico' | 'atencao' | 'positivo';
+  indicador:        string;
+  indicador2:       string | null;
+  categoria:        string;
+  threshold1:       number | null;
+  threshold2:       number | null;
+  templateMensagem: string;
+  ativo:            boolean;
+  ordem:            number;
+}
+
+export interface UpdateRegraPayload {
+  nome?:             string;
+  descricao?:        string;
+  severidade?:       string;
+  categoria?:        string;
+  threshold1?:       number | null;
+  threshold2?:       number | null;
+  templateMensagem?: string;
+  ativo?:            boolean;
+}
+
+export const regrasApi = {
+  listar: (): Promise<CreditoRegra[]> =>
+    api.get('/analise-credito/regras').then(r => r.data),
+
+  atualizar: (id: string, payload: UpdateRegraPayload): Promise<CreditoRegra> =>
+    api.patch(`/analise-credito/regras/${id}`, payload).then(r => r.data),
+
+  toggle: (id: string): Promise<CreditoRegra> =>
+    api.patch(`/analise-credito/regras/${id}/toggle`).then(r => r.data),
+};

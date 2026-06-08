@@ -7,11 +7,14 @@ import { CaretRightIcon, MagnifyingGlassIcon, XIcon } from '@phosphor-icons/reac
 
 // ── Mapa de rotas → breadcrumb ─────────────────────────────────────────────────
 const ROUTE_MAP: Record<string, { label: string; section: string }> = {
-  '/dfe/documentos':                          { label: 'NF-e',               section: 'Documentos Eletrônicos' },
-  '/obrigacoes-acessorias/efd-icms-ipi':      { label: 'EFD ICMS/IPI',       section: 'Obrigações Acessórias'  },
-  '/obrigacoes-acessorias/ecd':               { label: 'ECD',                section: 'Obrigações Acessórias'  },
-  '/obrigacoes-acessorias/ecf':               { label: 'ECF',                section: 'Obrigações Acessórias'  },
-  '/obrigacoes-acessorias/efd-contribuicoes': { label: 'EFD Contribuições',   section: 'Obrigações Acessórias'  },
+  '/dfe/documentos':                          { label: 'NF-e',                        section: 'Documentos Eletrônicos' },
+  '/obrigacoes-acessorias/efd-icms-ipi':      { label: 'EFD ICMS/IPI',                section: 'Obrigações Acessórias'  },
+  '/obrigacoes-acessorias/ecd':               { label: 'ECD',                         section: 'Obrigações Acessórias'  },
+  '/obrigacoes-acessorias/ecf':               { label: 'ECF',                         section: 'Obrigações Acessórias'  },
+  '/obrigacoes-acessorias/efd-contribuicoes': { label: 'EFD Contribuições',            section: 'Obrigações Acessórias'  },
+  '/analise-credito/demonstracoes':           { label: 'Demonstrações Financeiras',    section: 'Análise de Crédito'     },
+  '/analise-credito/regras':                  { label: 'Regras de Crédito',           section: 'Análise de Crédito'     },
+  '/analise-credito':                         { label: 'Dashboard',                   section: 'Análise de Crédito'     },
   '/dfe':          { label: 'DFe',                     section: 'Configurações' },
   '/certificados': { label: 'Certificados A1',          section: 'Configurações' },
   '/usuarios':     { label: 'Usuários',                section: 'Configurações' },
@@ -25,11 +28,14 @@ const ROUTE_MAP: Record<string, { label: string; section: string }> = {
 
 // ── Lista plana para pesquisa rápida ───────────────────────────────────────────
 const ALL_NAV_ITEMS = [
-  { href: '/dfe/documentos',                          label: 'NF-e',               group: 'Documentos Eletrônicos' },
-  { href: '/obrigacoes-acessorias/efd-icms-ipi',      label: 'EFD ICMS/IPI',       group: 'Obrigações Acessórias'  },
-  { href: '/obrigacoes-acessorias/ecd',               label: 'ECD',                group: 'Obrigações Acessórias'  },
-  { href: '/obrigacoes-acessorias/ecf',               label: 'ECF',                group: 'Obrigações Acessórias'  },
-  { href: '/obrigacoes-acessorias/efd-contribuicoes', label: 'EFD Contribuições',   group: 'Obrigações Acessórias'  },
+  { href: '/dfe/documentos',                          label: 'NF-e',                     group: 'Documentos Eletrônicos' },
+  { href: '/obrigacoes-acessorias/efd-icms-ipi',      label: 'EFD ICMS/IPI',             group: 'Obrigações Acessórias'  },
+  { href: '/obrigacoes-acessorias/ecd',               label: 'ECD',                      group: 'Obrigações Acessórias'  },
+  { href: '/obrigacoes-acessorias/ecf',               label: 'ECF',                      group: 'Obrigações Acessórias'  },
+  { href: '/obrigacoes-acessorias/efd-contribuicoes', label: 'EFD Contribuições',        group: 'Obrigações Acessórias'  },
+  { href: '/analise-credito',                         label: 'Dashboard',                group: 'Análise de Crédito'     },
+  { href: '/analise-credito/demonstracoes',           label: 'Demonstrações Financeiras', group: 'Análise de Crédito'     },
+  { href: '/analise-credito/regras',                  label: 'Regras de Crédito',         group: 'Análise de Crédito'     },
   { href: '/dfe',          label: 'DFe',                     group: 'Configurações' },
   { href: '/certificados', label: 'Certificados A1',          group: 'Configurações' },
   { href: '/usuarios',     label: 'Usuários',                group: 'Configurações' },

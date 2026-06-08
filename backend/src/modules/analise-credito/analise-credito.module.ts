@@ -1,5 +1,6 @@
 import { Module }                    from '@nestjs/common';
 import { PrismaModule }              from '../../database/prisma.module';
+import { AuditoriaModule }           from '../auditoria/auditoria.module';
 // ── Infraestrutura ────────────────────────────────────────────────────────────
 import { DuckDbService }             from './infrastructure/duckdb/duckdb.service';
 import { EcfParquetRepository }      from './infrastructure/duckdb/ecf-parquet.repository';
@@ -14,6 +15,7 @@ import { P02BalancoService }         from './p02/p02-balanco.service';
 import { P02DreService }             from './p02/p02-dre.service';
 // ── P04 ───────────────────────────────────────────────────────────────────────
 import { P04Service }                from './p04/p04.service';
+import { CreditoRegraService }       from './credito-regra.service';
 import { AnaliseCreditoController }  from './analise-credito.controller';
 import { AnaliseCreditoEcfListener } from './analise-credito-ecf.listener';
 
@@ -25,15 +27,16 @@ const infrastructure = [
 ];
 
 @Module({
-  imports:     [PrismaModule],
+  imports:     [PrismaModule, AuditoriaModule],
   controllers: [AnaliseCreditoController],
   providers:   [
     ...infrastructure,
     P01GcsService, EcfParquetWriter, P01Service,
     P02BalancoService, P02DreService,
     P04Service,
+    CreditoRegraService,
     AnaliseCreditoEcfListener,
   ],
-  exports: [P01Service, P04Service],
+  exports: [P01Service, P04Service, CreditoRegraService],
 })
 export class AnaliseCreditoModule {}

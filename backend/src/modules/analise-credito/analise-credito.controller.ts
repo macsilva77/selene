@@ -1,5 +1,5 @@
 import {
-  Controller, Logger, Post, Get, Param, Query, UseGuards,
+  Controller, Logger, Post, Get, Patch, Param, Query, Body, Request, UseGuards,
   HttpCode, HttpStatus, NotFoundException, BadRequestException,
 } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
@@ -8,6 +8,7 @@ import { P01Service }        from './p01/p01.service';
 import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
 import { P04Service }        from './p04/p04.service';
+import { CreditoRegraService, UpdateRegraDto } from './credito-regra.service';
 import {
   calcularIndicadores,
   calcularEstruturaCapital,
@@ -26,12 +27,13 @@ export class AnaliseCreditoController {
   private readonly logger = new Logger(AnaliseCreditoController.name);
 
   constructor(
-    private readonly p01Service:     P01Service,
-    private readonly dreService:     P02DreService,
-    private readonly balancoService: P02BalancoService,
-    private readonly p04Service:     P04Service,
-    private readonly ecfDataSource:  EcfDataSourceService,
-    private readonly prisma:         PrismaService,
+    private readonly p01Service:      P01Service,
+    private readonly dreService:      P02DreService,
+    private readonly balancoService:  P02BalancoService,
+    private readonly p04Service:      P04Service,
+    private readonly ecfDataSource:   EcfDataSourceService,
+    private readonly prisma:          PrismaService,
+    private readonly regraService:    CreditoRegraService,
   ) {}
 
   // ─── P01 ──────────────────────────────────────────────────────────────────────
@@ -994,5 +996,31 @@ export class AnaliseCreditoController {
       } catch { continue; }
     }
     return null;
+  }
+
+  // ─── Regras de Crédito (manutenção) ──────────────────────────────────────────
+
+  @Get('regras')
+  async listarRegras() {
+    return this.regraService.findAll();
+  }
+
+  @Patch('regras/:id')
+  async atualizarRegra(
+    @Param('id') id: string,
+    @Body() dto: UpdateRegraDto,
+    @CurrentUser('sub') usuarioId: string,
+    @Request() req: { ip: string },
+  ) {
+    return this.regraService.update({ usuarioId, ipOrigem: req.ip }, id, dto);
+  }
+
+  @Patch('regras/:id/toggle')
+  async toggleRegra(
+    @Param('id') id: string,
+    @CurrentUser('sub') usuarioId: string,
+    @Request() req: { ip: string },
+  ) {
+    return this.regraService.toggleAtivo({ usuarioId, ipOrigem: req.ip }, id);
   }
 }

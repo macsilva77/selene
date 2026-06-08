@@ -1792,3 +1792,23 @@ model CreditoClassificacao {
   @@index([empresaId])
   @@map("credito_classificacoes")
 }
+
+model CreditoRegra {
+  id               String   @id @default(uuid())
+  codigoRegra      String   @unique @map("codigo_regra") @db.VarChar(10)  // CR-01 | AT-03 | PO-05
+  nome             String   @db.VarChar(100)
+  descricao        String?  @db.Text
+  severidade       String   @db.VarChar(10)   // critico | atencao | positivo
+  indicador        String   @db.VarChar(50)   // indicador principal avaliado
+  indicador2       String?  @map("indicador2") @db.VarChar(50)  // segundo indicador (regras compostas)
+  categoria        String   @db.VarChar(50)
+  threshold1       Decimal? @db.Decimal(18, 6) // limite principal
+  threshold2       Decimal? @db.Decimal(18, 6) // limite secundário (ex: between)
+  templateMensagem String   @map("template_mensagem") @db.Text  // ex: "LC de {val}x — passivo supera ativo"
+  ativo            Boolean  @default(true)
+  ordem            Int      @default(0)        // ordem de exibição na tela
+
+  @@index([severidade])
+  @@index([ativo])
+  @@map("credito_regras")
+}
