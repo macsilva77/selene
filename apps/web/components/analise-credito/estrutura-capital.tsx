@@ -327,7 +327,7 @@ export function EstruturaCapital({
         alerta={indepFin < 0
           ? `Patrimônio Líquido negativo. Passivos financiam ${fmtPct(grauEndiv)} dos ativos — empresa tecnicamente insolvente.`
           : alertFin}
-        alertSev="critico"
+        alertSev={indepFin < 0 ? 'critico' : alertFinSev}
       />
 
       {/* ── 6 KPI cards ── */}
@@ -342,7 +342,7 @@ export function EstruturaCapital({
         />
         <MetricCard
           label="Independência financeira"
-          valor={fmtPct(indepFin)}
+          valor={indepFin < 0 ? '0%' : fmtPct(indepFin)}
           badge={{
             label: indepFin < 0 ? 'PL negativo' : indepFin >= 0.4 ? 'sólida' : indepFin >= 0.25 ? 'moderada' : 'fraca',
             sev: sevIndepFin(indepFin),
@@ -350,18 +350,18 @@ export function EstruturaCapital({
         />
         <MetricCard
           label="Relação CT / CP"
-          valor={fmtRatio(relCtCp)}
+          valor={pl < 0 ? '—' : fmtRatio(relCtCp)}
           badge={{
-            label: relCtCp < 0 ? 'PL negativo' : relCtCp <= 1.5 ? 'adequado' : relCtCp <= 3.0 ? 'alavancagem mod.' : 'alta alavancagem',
-            sev: sevCtCp(relCtCp),
+            label: pl < 0 ? 'PL negativo' : relCtCp <= 1.5 ? 'adequado' : relCtCp <= 3.0 ? 'alavancagem mod.' : 'alta alavancagem',
+            sev: pl < 0 ? 'critico' : sevCtCp(relCtCp),
           }}
         />
         <MetricCard
           label="Endividamento bancário / PL"
-          valor={fmtRatio(endivBanc)}
+          valor={pl < 0 ? '—' : fmtRatio(endivBanc)}
           badge={{
-            label: endivBanc <= 1.0 ? 'saudável' : endivBanc <= 2.0 ? 'monitorar' : 'elevado',
-            sev: sevEndivBanc(endivBanc),
+            label: pl < 0 ? 'PL negativo' : endivBanc <= 1.0 ? 'saudável' : endivBanc <= 2.0 ? 'monitorar' : 'elevado',
+            sev: pl < 0 ? 'critico' : sevEndivBanc(endivBanc),
           }}
         />
         <MetricCard
