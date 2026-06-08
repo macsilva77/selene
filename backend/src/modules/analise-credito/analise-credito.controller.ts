@@ -885,13 +885,15 @@ export class AnaliseCreditoController {
    * Usa consultarComTrimestres (mesma chamada da página Demonstrações) para garantir
    * que os dados do trimestre correto são lidos numa única conexão DuckDB.
    *
-   * getAbs() usa 2 estratégias:
-   *   1. Nó exato (código == prefix) com |valor| > 0
-   *   2. Soma assinada das folhas respeitando natureza_final (nova schema) ou abs puro (legado)
+   * getAbs() e getPLSigned() usam 2 estratégias:
+   *   1. Nó exato (código == prefix) com valor ≠ 0
+   *   2. Soma algébrica das folhas (nós sem filhos) sob o prefixo
    *
-   * Isso resolve o caso em que o Parquet grava 0 no nó sintético pai
-   * (ex: '2.03' = 0) mas os filhos têm os valores reais, e evita inflar o PL
-   * com contas de contra-patrimônio (ex: Prejuízos Acumulados, natureza 'D').
+   * valorComSinal() no parser armazena débito→positivo e crédito→negativo.
+   * Para ativo/passivo usa-se abs() do resultado (sempre positivos em balanço).
+   * Para PL usa-se negated(): crédito-dominante → PL positivo (empresa solvente);
+   * débito-dominante (prejuízos > capital) → PL negativo (empresa insolvente).
+   * A soma algébrica já cancela contas-contra (provisões, depreciação, prejuízos).
    */
   private async ecfBalData(empresaId: string, exercicio: number, regime: string | null): Promise<BalData | null> {
     const candidatos = this.registrosPorRegime(regime, 'bp');
@@ -909,40 +911,37 @@ export class AnaliseCreditoController {
           rows.map(r => r.linhaCodigo.split('.').slice(0, -1).join('.')).filter(Boolean),
         );
 
-        // Parquets novos têm natureza_final real; antigos fixam 'D' em todas as linhas.
-        const temNatureza = rows.some(r => r.naturezaFinal === 'C');
+        const leafSum = (prefix: string): Decimal =>
+          rows
+            .filter(r => r.linhaCodigo.startsWith(`${prefix}.`) && !codigosComFilhos.has(r.linhaCodigo))
+            .reduce((s, r) => s.add(new Decimal(r.valor)), new Decimal(0));
 
-        // Retorna o valor líquido de um grupo.
-        // Estratégia 1: nó exato com |valor| > 0 — abs() do saldo líquido já é correto.
-        // Estratégia 2: soma assinada das folhas respeitando natureza_final.
-        //   Contas ativo (1.xx) têm natureza normal 'D'; passivo/PL (2.xx) têm 'C'.
-        //   Conta com natureza oposta à normal (ex: Prejuízos Acumulados em 2.03 com 'D')
-        //   é subtraída, evitando inflação do PL ou do Ativo.
+        // Ativo e passivo: sempre positivos → abs() da soma algébrica.
         const getAbs = (prefix: string): Decimal => {
           const exact = rows.find(r => r.linhaCodigo === prefix);
           if (exact) {
             const v = new Decimal(exact.valor).abs();
             if (v.greaterThan(0)) return v;
           }
-          const leaves = rows.filter(
-            r => r.linhaCodigo.startsWith(`${prefix}.`) && !codigosComFilhos.has(r.linhaCodigo),
-          );
-          if (temNatureza) {
-            const natNormal = prefix.startsWith('1') ? 'D' : 'C';
-            return leaves.reduce((s, r) => {
-              const v = new Decimal(r.valor).abs();
-              return r.naturezaFinal === natNormal ? s.add(v) : s.minus(v);
-            }, new Decimal(0));
+          return leafSum(prefix).abs();
+        };
+
+        // PL com sinal: empresa solvente → positivo; insolvente → negativo.
+        // valorComSinal grava crédito como negativo, então basta negar a soma.
+        const getPLSigned = (): Decimal => {
+          const exact = rows.find(r => r.linhaCodigo === '2.03');
+          if (exact && !new Decimal(exact.valor).isZero()) {
+            return new Decimal(exact.valor).negated();
           }
-          return leaves.reduce((s, r) => s.add(new Decimal(r.valor).abs()), new Decimal(0));
+          return leafSum('2.03').negated();
         };
 
         const acTot  = getAbs('1.01');
         const ancTot = getAbs('1.02');
         const pcTot  = getAbs('2.01');
         const pncTot = getAbs('2.02');
-        const plTot  = getAbs('2.03');
-        if (acTot.isZero() && plTot.isZero()) continue;
+        const plVal  = getPLSigned();
+        if (acTot.isZero() && plVal.isZero()) continue;
 
         const caixa    = getAbs('1.01.01');
         const clientes = getAbs('1.01.02');
@@ -960,8 +959,8 @@ export class AnaliseCreditoController {
         const pncOutros = Decimal.max(0, pncTot.minus(empLP));
 
         const bal: BalData = new Map();
-        const set = (g: string, s: string, v: Decimal) => {
-          if (!v.greaterThan(0)) return;
+        const set = (g: string, s: string, v: Decimal, allowNegative = false) => {
+          if (allowNegative ? v.isZero() : !v.greaterThan(0)) return;
           if (!bal.has(g)) bal.set(g, new Map());
           bal.get(g)!.set(s, (bal.get(g)!.get(s) ?? new Decimal(0)).add(v));
         };
@@ -977,7 +976,7 @@ export class AnaliseCreditoController {
         set('PC',  'Outros',               pcOutros);
         set('PNC', 'Empréstimos LP',       empLP);
         set('PNC', 'Outros',               pncOutros);
-        set('PL',  'Total',                plTot);
+        set('PL',  'Total',                plVal, true);  // permite negativo (insolvente)
 
         return bal;
       } catch { continue; }

@@ -42,8 +42,8 @@ const SEV_TXT: Record<Sev, string> = {
 };
 
 const sevGrauEndiv = (v: number): Sev => v <= 0.45 ? 'positivo' : v <= 0.65 ? 'atencao' : 'critico';
-const sevIndepFin  = (v: number): Sev => v >= 0.4  ? 'positivo' : v >= 0.25 ? 'atencao' : 'critico';
-const sevCtCp      = (v: number): Sev => v <= 1.5  ? 'positivo' : v <= 3.0  ? 'atencao' : 'critico';
+const sevIndepFin  = (v: number): Sev => v < 0 ? 'critico' : v >= 0.4  ? 'positivo' : v >= 0.25 ? 'atencao' : 'critico';
+const sevCtCp      = (v: number): Sev => v < 0 ? 'critico' : v <= 1.5  ? 'positivo' : v <= 3.0  ? 'atencao' : 'critico';
 const sevEndivBanc = (v: number): Sev => v <= 1.0  ? 'positivo' : v <= 2.0  ? 'atencao' : 'critico';
 const sevCobertura = (v: number): Sev => v >= 3.0  ? 'positivo' : v >= 1.5  ? 'atencao' : 'critico';
 const sevDividaCp  = (v: number): Sev => v <= 0.4  ? 'positivo' : v <= 0.6  ? 'atencao' : 'critico';
@@ -315,11 +315,19 @@ export function EstruturaCapital({
         titulo="Financiamento do ativo total"
         total={ativoTotal}
         segs={[
-          { pct: indepFin,     bgCls: 'bg-emerald-500', dotCls: 'bg-emerald-500', label: 'Capital próprio (PL)',   valor: pl          },
-          { pct: 1 - indepFin, bgCls: 'bg-red-500',     dotCls: 'bg-red-500',     label: 'Capital de terceiros',  valor: passivoTotal },
+          {
+            pct:    Math.max(0, indepFin),
+            bgCls:  'bg-emerald-500',
+            dotCls: 'bg-emerald-500',
+            label:  indepFin < 0 ? 'Patrimônio Líquido (negativo)' : 'Capital próprio (PL)',
+            valor:  pl,
+          },
+          { pct: indepFin < 0 ? 1 : 1 - indepFin, bgCls: 'bg-red-500', dotCls: 'bg-red-500', label: 'Capital de terceiros', valor: passivoTotal },
         ]}
-        alerta={alertFin}
-        alertSev={alertFinSev}
+        alerta={indepFin < 0
+          ? `Patrimônio Líquido negativo. Passivos financiam ${fmtPct(grauEndiv)} dos ativos — empresa tecnicamente insolvente.`
+          : alertFin}
+        alertSev="critico"
       />
 
       {/* ── 6 KPI cards ── */}
@@ -336,7 +344,7 @@ export function EstruturaCapital({
           label="Independência financeira"
           valor={fmtPct(indepFin)}
           badge={{
-            label: indepFin >= 0.4 ? 'sólida' : indepFin >= 0.25 ? 'moderada' : 'fraca',
+            label: indepFin < 0 ? 'PL negativo' : indepFin >= 0.4 ? 'sólida' : indepFin >= 0.25 ? 'moderada' : 'fraca',
             sev: sevIndepFin(indepFin),
           }}
         />
@@ -344,7 +352,7 @@ export function EstruturaCapital({
           label="Relação CT / CP"
           valor={fmtRatio(relCtCp)}
           badge={{
-            label: relCtCp <= 1.5 ? 'adequado' : relCtCp <= 3.0 ? 'alavancagem mod.' : 'alta alavancagem',
+            label: relCtCp < 0 ? 'PL negativo' : relCtCp <= 1.5 ? 'adequado' : relCtCp <= 3.0 ? 'alavancagem mod.' : 'alta alavancagem',
             sev: sevCtCp(relCtCp),
           }}
         />
