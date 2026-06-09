@@ -15,9 +15,10 @@ import { P02BalancoService }         from './p02/p02-balanco.service';
 import { P02DreService }             from './p02/p02-dre.service';
 // ── P04 ───────────────────────────────────────────────────────────────────────
 import { P04Service }                from './p04/p04.service';
-import { CreditoRegraService }       from './credito-regra.service';
-import { AnaliseCreditoController }  from './analise-credito.controller';
-import { AnaliseCreditoEcfListener } from './analise-credito-ecf.listener';
+import { CreditoRegraService }              from './credito-regra.service';
+import { AnaliseCreditoCalcularService }    from './analise-credito-calcular.service';
+import { AnaliseCreditoController }         from './analise-credito.controller';
+import { AnaliseCreditoEcfListener }        from './analise-credito-ecf.listener';
 
 const infrastructure = [
   DuckDbService,
@@ -35,6 +36,7 @@ const infrastructure = [
     P02BalancoService, P02DreService,
     P04Service,
     CreditoRegraService,
+    AnaliseCreditoCalcularService,
     AnaliseCreditoEcfListener,
   ],
   exports: [P01Service, P04Service, CreditoRegraService],

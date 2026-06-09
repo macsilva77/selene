@@ -7,7 +7,6 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { P01Service }        from './p01/p01.service';
 import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
-import { P04Service }        from './p04/p04.service';
 import { CreditoRegraService, UpdateRegraDto } from './credito-regra.service';
 import {
   calcularIndicadores,
@@ -16,6 +15,7 @@ import {
   type DreData,
 } from './p03/p03-formulas';
 import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
+import { AnaliseCreditoCalcularService } from './analise-credito-calcular.service';
 import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard }  from '../../common/guards/jwt-auth.guard';
 import { CurrentUser }   from '../../common/decorators/current-user.decorator';
@@ -30,8 +30,8 @@ export class AnaliseCreditoController {
     private readonly p01Service:      P01Service,
     private readonly dreService:      P02DreService,
     private readonly balancoService:  P02BalancoService,
-    private readonly p04Service:      P04Service,
     private readonly ecfDataSource:   EcfDataSourceService,
+    private readonly calcularService: AnaliseCreditoCalcularService,
     private readonly prisma:          PrismaService,
     private readonly regraService:    CreditoRegraService,
   ) {}
@@ -95,94 +95,7 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
-    // Usa creditoEcfArquivo (Parquet GCS) como fonte primária de exercícios.
-    // creditoEcfRegistro era a fonte antiga (pré-migração Parquet) — pode estar vazio.
-    const [arqRows, regRows] = await Promise.all([
-      this.prisma.creditoEcfArquivo.findMany({
-        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
-      }),
-      this.prisma.creditoEcfRegistro.findMany({
-        where: { empresaId: empresa.id }, select: { exercicio: true }, distinct: ['exercicio'],
-      }),
-    ]);
-    const anosSet = new Set([...arqRows, ...regRows].map(r => r.exercicio));
-    const anos = [...anosSet].sort((a, b) => a - b);
-    const resultados: Array<{ exercicio: number; indicadores: number; comDados: boolean }> = [];
-
-    for (const ano of anos) {
-      const [bal, dre] = await Promise.all([
-        this.ecfBalData(empresa.id, ano, empresa.regimeTributario),
-        this.ecfDreData(empresa.id, ano, empresa.regimeTributario),
-      ]);
-
-      if (!bal || !dre) {
-        resultados.push({ exercicio: ano, indicadores: 0, comDados: false });
-        continue;
-      }
-
-      const [balAnt, dreAnt] = await Promise.all([
-        this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
-        this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),
-      ]);
-
-      const indicadores = calcularIndicadores(bal, dre, balAnt ?? undefined, dreAnt ?? undefined, 1);
-      const estrutura   = calcularEstruturaCapital(bal, dre);
-
-      // DRE lines para persistir
-      const dreResult = await this.dreService.montar(empresa.id, ano, empresa.regimeTributario);
-
-      await this.prisma.$transaction(async tx => {
-        // Indicadores
-        await tx.creditoIndicador.deleteMany({ where: { empresaId: empresa.id, exercicio: ano } });
-        if (indicadores.length > 0) {
-          await tx.creditoIndicador.createMany({
-            data: indicadores.map(i => ({
-              empresaId: empresa.id,
-              exercicio: ano,
-              indicador: i.indicador,
-              valor:     i.valor,
-              unidade:   i.unidade,
-              fonteOk:   i.fonteOk,
-            })),
-          });
-        }
-
-        // Estrutura de capital
-        await tx.creditoEstruturaCapital.upsert({
-          where:  { empresaId_exercicio: { empresaId: empresa.id, exercicio: ano } },
-          create: { empresaId: empresa.id, exercicio: ano, ...estrutura },
-          update: estrutura,
-        });
-
-        // DRE
-        await tx.creditoDre.deleteMany({ where: { empresaId: empresa.id, exercicio: ano } });
-        if (dreResult.linhas.length > 0) {
-          await tx.creditoDre.createMany({
-            data: dreResult.linhas.map(l => ({
-              empresaId: empresa.id,
-              exercicio: ano,
-              linhaDre:  l.linhaDre,
-              valor:     l.valor,
-              fonte:     l.fonte,
-            })),
-          });
-        }
-      }, { timeout: 30_000 });
-
-      resultados.push({ exercicio: ano, indicadores: indicadores.length, comDados: true });
-    }
-
-    // P04 — alertas e classificação
-    const anosComDados = resultados.filter(r => r.comDados).map(r => r.exercicio);
-    for (const ano of anosComDados) {
-      try {
-        await this.p04Service.processarExercicio(empresa.id, ano);
-      } catch (err) {
-        this.logger.warn(`[Calcular] P04 exercicio=${ano}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    this.logger.log(`[Calcular] ${cnpj} — ${anosComDados.length} exercícios processados`);
+    const resultados = await this.calcularService.calcularParaEmpresa(empresa);
     return { cnpj, resultados };
   }
 
