@@ -36,9 +36,12 @@ type Tab = 'visao' | 'estrutura' | 'evolucao' | 'alertas';
 export function AnaliseCreditoDashboard() {
   const { toasts, error: toastError, dismiss } = useToast();
 
+  const LS_KEY = 'selene:analise-credito:cnpj';
+
   const [empresas, setEmpresas]               = useState<EmpresaResumo[]>([]);
-  const [cnpjSelecionado, setCnpjSelecionado] = useState<string>('');
-  const [cnpjRestaurado, setCnpjRestaurado]   = useState(false);
+  const [cnpjSelecionado, setCnpjSelecionado] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('selene:analise-credito:cnpj') ?? '') : ''
+  );
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [calculando, setCalculando]           = useState(false);
@@ -53,19 +56,18 @@ export function AnaliseCreditoDashboard() {
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
   const [erros, setErros]                     = useState<string[]>([]);
 
-  const LS_KEY = 'selene:analise-credito:cnpj';
-
   useEffect(() => {
     analiseCreditoApi.listarEmpresas()
       .then(lista => {
         setEmpresas(lista);
+        // Invalida o CNPJ salvo se ele não existir mais na lista
         const salvo = localStorage.getItem(LS_KEY);
-        if (salvo && lista.some(e => e.cnpj === salvo)) {
-          setCnpjSelecionado(salvo);
+        if (salvo && !lista.some(e => e.cnpj === salvo)) {
+          setCnpjSelecionado('');
+          localStorage.removeItem(LS_KEY);
         }
-        setCnpjRestaurado(true);
       })
-      .catch(() => { setCnpjRestaurado(true); toastError('Erro ao carregar empresas'); });
+      .catch(() => toastError('Erro ao carregar empresas'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -142,8 +144,8 @@ export function AnaliseCreditoDashboard() {
   }, [reprocessando, cnpjSelecionado, carregarDados, exercicioFiltro, toastError]);
 
   useEffect(() => {
-    if (cnpjSelecionado && cnpjRestaurado) carregarDados(cnpjSelecionado, exercicioFiltro);
-  }, [cnpjSelecionado, exercicioFiltro, cnpjRestaurado, carregarDados]);
+    if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
+  }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
 
   const empresaSelecionada = empresas.find(e => e.cnpj === cnpjSelecionado);
   const exercicioAtivo = exercicioFiltro ?? exercicios[0];
