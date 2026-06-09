@@ -29,19 +29,27 @@ export class AnaliseCreditoEcfListener {
 
   @OnEvent('ecf.processado', { async: true })
   async handleEcfProcessado({ cnpj }: EcfProcessadoEvent): Promise<void> {
-    // Usa Empresa (não CreditoEmpresa) para que empresas novas — ainda sem P01 — sejam processadas.
-    const empresas = await this.prisma.empresa.findMany({
+    // Tenta Empresa primeiro; fallback em CreditoEmpresa para CNPJs sem cadastro mas já processados
+    let tenantIds = (await this.prisma.empresa.findMany({
       where:  { cnpj },
       select: { tenantId: true },
       distinct: ['tenantId'],
-    });
+    })).map(e => e.tenantId);
 
-    if (empresas.length === 0) {
+    if (tenantIds.length === 0) {
+      tenantIds = (await this.prisma.creditoEmpresa.findMany({
+        where:  { cnpj },
+        select: { tenantId: true },
+        distinct: ['tenantId'],
+      })).map(e => e.tenantId);
+    }
+
+    if (tenantIds.length === 0) {
       this.logger.warn(`[EcfListener] CNPJ ${cnpj} não encontrado em nenhum tenant — P01 não disparado`);
       return;
     }
 
-    for (const { tenantId } of empresas) {
+    for (const tenantId of tenantIds) {
       try {
         this.logger.log(`[EcfListener] ECF processado tenant=${tenantId} cnpj=${cnpj} — iniciando P01`);
         await this.p01Service.processarCnpj(tenantId, cnpj);

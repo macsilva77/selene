@@ -153,14 +153,26 @@ export class AnaliseCreditoController {
   @HttpCode(HttpStatus.ACCEPTED)
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoReprocessarEcf')
   async reprocessarEcf(@CurrentUser('tenantId') tenantId: string) {
+    // CNPJs do cadastro de empresas do tenant
     const empresas = await this.prisma.empresa.findMany({
       where:  { tenantId },
       select: { cnpj: true },
       distinct: ['cnpj'],
     });
 
-    const cnpjs = empresas.map(e => e.cnpj);
-    this.logger.log(`[ReprocessarEcf] tenant=${tenantId} — ${cnpjs.length} empresa(s)`);
+    // CNPJs com ECF processado na tabela de obrigações (sem filtro de tenant — design do módulo)
+    const ecfObrigacoes = await this.prisma.obrigacaoAcessoria.findMany({
+      where:  { tipoObrigacao: 'ECF', statusProcessamento: 'Processado' },
+      select: { cnpj: true },
+      distinct: ['cnpj'],
+    });
+
+    const cnpjsSet = new Set([
+      ...empresas.map(e => e.cnpj),
+      ...ecfObrigacoes.map(e => e.cnpj),
+    ]);
+    const cnpjs = [...cnpjsSet];
+    this.logger.log(`[ReprocessarEcf] tenant=${tenantId} — ${cnpjs.length} empresa(s) (${empresas.length} cadastradas + ${ecfObrigacoes.length} ECF-only)`);
 
     void (async () => {
       for (const cnpj of cnpjs) {
