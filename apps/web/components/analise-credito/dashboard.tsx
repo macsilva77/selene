@@ -38,6 +38,7 @@ export function AnaliseCreditoDashboard() {
 
   const [empresas, setEmpresas]               = useState<EmpresaResumo[]>([]);
   const [cnpjSelecionado, setCnpjSelecionado] = useState<string>('');
+  const [cnpjRestaurado, setCnpjRestaurado]   = useState(false);
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [calculando, setCalculando]           = useState(false);
@@ -52,11 +53,21 @@ export function AnaliseCreditoDashboard() {
   const [exercicioFiltro, setExercicioFiltro] = useState<number | undefined>();
   const [erros, setErros]                     = useState<string[]>([]);
 
+  const LS_KEY = 'selene:analise-credito:cnpj';
+
   useEffect(() => {
     analiseCreditoApi.listarEmpresas()
-      .then(setEmpresas)
-      .catch(() => toastError('Erro ao carregar empresas'));
-  }, [toastError]);
+      .then(lista => {
+        setEmpresas(lista);
+        const salvo = localStorage.getItem(LS_KEY);
+        if (salvo && lista.some(e => e.cnpj === salvo)) {
+          setCnpjSelecionado(salvo);
+        }
+        setCnpjRestaurado(true);
+      })
+      .catch(() => { setCnpjRestaurado(true); toastError('Erro ao carregar empresas'); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const carregarFinanceiro = useCallback(async (cnpj: string, exercicioAlvo: number) => {
     try {
@@ -131,8 +142,8 @@ export function AnaliseCreditoDashboard() {
   }, [reprocessando, cnpjSelecionado, carregarDados, exercicioFiltro, toastError]);
 
   useEffect(() => {
-    if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
-  }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
+    if (cnpjSelecionado && cnpjRestaurado) carregarDados(cnpjSelecionado, exercicioFiltro);
+  }, [cnpjSelecionado, exercicioFiltro, cnpjRestaurado, carregarDados]);
 
   const empresaSelecionada = empresas.find(e => e.cnpj === cnpjSelecionado);
   const exercicioAtivo = exercicioFiltro ?? exercicios[0];
@@ -179,7 +190,13 @@ export function AnaliseCreditoDashboard() {
               id="sel-empresa"
               className="h-9 min-w-[320px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               value={cnpjSelecionado}
-              onChange={e => { setCnpjSelecionado(e.target.value); setExercicioFiltro(undefined); }}
+              onChange={e => {
+                const cnpj = e.target.value;
+                setCnpjSelecionado(cnpj);
+                setExercicioFiltro(undefined);
+                if (cnpj) localStorage.setItem(LS_KEY, cnpj);
+                else localStorage.removeItem(LS_KEY);
+              }}
             >
               <option value="">Selecione uma empresa…</option>
               {empresas.map(e => (

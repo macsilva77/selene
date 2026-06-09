@@ -227,6 +227,17 @@ export class AnaliseCreditoCalcularService {
     }
 
     // P04 — alertas e classificação
+    // Remove o registro de processamento anterior para que P04 não pule (idempotência).
+    const anosComDados = resultados.filter(r => r.comDados).map(r => r.exercicio);
+    if (anosComDados.length > 0) {
+      await this.prisma.creditoProcessamento.deleteMany({
+        where: {
+          empresaId: empresa.id,
+          exercicio: { in: anosComDados },
+          tabelaDestino: { in: ['tb_alertas', 'tb_classificacoes'] },
+        },
+      });
+    }
     for (const { exercicio, comDados } of resultados) {
       if (!comDados) continue;
       try {

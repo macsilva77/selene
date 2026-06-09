@@ -104,12 +104,17 @@ export function calcularIndicadores(
   const roicVal = capitalInvestido.isZero() ? null : safeDiv(ebit, capitalInvestido);
 
   const grp2: IndicadorCalc[] = [
+    // Valores absolutos — necessários para CR-01, CR-02, CR-03, CR-06, PO-01
+    ind('ebitda',          ebitda,                      'reais'),
+    ind('lucro_liquido',   lucroLiq,                    'reais'),
+    ind('pl',              pl,                          'reais'),
+    // Ratios
     ind('margem_ebitda',   safeDiv(ebitda,   recLiq),   'percentual'),
     ind('margem_liquida',  safeDiv(lucroLiq, recLiq),   'percentual'),
     ind('roe',             roeVal,                       'percentual'),
     ind('roa',             roaVal,                       'percentual'),
     ind('roic',            roicVal,                      'percentual'),
-    ind('grau_alavancagem',safeDiv(roeVal, roaVal),      'ratio'),        // DuPont ROE/ROA
+    ind('grau_alavancagem',safeDiv(roeVal, roaVal),      'ratio'),
     ind('giro_ativo',      safeDiv(recLiq, ativoTot),   'ratio'),
   ];
 
