@@ -1,0 +1,81 @@
+name: Deploy
+
+on:
+  # Dispara automaticamente após CI bem-sucedido em main
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+
+  # Deploy manual com SHA específico
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag da imagem (SHA do commit ou 'latest')"
+        required: false
+        default: latest
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GCP_REGION: southamerica-east1
+  REGISTRY: southamerica-east1-docker.pkg.dev
+
+jobs:
+  deploy-homolog:
+    name: Deploy → Homologação
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      || github.event_name == 'workflow_dispatch'
+
+    # Requer aprovação manual: configure "Required reviewers" em
+    # Settings → Environments → homologacao → Protection rules
+    environment:
+      name: homologacao
+      url: ${{ vars.HOMOLOG_URL }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Set image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Deploy API → Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: selene-api
+          region:  ${{ env.GCP_REGION }}
+          image:   ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/selene/api:${{ steps.tag.outputs.tag }}
+
+      - name: Deploy Worker → Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: selene-worker
+          region:  ${{ env.GCP_REGION }}
+          image:   ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/selene/worker:${{ steps.tag.outputs.tag }}
+
+      - name: Deploy Web → Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: selene-web
+          region:  ${{ env.GCP_REGION }}
+          image:   ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/selene/web:${{ steps.tag.outputs.tag }}
+
+      - name: Smoke test
+        run: |
+          sleep 15
+          curl -fsS ${{ vars.HOMOLOG_URL }}/api/health | jq -e '.status == "ok"'
