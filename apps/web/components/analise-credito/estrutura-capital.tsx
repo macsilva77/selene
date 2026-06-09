@@ -212,6 +212,22 @@ export function EstruturaCapital({
     indicadores.find(i => i.indicador === 'cobertura_juros' && i.exercicio === exercicio)?.valor,
   );
 
+  // Indicadores de imobilização e capital de giro (Fleuriet)
+  const getInd = (nome: string) => {
+    const raw = indicadores.find(i => i.indicador === nome && i.exercicio === exercicio)?.valor;
+    return raw != null ? toN(raw) : null;
+  };
+  const imobPl  = getInd('imobilizacao_pl');
+  const imobRec = getInd('imobilizacao_rec_perm');
+  const imobAt  = getInd('imob_ativo_pct');
+  const cdg     = getInd('capital_giro');
+  const ncg     = getInd('ncg');
+  const tes     = getInd('saldo_tesouraria');
+
+  const sevImobPl  = (v: number): Sev => v <= 0.6 ? 'positivo' : v <= 1.0 ? 'atencao' : 'critico';
+  const sevImobRec = (v: number): Sev => v <= 0.8 ? 'positivo' : v <= 1.0 ? 'atencao' : 'critico';
+  const sevTes     = (v: number): Sev => v > 0 ? 'positivo' : v === 0 ? 'atencao' : 'critico';
+
   /* ── Evolução multi-year ── */
   const sorted = useMemo(
     () => [...kpisAnuais].sort((a, b) => a.exercicio - b.exercicio),
@@ -394,6 +410,86 @@ export function EstruturaCapital({
           alerta={alertDiv}
           alertSev={alertDivSev}
         />
+      )}
+
+      {/* ── Imobilização e Capital de Giro (Fleuriet) ── */}
+      {(imobPl !== null || tes !== null) && (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-semibold text-foreground">Imobilização e Capital de Giro</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {imobPl !== null && (
+              <MetricCard
+                label="Imobilização do PL"
+                valor={fmtRatio(imobPl)}
+                badge={{
+                  label: imobPl <= 0.6 ? 'adequada' : imobPl <= 1.0 ? 'atenção' : 'elevada (>PL)',
+                  sev: sevImobPl(imobPl),
+                }}
+              />
+            )}
+            {imobRec !== null && (
+              <MetricCard
+                label="Imob. rec. permanentes"
+                valor={fmtRatio(imobRec)}
+                badge={{
+                  label: imobRec <= 0.8 ? 'adequada' : imobRec <= 1.0 ? 'atenção' : 'elevada',
+                  sev: sevImobRec(imobRec),
+                }}
+              />
+            )}
+            {imobAt !== null && (
+              <MetricCard
+                label="Imobilizado / ativo total"
+                valor={fmtPct(imobAt)}
+                badge={{
+                  label: imobAt <= 0.3 ? 'baixo' : imobAt <= 0.5 ? 'moderado' : 'elevado',
+                  sev: imobAt <= 0.3 ? 'positivo' : imobAt <= 0.5 ? 'atencao' : 'critico',
+                }}
+              />
+            )}
+            {cdg !== null && (
+              <MetricCard
+                label="Capital de giro (CDG)"
+                valor={fmtBrl(cdg)}
+                badge={{
+                  label: cdg > 0 ? 'positivo' : cdg === 0 ? 'nulo' : 'negativo',
+                  sev: cdg > 0 ? 'positivo' : 'critico',
+                }}
+              />
+            )}
+            {ncg !== null && (
+              <MetricCard
+                label="Necessidade de C.G. (NCG)"
+                valor={fmtBrl(ncg)}
+                badge={{
+                  label: ncg >= 0 ? 'operacional' : 'fonte de giro',
+                  sev: 'atencao',
+                }}
+              />
+            )}
+            {tes !== null && (
+              <MetricCard
+                label="Saldo de tesouraria"
+                valor={fmtBrl(tes)}
+                badge={{
+                  label: tes > 0 ? 'positivo' : tes === 0 ? 'nulo' : 'negativo',
+                  sev: sevTes(tes),
+                }}
+              />
+            )}
+          </div>
+          {tes !== null && (
+            <div className={cn('rounded-md border px-3 py-2 text-xs',
+              tes > 0
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-red-200 bg-red-50 text-red-800',
+            )}>
+              {tes > 0
+                ? 'Saldo de tesouraria positivo — empresa autofinanciada no giro operacional (Fleuriet).'
+                : 'Saldo de tesouraria negativo — empresa depende estruturalmente de crédito de curto prazo para financiar o giro operacional.'}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Evolução ── */}

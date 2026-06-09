@@ -143,10 +143,14 @@ function cr07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
 
 function cr08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
   const c = cfg(map, 'CR-08'); if (!c) return null;
-  const th = c.threshold1 ?? 3;
+  const th      = c.threshold1 ?? 3;
   const ctcp    = ctx.ind('relacao_ct_cp');
   const ctcpAnt = ctx.indAnt('relacao_ct_cp');
-  if (ctcp === null || ctcpAnt === null) return null;
+  const pl      = ctx.ind('pl');
+  if (ctcp === null || ctcpAnt === null || pl === null) return null;
+  // PL ≤ 0: CT/CP não tem sentido econômico (denominador negativo → ratio negativo);
+  // a situação já é coberta por CR-01 (PL negativo).
+  if (!pl.greaterThan(0)) return null;
   if (!ctcp.greaterThan(th) || !ctcp.greaterThan(ctcpAnt)) return null;
   return { codigoRegra: 'CR-08', severidade: c.severidade as Severidade, indicador: 'relacao_ct_cp',
     valorAtual: ctcp, categoria: 'estrutura de capital', regraOk: fonteOk(ctx, 'relacao_ct_cp'),
@@ -256,6 +260,51 @@ function at09(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
     mensagem: renderMsg(c.templateMensagem, { val: rat(ebpl) }) };
 }
 
+function cr09(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'CR-09'); if (!c) return null;
+  const th     = c.threshold1 ?? 1.0;
+  const imobPl = ctx.ind('imobilizacao_pl');
+  // imobilizacao_pl já é null quando PL ≤ 0 (calculado em P03)
+  if (imobPl === null || !imobPl.greaterThan(th)) return null;
+  return { codigoRegra: 'CR-09', severidade: c.severidade as Severidade, indicador: 'imobilizacao_pl',
+    valorAtual: imobPl, categoria: 'imobilização', regraOk: fonteOk(ctx, 'imobilizacao_pl'),
+    mensagem: renderMsg(c.templateMensagem, { val: rat(imobPl), th1: String(th) }) };
+}
+
+// ─── Regras ATENÇÃO (novas) ───────────────────────────────────────────────────
+
+function at10(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'AT-10'); if (!c) return null;
+  const t = ctx.ind('saldo_tesouraria');
+  if (t === null || !t.isNegative()) return null;
+  return { codigoRegra: 'AT-10', severidade: c.severidade as Severidade, indicador: 'saldo_tesouraria',
+    valorAtual: t, categoria: 'capital de giro', regraOk: fonteOk(ctx, 'saldo_tesouraria'),
+    mensagem: renderMsg(c.templateMensagem, { val: t.toFixed(2) }) };
+}
+
+function at11(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c   = cfg(map, 'AT-11'); if (!c) return null;
+  const th  = c.threshold1 ?? 0.05;   // 5 pp de queda
+  const mb  = ctx.ind('margem_bruta');
+  const mbA = ctx.indAnt('margem_bruta');
+  if (mb === null || mbA === null) return null;
+  const queda = mbA.minus(mb);        // positivo quando a margem caiu
+  if (!queda.greaterThan(th)) return null;
+  return { codigoRegra: 'AT-11', severidade: c.severidade as Severidade, indicador: 'margem_bruta',
+    valorAtual: mb, categoria: 'rentabilidade', regraOk: fonteOk(ctx, 'margem_bruta'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(queda), mb: pct(mb) }) };
+}
+
+function at12(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c  = cfg(map, 'AT-12'); if (!c) return null;
+  const th = c.threshold1 ?? 90;
+  const pm = ctx.ind('pm_tributos');
+  if (pm === null || !pm.greaterThan(th)) return null;
+  return { codigoRegra: 'AT-12', severidade: c.severidade as Severidade, indicador: 'pm_tributos',
+    valorAtual: pm, categoria: 'risco fiscal', regraOk: fonteOk(ctx, 'pm_tributos'),
+    mensagem: renderMsg(c.templateMensagem, { val: pm.toFixed(0), th1: String(th) }) };
+}
+
 // ─── Regras POSITIVAS ─────────────────────────────────────────────────────────
 
 function po01(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
@@ -336,22 +385,45 @@ function po07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
 }
 
 function po08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
-  const c = cfg(map, 'PO-08'); if (!c) return null;
-  const th = c.threshold1 ?? 0.15;
+  const c   = cfg(map, 'PO-08'); if (!c) return null;
+  const th  = c.threshold1 ?? 0.15;
   const cpl = ctx.ind('crescimento_pl');
-  if (cpl === null || !cpl.greaterThan(th)) return null;
+  const pl  = ctx.ind('pl');
+  // PL deve ser positivo: com PL negativo, crescimento_pl positivo indica piora (ex: −55.9K→−64.9K),
+  // não fortalecimento do capital próprio.
+  if (cpl === null || pl === null || !pl.greaterThan(0)) return null;
+  if (!cpl.greaterThan(th)) return null;
   return { codigoRegra: 'PO-08', severidade: c.severidade as Severidade, indicador: 'crescimento_pl',
     valorAtual: cpl, categoria: 'solvência', regraOk: fonteOk(ctx, 'crescimento_pl'),
     mensagem: renderMsg(c.templateMensagem, { val: pct(cpl) }) };
+}
+
+function po09(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c = cfg(map, 'PO-09'); if (!c) return null;
+  const t = ctx.ind('saldo_tesouraria');
+  if (t === null || !t.greaterThan(0)) return null;
+  return { codigoRegra: 'PO-09', severidade: c.severidade as Severidade, indicador: 'saldo_tesouraria',
+    valorAtual: t, categoria: 'capital de giro', regraOk: fonteOk(ctx, 'saldo_tesouraria'),
+    mensagem: renderMsg(c.templateMensagem, { val: t.toFixed(2) }) };
+}
+
+function po10(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
+  const c  = cfg(map, 'PO-10'); if (!c) return null;
+  const th = c.threshold1 ?? 0.30;
+  const mb = ctx.ind('margem_bruta');
+  if (mb === null || !mb.greaterThan(th)) return null;
+  return { codigoRegra: 'PO-10', severidade: c.severidade as Severidade, indicador: 'margem_bruta',
+    valorAtual: mb, categoria: 'rentabilidade', regraOk: fonteOk(ctx, 'margem_bruta'),
+    mensagem: renderMsg(c.templateMensagem, { val: pct(mb), th1pct: `${(th * 100).toFixed(0)}%` }) };
 }
 
 // ─── Avaliador principal ──────────────────────────────────────────────────────
 
 export function avaliarRegras(ctx: RegraCtx, configMap: ConfigMap): AlertaRow[] {
   const fns = [
-    cr01, cr02, cr03, cr04, cr05, cr06, cr07, cr08,
-    at01, at02, at03, at04, at05, at06, at07, at08, at09,
-    po01, po02, po03, po04, po05, po06, po07, po08,
+    cr01, cr02, cr03, cr04, cr05, cr06, cr07, cr08, cr09,
+    at01, at02, at03, at04, at05, at06, at07, at08, at09, at10, at11, at12,
+    po01, po02, po03, po04, po05, po06, po07, po08, po09, po10,
   ];
   return fns.map(fn => fn(ctx, configMap)).filter((a): a is AlertaRow => a !== null);
 }

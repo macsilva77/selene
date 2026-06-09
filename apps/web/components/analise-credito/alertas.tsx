@@ -41,6 +41,20 @@ const INDICADOR_LABEL: Record<string, string> = {
   endiv_bancario_pl:        'endividamento bancário/PL',
   divida_financeira_tot:    'dívida financeira total',
   divida_liquida:           'dívida líquida',
+  // Novos indicadores (P03 extensão)
+  margem_bruta:             'margem bruta',
+  margem_ebit:              'margem EBIT',
+  cobertura_ebitda_df:      'cobertura EBITDA / DF',
+  ativo_clientes:           'clientes (ativo)',
+  ativo_estoques:           'estoques (ativo)',
+  ativo_imobilizado:        'imobilizado + intangível',
+  capital_giro:             'capital de giro (CDG)',
+  ncg:                      'necessidade de capital de giro',
+  saldo_tesouraria:         'saldo de tesouraria',
+  imobilizacao_pl:          'imobilização do PL',
+  imobilizacao_rec_perm:    'imobilização dos rec. permanentes',
+  imob_ativo_pct:           'imobilização do ativo',
+  pm_tributos:              'prazo médio de tributos',
 };
 
 function indLabel(ind: string): string {

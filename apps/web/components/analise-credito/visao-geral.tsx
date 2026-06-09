@@ -60,6 +60,10 @@ const BADGE_LABELS: Record<string, { positivo: string; atencao: string; critico:
   cobertura_juros:   { positivo: 'adequado',  atencao: 'atenção',   critico: 'baixa'    },
   ciclo_financeiro:  { positivo: 'saudável',  atencao: 'monitorar', critico: 'elevado'  },
   alavancagem:       { positivo: 'adequada',  atencao: 'moderada',  critico: 'alta'     },
+  margem_bruta:      { positivo: 'saudável',  atencao: 'monitorar', critico: 'baixa'    },
+  margem_ebit:       { positivo: 'saudável',  atencao: 'monitorar', critico: 'baixa'    },
+  saldo_tesouraria:  { positivo: 'positivo',  atencao: 'atenção',   critico: 'negativo' },
+  imobilizacao_pl:   { positivo: 'adequada',  atencao: 'atenção',   critico: 'elevada'  },
 };
 
 const SEV_CLS: Record<string, string> = {
@@ -175,6 +179,8 @@ const IND_LISTA: { key: string; label: string; fmt: (v: string | null) => string
   { key: 'liquidez_seca',     label: 'Liquidez seca',      fmt: fmtRatio },
   { key: 'liquidez_imediata', label: 'Liquidez imediata',  fmt: fmtRatio },
   { key: 'margem_ebitda',     label: 'Margem EBITDA',      fmt: fmtPct   },
+  { key: 'margem_bruta',      label: 'Margem bruta',       fmt: fmtPct   },
+  { key: 'margem_ebit',       label: 'Margem EBIT',        fmt: fmtPct   },
   { key: 'margem_liquida',    label: 'Margem líquida',     fmt: fmtPct   },
   { key: 'roe',               label: 'ROE',                fmt: fmtPct   },
   { key: 'roa',               label: 'ROA',                fmt: fmtPct   },
@@ -221,12 +227,18 @@ export function VisaoGeral({
   const vsLabel = financeiroPrevio ? `vs ${financeiroPrevio.exercicio}` : undefined;
 
   // Composição do ativo — será enriquecida com fórmulas
-  const caixaVal   = Number(ind('caixa_equiv')?.valor ?? 0);
-  const ativoTotal = Number(ec?.ativoTotal ?? 0);
+  const caixaVal    = Number(ind('caixa_equiv')?.valor       ?? 0);
+  const clientesVal = Number(ind('ativo_clientes')?.valor    ?? 0);
+  const estoquesVal = Number(ind('ativo_estoques')?.valor    ?? 0);
+  const imobVal     = Number(ind('ativo_imobilizado')?.valor ?? 0);
+  const ativoTotal  = Number(ec?.ativoTotal ?? 0);
 
   const barItems: BarItem[] = (ativoTotal > 0 ? [
-    { label: 'Caixa',  valor: caixaVal,                           cor: BAR_CORES[0] },
-    { label: 'Outros', valor: Math.max(0, ativoTotal - caixaVal), cor: BAR_CORES[3] },
+    { label: 'Caixa',       valor: caixaVal,                                                                 cor: BAR_CORES[0] },
+    { label: 'Clientes',    valor: clientesVal,                                                               cor: BAR_CORES[1] },
+    { label: 'Estoques',    valor: estoquesVal,                                                               cor: BAR_CORES[2] },
+    { label: 'Imobilizado', valor: imobVal,                                                                   cor: BAR_CORES[4] },
+    { label: 'Outros',      valor: Math.max(0, ativoTotal - caixaVal - clientesVal - estoquesVal - imobVal), cor: BAR_CORES[3] },
   ] : []).filter(b => b.valor > 0);
 
   return (

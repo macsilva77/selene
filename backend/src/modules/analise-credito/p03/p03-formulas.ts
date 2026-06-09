@@ -72,6 +72,10 @@ export function calcularIndicadores(
   const pcFornec   = getBal(bal, 'PC',  'Fornecedores');
   const pcEmpCP    = getBal(bal, 'PC',  'Empréstimos CP');
   const pncEmpLP   = getBal(bal, 'PNC', 'Empréstimos LP');
+  const pcTributos = getBal(bal, 'PC',  'Tributos a Pagar');
+  const pcSalarios = getBal(bal, 'PC',  'Salários e Encargos');
+  const ancImob    = getBal(bal, 'ANC', 'Imobilizado');
+  const ancIntang  = getBal(bal, 'ANC', 'Intangível');
   const ativoTot   = ac.add(anc);
 
   // ── Linhas DRE ───────────────────────────────────────────────────────────────
@@ -80,8 +84,9 @@ export function calcularIndicadores(
   const lucroLiq = getDre(dre, 'lucro_liquido');
   const ebitda   = getDre(dre, 'ebitda');
   const ebit     = getDre(dre, 'ebit');
-  const cmv      = getDre(dre, 'cmv');
-  const despFin  = getDre(dre, 'desp_financeiras');
+  const cmv       = getDre(dre, 'cmv');
+  const despFin   = getDre(dre, 'desp_financeiras');
+  const lucroBruto = getDre(dre, 'lucro_bruto');
 
   // ── Grupo 1 — Liquidez ───────────────────────────────────────────────────────
   const grp1: IndicadorCalc[] = [
@@ -100,8 +105,11 @@ export function calcularIndicadores(
   const roaVal     = safeDiv(lucroLiq, ativoMedio);
 
   // ROIC = EBIT / Capital Investido (PL + Dívida Financeira)
+  // Retorna null quando PL < 0: capital investido líquido perde sentido econômico e gera valores absurdos.
   const capitalInvestido = pl.add(pcEmpCP).add(pncEmpLP);
-  const roicVal = capitalInvestido.isZero() ? null : safeDiv(ebit, capitalInvestido);
+  const roicVal = (capitalInvestido.isZero() || capitalInvestido.isNegative() || pl.isNegative())
+    ? null
+    : safeDiv(ebit, capitalInvestido);
 
   const grp2: IndicadorCalc[] = [
     // Valores absolutos — necessários para CR-01, CR-02, CR-03, CR-06, PO-01
@@ -114,8 +122,12 @@ export function calcularIndicadores(
     ind('roe',             roeVal,                       'percentual'),
     ind('roa',             roaVal,                       'percentual'),
     ind('roic',            roicVal,                      'percentual'),
-    ind('grau_alavancagem',safeDiv(roeVal, roaVal),      'ratio'),
-    ind('giro_ativo',      safeDiv(recLiq, ativoTot),   'ratio'),
+    ind('grau_alavancagem',    safeDiv(roeVal, roaVal),      'ratio'),
+    ind('giro_ativo',          safeDiv(recLiq, ativoTot),   'ratio'),
+    // Cascata de margens (bruta → EBIT → EBITDA → líquida)
+    ind('margem_bruta',        safeDiv(lucroBruto, recLiq), 'percentual'),
+    ind('margem_ebit',         safeDiv(ebit,       recLiq), 'percentual'),
+    ind('cobertura_ebitda_df', safeDiv(ebitda, despFin),    'ratio'),
   ];
 
   // ── Grupo 3 — Endividamento ──────────────────────────────────────────────────
@@ -131,6 +143,9 @@ export function calcularIndicadores(
     ind('caixa_equiv',           acCaixa,                          'reais'),
     ind('divida_liquida',        divLiq,                           'reais'),
     ind('dl_ebitda',             safeDiv(divLiq, ebitda),          'ratio'),
+    // Valores absolutos de ativo operacional (usados na composição do ativo)
+    ind('ativo_clientes',        acClientes,                       'reais'),
+    ind('ativo_estoques',        acEstoques,                       'reais'),
   ];
 
   // ── Grupo 4 — Estrutura de Capital ───────────────────────────────────────────
@@ -163,6 +178,38 @@ export function calcularIndicadores(
     ind('ciclo_financeiro', ciclo, 'dias'),
   ];
 
+  // ── Grupo 7 — Capital de Giro / Modelo Fleuriet ──────────────────────────────
+  // CDG = AC - PC; NCG = (Clientes + Estoques) - (Fornecedores + Tributos + Salários)
+  // Tesouraria = CDG - NCG; T > 0 = empresa autofinanciada no giro operacional
+  const ativoFixo = ancImob.add(ancIntang);
+  const cdg       = ac.minus(pc);
+  const ncg       = acClientes.add(acEstoques)
+                      .minus(pcFornec).minus(pcTributos).minus(pcSalarios);
+  const tesouraria = cdg.minus(ncg);
+
+  const grp7: IndicadorCalc[] = [
+    ind('ativo_imobilizado',  ativoFixo,  'reais'),
+    ind('capital_giro',       cdg,        'reais'),
+    ind('ncg',                ncg,        'reais'),
+    ind('saldo_tesouraria',   tesouraria, 'reais'),
+  ];
+
+  // ── Grupo 8 — Imobilização ────────────────────────────────────────────────────
+  const plPnc = pl.add(pnc);
+
+  const grp8: IndicadorCalc[] = [
+    // null quando PL ≤ 0: denominador negativo inverte o sinal e perde sentido
+    ind('imobilizacao_pl',
+      pl.isNegative() || pl.isZero() ? null : safeDiv(ativoFixo, pl),
+      'ratio'),
+    // null quando PL + PNC ≤ 0: recursos permanentes insuficientes
+    ind('imobilizacao_rec_perm',
+      plPnc.isNegative() || plPnc.isZero() ? null : safeDiv(ativoFixo, plPnc),
+      'ratio'),
+    ind('imob_ativo_pct', safeDiv(ativoFixo,      ativoTot),  'percentual'),
+    ind('pm_tributos',    safeDiv(pcTributos.mul(D), recBruta), 'dias'),
+  ];
+
   // ── Grupo 6 — Crescimento (requer histórico) ──────────────────────────────────
   let grp6: IndicadorCalc[];
   const crescNames = [
@@ -185,7 +232,9 @@ export function calcularIndicadores(
     grp6 = [
       ind('crescimento_receita',   safeDiv(recLiq.minus(recLiqAnt),     recLiqAnt),   'percentual'),
       ind('crescimento_ebitda',    safeDiv(ebitda.minus(ebitdaAnt),     ebitdaAnt),   'percentual'),
-      ind('crescimento_pl',        safeDiv(pl.minus(plAnt),             plAnt),       'percentual'),
+      // usa plAnt.abs() no denominador: quando plAnt < 0 a fórmula padrão (÷plAnt) inverte o sinal
+      // e gera crescimento positivo para PL que piorou (ex: −55.9K → −64.9K daria falsos +16.1%)
+      ind('crescimento_pl',        safeDiv(pl.minus(plAnt),             plAnt.abs()),  'percentual'),
       ind('crescimento_divida',    safeDiv(divTot.minus(divTotAnt),     divTotAnt),   'percentual'),
       ind('crescimento_clientes',  safeDiv(acClientes.minus(clientesAnt),clientesAnt),'percentual'),
       ind('crescimento_estoques',  safeDiv(acEstoques.minus(estoquesAnt),estoquesAnt),'percentual'),
@@ -195,7 +244,7 @@ export function calcularIndicadores(
     grp6 = crescNames.map(n => ind(n, null, 'percentual'));
   }
 
-  return [...grp1, ...grp2, ...grp3, ...grp4, ...grp5, ...grp6];
+  return [...grp1, ...grp2, ...grp3, ...grp4, ...grp5, ...grp7, ...grp8, ...grp6];
 }
 
 /** Monta o snapshot de estrutura de capital (tb_estrutura_capital). */
