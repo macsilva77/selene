@@ -191,6 +191,10 @@ export const analiseCreditoApi = {
   /** Apaga todos os dados calculados (ECF + indicadores + alertas) */
   resetarDados: (): Promise<{ mensagem: string; totais: Record<string, number> }> =>
     api.post('/analise-credito/admin/resetar').then(r => r.data),
+
+  /** Força P01 + calcular para todas as empresas do tenant (reprocessamento completo) */
+  reprocessarEcf: (): Promise<{ mensagem: string; status: string; total: number }> =>
+    api.post('/analise-credito/admin/reprocessar-ecf').then(r => r.data),
 };
 
 /* ─── Regras de Crédito ────────────────────────────────────────────────────── */

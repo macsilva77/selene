@@ -6,6 +6,7 @@ import {
   BuildingsIcon,
   WarningIcon,
   GearIcon,
+  ArrowsClockwiseIcon,
 } from '@phosphor-icons/react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast, ToastContainer } from '@/components/ui/toast';
@@ -40,6 +41,7 @@ export function AnaliseCreditoDashboard() {
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [calculando, setCalculando]           = useState(false);
+  const [reprocessando, setReprocessando]     = useState(false);
 
   const [indicadores, setIndicadores]         = useState<Indicador[]>([]);
   const [alertas, setAlertas]                 = useState<Alerta[]>([]);
@@ -113,6 +115,21 @@ export function AnaliseCreditoDashboard() {
     }
   }, [calculando, carregarDados, exercicioFiltro, toastError]);
 
+  const reprocessarTodos = useCallback(async () => {
+    if (reprocessando) return;
+    setReprocessando(true);
+    try {
+      const res = await analiseCreditoApi.reprocessarEcf();
+      if (cnpjSelecionado) setTimeout(() => carregarDados(cnpjSelecionado, exercicioFiltro), 5000);
+      analiseCreditoApi.listarEmpresas().then(setEmpresas).catch(() => {});
+      toastError(`${res.mensagem} — aguarde o processamento em background`);
+    } catch {
+      toastError('Erro ao iniciar reprocessamento');
+    } finally {
+      setReprocessando(false);
+    }
+  }, [reprocessando, cnpjSelecionado, carregarDados, exercicioFiltro, toastError]);
+
   useEffect(() => {
     if (cnpjSelecionado) carregarDados(cnpjSelecionado, exercicioFiltro);
   }, [cnpjSelecionado, exercicioFiltro, carregarDados]);
@@ -136,9 +153,21 @@ export function AnaliseCreditoDashboard() {
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {/* ── Cabeçalho ── */}
-      <div>
-        <h1 className="text-xl font-semibold">Análise de Crédito</h1>
-        <p className="text-sm text-muted-foreground">Dados extraídos do ECF · clique em Processar para calcular indicadores</p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">Análise de Crédito</h1>
+          <p className="text-sm text-muted-foreground">Dados extraídos do ECF · clique em Processar para calcular indicadores</p>
+        </div>
+        <button
+          type="button"
+          onClick={reprocessarTodos}
+          disabled={reprocessando}
+          title="Força P01 + calcular para todas as empresas com ECF importado"
+          className="flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+        >
+          <ArrowsClockwiseIcon size={13} className={reprocessando ? 'animate-spin' : ''} />
+          {reprocessando ? 'Reprocessando…' : 'Reprocessar ECF'}
+        </button>
       </div>
 
       {/* ── Seletor de empresa ── */}

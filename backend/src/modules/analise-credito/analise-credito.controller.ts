@@ -147,6 +147,40 @@ export class AnaliseCreditoController {
     };
   }
 
+  // ─── Admin: reprocessar todos os ECFs do tenant ──────────────────────────────
+
+  @Post('admin/reprocessar-ecf')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoReprocessarEcf')
+  async reprocessarEcf(@CurrentUser('tenantId') tenantId: string) {
+    const empresas = await this.prisma.empresa.findMany({
+      where:  { tenantId },
+      select: { cnpj: true },
+      distinct: ['cnpj'],
+    });
+
+    const cnpjs = empresas.map(e => e.cnpj);
+    this.logger.log(`[ReprocessarEcf] tenant=${tenantId} — ${cnpjs.length} empresa(s)`);
+
+    void (async () => {
+      for (const cnpj of cnpjs) {
+        try {
+          await this.p01Service.processarCnpj(tenantId, cnpj);
+          const creditoEmp = await this.prisma.creditoEmpresa.findUnique({
+            where:  { tenantId_cnpj: { tenantId, cnpj } },
+            select: { id: true, cnpj: true, regimeTributario: true },
+          });
+          if (creditoEmp) await this.calcularService.calcularParaEmpresa(creditoEmp);
+        } catch (err) {
+          this.logger.warn(`[ReprocessarEcf] ${cnpj}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      this.logger.log(`[ReprocessarEcf] tenant=${tenantId} — concluído`);
+    })().catch(err => this.logger.error('[ReprocessarEcf] Erro em background', err instanceof Error ? err.stack : String(err)));
+
+    return { mensagem: `P01 + calcular iniciado para ${cnpjs.length} empresa(s)`, status: 'aceito', total: cnpjs.length };
+  }
+
   // ─── Leitura para o dashboard ─────────────────────────────────────────────────
 
   @Get('empresas')
