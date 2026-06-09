@@ -1473,7 +1473,7 @@ function EmptyState({ tab, hasFilters }: Readonly<{ tab: TabId; hasFilters: bool
 const EMPTY_FILTERS: Filters = {
   configId: '', raizCnpj: false, cnpj: '', cnpjEmitente: '',
   chaveAcesso: '', nNF: '', valorMin: '', valorMax: '',
-  dataInicio: '', dataFim: '', tipo: '', etiquetaIds: [],
+  dataInicio: '', dataFim: '', tipo: 'PROC_NFE', etiquetaIds: [],
 };
 
 export default function DfeDocumentosPage() {
