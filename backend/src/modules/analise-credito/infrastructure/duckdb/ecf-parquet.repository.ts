@@ -34,16 +34,17 @@ export class EcfParquetRepository {
   /**
    * Consulta otimizada: buffer escrito em /tmp uma vez, duas queries na mesma conexão.
    * Retorna null se não há dados para o registroEcf informado.
+   * Aceita `novoSchema` pré-calculado (do cache) para evitar a query parquet_schema().
    */
   async consultarComTrimestres(
     buffer: Buffer,
-    opts: EcfConsultaOptions & { registroEcf: string },
-  ): Promise<EcfConsultaResult | null> {
+    opts: EcfConsultaOptions & { registroEcf: string; cachedNovoSchema?: boolean | null },
+  ): Promise<EcfConsultaResult & { novoSchema: boolean } | null> {
     return this.withTempFile(buffer, async (fp) => {
       const p    = toDuckPath(fp);
       const conn = await this.duckdb.connect();
       try {
-        const novoSchema = await this.detectarNovoSchema(conn, p);
+        const novoSchema = opts.cachedNovoSchema ?? await this.detectarNovoSchema(conn, p);
 
         // $1 = registroEcf (file path é interpolado diretamente no read_parquet)
         const trimReader = await conn.runAndReadAll(
@@ -64,7 +65,7 @@ export class EcfParquetRepository {
         const regReader = await conn.runAndReadAll(sql, params);
         const registros = (regReader.getRowObjects() as unknown as RawRow[]).map(toEcfRow);
 
-        return { trimestres, trimestreAtivo, registros };
+        return { trimestres, trimestreAtivo, registros, novoSchema };
       } finally {
         conn.closeSync();
       }
@@ -205,5 +206,5 @@ function buildSelectQuery(
                       ${movCols}, status
                FROM read_parquet('${filePath}') ${where} ORDER BY linha_codigo ASC`;
 
-  return { sql, params: values as DuckDbParams };
+  return { sql, params: values };
 }

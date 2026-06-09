@@ -72,18 +72,12 @@ export function AnaliseCreditoDashboard() {
   }, []);
 
   const carregarFinanceiro = useCallback(async (cnpj: string, exercicioAlvo: number) => {
-    try {
-      const f = await analiseCreditoApi.financeiro(cnpj, exercicioAlvo);
-      setFinanceiro(f);
-      try {
-        setFinanceiroPrevio(await analiseCreditoApi.financeiro(cnpj, exercicioAlvo - 1));
-      } catch {
-        setFinanceiroPrevio(null);
-      }
-    } catch {
-      setFinanceiro(null);
-      setFinanceiroPrevio(null);
-    }
+    const [f, fp] = await Promise.all([
+      analiseCreditoApi.financeiro(cnpj, exercicioAlvo).catch(() => null),
+      analiseCreditoApi.financeiro(cnpj, exercicioAlvo - 1).catch(() => null),
+    ]);
+    setFinanceiro(f);
+    setFinanceiroPrevio(fp);
   }, []);
 
   const carregarDados = useCallback(async (cnpj: string, exercicio?: number) => {

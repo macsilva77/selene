@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
 interface CacheEntry {
-  buffer:    Buffer;
-  expiresAt: number;
+  buffer:     Buffer;
+  novoSchema: boolean | null; // null = ainda não detectado
+  expiresAt:  number;
 }
 
 /**
@@ -46,7 +47,20 @@ export class ParquetCacheService {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) this.cache.delete(oldest);
     }
-    this.cache.set(key, { buffer, expiresAt: Date.now() + ParquetCacheService.TTL_MS });
+    this.cache.set(key, { buffer, novoSchema: null, expiresAt: Date.now() + ParquetCacheService.TTL_MS });
+  }
+
+  /** Retorna o schema detectado anteriormente, ou null se ainda não detectado / entrada ausente. */
+  getNovoSchema(key: string): boolean | null {
+    const entry = this.cache.get(key);
+    if (!entry || Date.now() > entry.expiresAt) return null;
+    return entry.novoSchema;
+  }
+
+  /** Persiste o schema detectado para evitar a query parquet_schema() nas próximas chamadas. */
+  setNovoSchema(key: string, value: boolean): void {
+    const entry = this.cache.get(key);
+    if (entry) entry.novoSchema = value;
   }
 
   /** Invalida manualmente — útil em testes ou forçar refresh. */

@@ -29,9 +29,19 @@ export class EcfDataSourceService {
 
   // ─── API principal ──────────────────────────────────────────────────────────
 
+  // Cache de resultados: evita queries DuckDB repetidas para mesma combinação de parâmetros.
+  // Chave: `${gcsPath}:${md5}:${registroEcf}:${trimestre ?? 'x'}:${prefixo ?? ''}`
+  private readonly resultCache = new Map<string, { result: EcfConsultaResult | null; expiresAt: number }>();
+  private static readonly RESULT_TTL_MS = 10 * 60 * 1000; // 10 min
+
+  private buildResultKey(cacheKey: string, registroEcf: string, trimestre?: number, prefixo?: string): string {
+    return `${cacheKey}:${registroEcf}:${trimestre ?? 'x'}:${prefixo ?? ''}`;
+  }
+
   /**
    * Consulta otimizada que retorna trimestres + registros numa única operação.
    * O buffer Parquet é escrito em /tmp apenas uma vez por chamada.
+   * O schema DuckDB e os resultados são cacheados — chamadas repetidas custam O(1).
    * Retorna null se não há dados para o registroEcf informado.
    */
   async consultarComTrimestres(
@@ -41,14 +51,35 @@ export class EcfDataSourceService {
     trimestre?:  number,
     linhaCodigoPrefixo?: string,
   ): Promise<EcfConsultaResult | null> {
-    const buffer = await this.obterBuffer(empresaId, exercicio);
-    if (buffer) {
-      return this.parquetRepo.consultarComTrimestres(buffer, {
-        registroEcf,
-        trimestre,
-        linhaCodigoPrefixo,
-      });
+    const arquivo = await this.prisma.creditoEcfArquivo.findUnique({
+      where:  { empresaId_exercicio: { empresaId, exercicio } },
+      select: { gcsPath: true, hashMd5: true },
+    });
+
+    if (arquivo) {
+      const cacheKey  = ParquetCacheService.buildKey(arquivo.gcsPath, arquivo.hashMd5);
+      const resultKey = this.buildResultKey(cacheKey, registroEcf, trimestre, linhaCodigoPrefixo);
+
+      // Cache hit: retorna sem tocar no disco ou no DuckDB
+      const cached = this.resultCache.get(resultKey);
+      if (cached && Date.now() < cached.expiresAt) return cached.result;
+
+      const buffer = await this.obterBufferDireto(arquivo.gcsPath, arquivo.hashMd5, cacheKey);
+      if (buffer) {
+        const resultado = await this.parquetRepo.consultarComTrimestres(buffer, {
+          registroEcf,
+          trimestre,
+          linhaCodigoPrefixo,
+          cachedNovoSchema: this.cache.getNovoSchema(cacheKey),
+        });
+        // Persiste schema detectado para próximas chamadas
+        if (resultado) this.cache.setNovoSchema(cacheKey, resultado.novoSchema);
+        // Armazena resultado no cache
+        this.resultCache.set(resultKey, { result: resultado, expiresAt: Date.now() + EcfDataSourceService.RESULT_TTL_MS });
+        return resultado;
+      }
     }
+
     return this.consultarComTrimestresDb(empresaId, exercicio, registroEcf, trimestre, linhaCodigoPrefixo);
   }
 
@@ -76,26 +107,31 @@ export class EcfDataSourceService {
       where:  { empresaId_exercicio: { empresaId, exercicio } },
       select: { gcsPath: true, hashMd5: true },
     });
-    if (!arquivo) return null;
+    if (arquivo === null) return null;
 
     const cacheKey = ParquetCacheService.buildKey(arquivo.gcsPath, arquivo.hashMd5);
-    const cached   = this.cache.get(cacheKey);
+    return this.obterBufferDireto(arquivo.gcsPath, arquivo.hashMd5, cacheKey);
+  }
+
+  /** Baixa (ou retorna do cache) o buffer Parquet dado gcsPath + hash já conhecidos. */
+  private async obterBufferDireto(gcsPath: string, hashMd5: string, cacheKey: string): Promise<Buffer | null> {
+    const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
     try {
       const { buffer } = await withRetry(
-        () => this.gcs.download(arquivo.gcsPath),
+        () => this.gcs.download(gcsPath),
         {
-          label:       `GCS download Parquet ${arquivo.gcsPath}`,
+          label:       `GCS download Parquet ${gcsPath}`,
           logger:      this.logger,
-          isRetryable: (err) => !isGcsPermanentError(err),
+          isRetryable: (err) => isGcsPermanentError(err) === false,
         },
       );
       this.cache.set(cacheKey, buffer);
       return buffer;
     } catch (err) {
       this.logger.warn(
-        `Falha ao baixar Parquet ${arquivo.gcsPath} — usando fallback DB. ` +
+        `Falha ao baixar Parquet ${gcsPath} — usando fallback DB. ` +
         (err instanceof Error ? err.message : JSON.stringify(err)),
       );
       return null;
