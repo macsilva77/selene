@@ -215,7 +215,7 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
               <LabelList
                 dataKey="valorTotal"
                 position="right"
-                formatter={(v: number) => formatarBRL(v)}
+                formatter={(v) => typeof v === 'number' ? formatarBRL(v) : String(v)}
                 className="fill-muted-foreground text-[9px]"
               />
               {data.map((entry, i) => (
