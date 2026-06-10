@@ -101,6 +101,19 @@ class BuscarQueryDto {
   ano?: number;
 }
 
+/* ─── Helper ─────────────────────────────────────────────────────────────── */
+
+function deduplicarPorAno<T extends { anoCalendario: number; faturamentoDeclarado: unknown }>(rows: T[]): T[] {
+  const mapa = new Map<number, T>();
+  for (const row of rows) {
+    const existente = mapa.get(row.anoCalendario);
+    if (!existente || Number(row.faturamentoDeclarado) > Number(existente.faturamentoDeclarado)) {
+      mapa.set(row.anoCalendario, row);
+    }
+  }
+  return [...mapa.values()].sort((a, b) => a.anoCalendario - b.anoCalendario);
+}
+
 /* ─── Controller ──────────────────────────────────────────────────────────── */
 
 @ApiTags('Indicadores ECF')
@@ -196,7 +209,11 @@ export class IndicadoresEcfController {
   @ApiOperation({ summary: 'Empresas do tenant com dados ECF' })
   async empresas(@CurrentUser('tenantId') tenantId: string) {
     return this.prisma.ecfIndicador.findMany({
-      where: { tenantId },
+      where: {
+        tenantId,
+        cnpj: { not: '00000000000000' },
+        faturamentoDeclarado: { gt: 0 },
+      },
       distinct: ['cnpj'],
       select: { cnpj: true, razaoSocial: true },
       orderBy: { razaoSocial: 'asc' },
@@ -214,10 +231,11 @@ export class IndicadoresEcfController {
     @Query() query: IndividualQueryDto,
   ) {
     if (!query.cnpj) throw new BadRequestException('cnpj é obrigatório');
-    return this.prisma.ecfIndicador.findMany({
+    const rows = await this.prisma.ecfIndicador.findMany({
       where: { tenantId, cnpj: query.cnpj },
       orderBy: { anoCalendario: 'asc' },
     });
+    return deduplicarPorAno(rows);
   }
 
   /**
@@ -244,10 +262,11 @@ export class IndicadoresEcfController {
       if (query.anoFim !== undefined)    where.anoCalendario.lte = query.anoFim;
     }
 
-    return this.prisma.ecfIndicador.findMany({
+    const rows = await this.prisma.ecfIndicador.findMany({
       where,
       orderBy: { anoCalendario: 'asc' },
     });
+    return deduplicarPorAno(rows);
   }
 
   /**
@@ -261,10 +280,12 @@ export class IndicadoresEcfController {
     @Query('cnpj') cnpj: string,
   ) {
     if (!cnpj) throw new BadRequestException('cnpj é obrigatório');
-    return this.prisma.ecfIndicador.findFirst({
+    const rows = await this.prisma.ecfIndicador.findMany({
       where: { tenantId, cnpj },
       orderBy: { anoCalendario: 'desc' },
     });
+    const deduped = deduplicarPorAno(rows);
+    return deduped.at(-1) ?? null;
   }
 
   /**

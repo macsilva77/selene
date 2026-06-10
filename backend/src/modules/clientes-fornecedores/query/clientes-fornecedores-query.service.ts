@@ -15,6 +15,7 @@ export type TipoParticipante = 'CLIENTE' | 'FORNECEDOR';
 export interface PeriodoParams {
   tenantId: string;
   empresaId: string;
+  cnpjEmpresa: string;   // CNPJ da empresa analisada — excluído dos participantes
   anoInicio: number;
   mesInicio: number;
   anoFim: number;
@@ -65,6 +66,7 @@ export class ClientesFornecedoresQueryService {
     return this.parquetRepo.consultarRanking(
       gcsUris,
       params.empresaId,
+      params.cnpjEmpresa,
       params.tipoParticipante,
       params.topN,
     );
@@ -80,6 +82,7 @@ export class ClientesFornecedoresQueryService {
     return this.parquetRepo.consultarPorCnpj(
       gcsUris,
       params.empresaId,
+      params.cnpjEmpresa,
       params.tipoParticipante,
       params.cnpj,
     );
@@ -95,6 +98,7 @@ export class ClientesFornecedoresQueryService {
     return this.parquetRepo.consultarPorRaiz(
       gcsUris,
       params.empresaId,
+      params.cnpjEmpresa,
       params.tipoParticipante,
     );
   }
@@ -109,6 +113,7 @@ export class ClientesFornecedoresQueryService {
     return this.parquetRepo.consultarDrillDown(
       gcsUris,
       params.empresaId,
+      params.cnpjEmpresa,
       params.tipoParticipante,
       params.cnpjRaiz,
     );

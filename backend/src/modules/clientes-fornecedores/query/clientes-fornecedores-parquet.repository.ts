@@ -64,6 +64,7 @@ export class ClientesFornecedoresParquetRepository {
   async consultarRanking(
     gcsUris: string[],
     empresaId: string,
+    cnpjEmpresa: string,
     tipo: string,
     topN?: number,
   ): Promise<RankingParticipanteRow[]> {
@@ -72,7 +73,7 @@ export class ClientesFornecedoresParquetRepository {
       const fileList   = toFileList(tmpFiles);
       const limitClause = topN != null ? `LIMIT ${Math.trunc(Math.abs(topN))}` : '';
       const sql = buildRankingSql(fileList, limitClause);
-      return this.runRanking(sql, [empresaId, tipo] as DuckDbParams);
+      return this.runRanking(sql, [empresaId, tipo, cnpjEmpresa] as DuckDbParams);
     });
   }
 
@@ -81,14 +82,15 @@ export class ClientesFornecedoresParquetRepository {
   async consultarPorCnpj(
     gcsUris: string[],
     empresaId: string,
+    cnpjEmpresa: string,
     tipo: string,
     cnpj: string,
   ): Promise<RankingParticipanteRow[]> {
     if (gcsUris.length === 0) return [];
     return this.withTmpFiles(gcsUris, async (tmpFiles) => {
       const fileList = toFileList(tmpFiles);
-      const sql = buildRankingSql(fileList, '', `WHERE cnpj LIKE '%' || $3 || '%'`);
-      return this.runRanking(sql, [empresaId, tipo, cnpj] as DuckDbParams);
+      const sql = buildRankingSql(fileList, '', `WHERE cnpj LIKE '%' || $4 || '%'`);
+      return this.runRanking(sql, [empresaId, tipo, cnpjEmpresa, cnpj] as DuckDbParams);
     });
   }
 
@@ -97,6 +99,7 @@ export class ClientesFornecedoresParquetRepository {
   async consultarPorRaiz(
     gcsUris: string[],
     empresaId: string,
+    cnpjEmpresa: string,
     tipo: string,
   ): Promise<RaizRankingRow[]> {
     if (gcsUris.length === 0) return [];
@@ -110,6 +113,7 @@ export class ClientesFornecedoresParquetRepository {
                  SUM(quantidade_documentos) AS qtd_docs_cnpj
           FROM read_parquet([${fileList}])
           WHERE empresa_id = $1 AND tipo_participante = $2
+                AND cnpj != $3 AND cnpj != '00000000000000'
           GROUP BY cnpj, cnpj_raiz
         ),
         raiz_agg AS (
@@ -145,15 +149,15 @@ export class ClientesFornecedoresParquetRepository {
                ROUND(percentual, 4)    AS percentual,
                ROUND(acumulado,  4)    AS acumulado,
                quantidade_documentos, qtd_cnpjs,
-               CASE WHEN acumulado <= 80 THEN 'A'
-                    WHEN acumulado <= 95 THEN 'B'
+               CASE WHEN (acumulado - percentual) < 80 THEN 'A'
+                    WHEN (acumulado - percentual) < 95 THEN 'B'
                     ELSE 'C' END       AS classe_abc
         FROM ranked
         ORDER BY ranking
       `;
       const conn = await this.duckdb.connect();
       try {
-        const reader = await conn.runAndReadAll(sql, [empresaId, tipo] as DuckDbParams);
+        const reader = await conn.runAndReadAll(sql, [empresaId, tipo, cnpjEmpresa] as DuckDbParams);
         return (reader.getRowObjects() as unknown as RawRaizRow[]).map(toRaizRow);
       } finally {
         conn.closeSync();
@@ -166,6 +170,7 @@ export class ClientesFornecedoresParquetRepository {
   async consultarDrillDown(
     gcsUris: string[],
     empresaId: string,
+    cnpjEmpresa: string,
     tipo: string,
     cnpjRaiz: string,
   ): Promise<DrillDownRow[]> {
@@ -179,7 +184,8 @@ export class ClientesFornecedoresParquetRepository {
                  SUM(valor_total)           AS valor_total,
                  SUM(quantidade_documentos) AS quantidade_documentos
           FROM read_parquet([${fileList}])
-          WHERE empresa_id = $1 AND tipo_participante = $2 AND cnpj_raiz = $3
+          WHERE empresa_id = $1 AND tipo_participante = $2
+                AND cnpj_raiz = $3 AND cnpj != $4 AND cnpj != '00000000000000'
           GROUP BY cnpj, cnpj_raiz
         ),
         total AS (SELECT SUM(valor_total) AS soma FROM base)
@@ -193,7 +199,7 @@ export class ClientesFornecedoresParquetRepository {
       `;
       const conn = await this.duckdb.connect();
       try {
-        const reader = await conn.runAndReadAll(sql, [empresaId, tipo, cnpjRaiz] as DuckDbParams);
+        const reader = await conn.runAndReadAll(sql, [empresaId, tipo, cnpjRaiz, cnpjEmpresa] as DuckDbParams);
         return (reader.getRowObjects() as unknown as RawDrillDownRow[]).map(toDrillDownRow);
       } finally {
         conn.closeSync();
@@ -257,6 +263,7 @@ function buildRankingSql(fileList: string, limitClause: string, filterClause = '
              SUM(quantidade_documentos) AS quantidade_documentos
       FROM read_parquet([${fileList}])
       WHERE empresa_id = $1 AND tipo_participante = $2
+            AND cnpj != $3 AND cnpj != '00000000000000'
       GROUP BY cnpj, cnpj_raiz
     ),
     total AS (SELECT SUM(valor_total) AS soma FROM base),
@@ -274,8 +281,8 @@ function buildRankingSql(fileList: string, limitClause: string, filterClause = '
            ROUND(percentual, 4) AS percentual,
            ROUND(acumulado,  4) AS acumulado,
            quantidade_documentos,
-           CASE WHEN acumulado <= 80 THEN 'A'
-                WHEN acumulado <= 95 THEN 'B'
+           CASE WHEN (acumulado - percentual) < 80 THEN 'A'
+                WHEN (acumulado - percentual) < 95 THEN 'B'
                 ELSE 'C' END    AS classe_abc
     FROM ranked
     ${filterClause}

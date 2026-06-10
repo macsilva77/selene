@@ -106,6 +106,7 @@ export class ClientesFornecedoresController {
     return this.queryService.consultarTopN({
       tenantId,
       empresaId,
+      cnpjEmpresa:      query.cnpj,
       anoInicio:        query.anoInicio,
       mesInicio:        query.mesInicio,
       anoFim:           query.anoFim,
@@ -129,6 +130,7 @@ export class ClientesFornecedoresController {
     return this.queryService.consultarPorCnpj({
       tenantId,
       empresaId,
+      cnpjEmpresa:      query.cnpj,
       anoInicio:        query.anoInicio,
       mesInicio:        query.mesInicio,
       anoFim:           query.anoFim,
@@ -152,6 +154,7 @@ export class ClientesFornecedoresController {
     return this.queryService.consultarPorRaiz({
       tenantId,
       empresaId,
+      cnpjEmpresa:      query.cnpj,
       anoInicio:        query.anoInicio,
       mesInicio:        query.mesInicio,
       anoFim:           query.anoFim,
@@ -174,6 +177,7 @@ export class ClientesFornecedoresController {
     return this.queryService.consultarDrillDown({
       tenantId,
       empresaId,
+      cnpjEmpresa:      query.cnpj,
       anoInicio:        query.anoInicio,
       mesInicio:        query.mesInicio,
       anoFim:           query.anoFim,

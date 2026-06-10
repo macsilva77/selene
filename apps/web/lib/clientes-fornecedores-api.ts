@@ -123,4 +123,8 @@ export const clientesFornecedoresApi = {
   /** Reprocessa SPEDs disponíveis em background — retorna total de competências enfileiradas */
   reprocessar: (): Promise<{ mensagem: string; status: string; total: number }> =>
     api.post('/clientes-fornecedores/reprocessar').then(r => r.data),
+
+  /** Exporta ranking para Excel (.xlsx) */
+  exportar: (params: Omit<RankingParams, 'topN'>): Promise<Blob> =>
+    api.get('/clientes-fornecedores/exportar', { params, responseType: 'blob' }).then(r => r.data as Blob),
 };
