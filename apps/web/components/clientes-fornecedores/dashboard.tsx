@@ -353,8 +353,10 @@ export function ClientesFornecedoresDashboard() {
   const empresaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    clientesFornecedoresApi.empresas().then(setEmpresas).catch(() => {});
-  }, []);
+    clientesFornecedoresApi.empresas()
+      .then(setEmpresas)
+      .catch(() => toastError('Erro ao carregar lista de empresas'));
+  }, [toastError]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
