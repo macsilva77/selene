@@ -66,7 +66,7 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
 
   let razaoSocial = '';
   let cnpj = '';
-  let anoCalendario = 0;
+  let anoCalendario: number;
   let formaTributacao = 'nao_identificado';
   let dtIni = '';
   let dtFin = '';

@@ -12,7 +12,7 @@
 
 import { Decimal } from '@prisma/client/runtime/library';
 import {
-  getBal, getDre, safeDiv,
+  getBal, safeDiv,
   calcularIndicadores, calcularEstruturaCapital,
   BalData, DreData,
 } from './p03-formulas';

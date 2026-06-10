@@ -63,7 +63,7 @@ function makeMsgMock(data: Record<string, unknown> | string | null): {
 // ─── Suite ────────────────────────────────────────────────────────────────────
 describe('ObrigacoesAcessoriasPubSubConsumer', () => {
   let consumer: ObrigacoesAcessoriasPubSubConsumer;
-  let service: ObrigacoesAcessoriasService;
+  let _service: ObrigacoesAcessoriasService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -88,7 +88,7 @@ describe('ObrigacoesAcessoriasPubSubConsumer', () => {
     }).compile();
 
     consumer = module.get<ObrigacoesAcessoriasPubSubConsumer>(ObrigacoesAcessoriasPubSubConsumer);
-    service  = module.get<ObrigacoesAcessoriasService>(ObrigacoesAcessoriasService);
+    _service = module.get<ObrigacoesAcessoriasService>(ObrigacoesAcessoriasService);
     jest.clearAllMocks();
   });
 

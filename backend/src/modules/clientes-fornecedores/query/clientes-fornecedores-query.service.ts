@@ -30,7 +30,7 @@ export interface ConsultarPorCnpjParams extends PeriodoParams {
   cnpj: string;
 }
 
-export interface ConsultarPorRaizParams extends PeriodoParams {}
+export type ConsultarPorRaizParams = PeriodoParams;
 
 export interface ConsultarDrillDownParams extends PeriodoParams {
   cnpjRaiz: string;

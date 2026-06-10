@@ -2,8 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ObrigacoesAcessoriasController } from './obrigacoes-acessorias.controller';
 import { ObrigacoesAcessoriasService } from './obrigacoes-acessorias.service';
-import { TipoObrigacao, FinalidadeObrigacao, StatusProcessamento } from './enums/obrigacao-acessoria.enums';
+import { TipoObrigacao, FinalidadeObrigacao } from './enums/obrigacao-acessoria.enums';
 import { UploadObrigacaoDto } from './dto/upload-obrigacao.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
 // ─── Mock do serviço ──────────────────────────────────────────────────────────
 const mockService = {
@@ -25,9 +27,9 @@ describe('ObrigacoesAcessoriasController', () => {
         { provide: ObrigacoesAcessoriasService, useValue: mockService },
       ],
     })
-      .overrideGuard(require('../../common/guards/jwt-auth.guard').JwtAuthGuard)
+      .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
-      .overrideGuard(require('../../common/guards/permissions.guard').PermissionsGuard)
+      .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

@@ -148,7 +148,7 @@ export class P01GcsService implements OnModuleInit {
       }
     }
 
-    for (const [chave, a] of ecdPorPeriodo) {
+    for (const [, a] of ecdPorPeriodo) {
       const ano   = a.exercicio;
       const entry = porAno.get(ano) ?? { ecds: [] };
       entry.ecds.push(a);

@@ -54,12 +54,12 @@ export class EcfParquetWriter {
         appender.appendInteger(row.trimestre);
         appender.appendVarchar(row.linhaCodigo);
         appender.appendVarchar(row.descricao);
-        row.indCta ? appender.appendVarchar(row.indCta) : appender.appendNull();
-        row.nivel  ? appender.appendInteger(row.nivel)  : appender.appendNull();
+        if (row.indCta) appender.appendVarchar(row.indCta); else appender.appendNull();
+        if (row.nivel)  appender.appendInteger(row.nivel);  else appender.appendNull();
         appender.appendDouble(row.saldoAnterior);
         appender.appendVarchar(row.naturezaAnterior);
-        row.totalDebitos  !== null ? appender.appendDouble(row.totalDebitos)  : appender.appendNull();
-        row.totalCreditos !== null ? appender.appendDouble(row.totalCreditos) : appender.appendNull();
+        if (row.totalDebitos  === null) appender.appendNull(); else appender.appendDouble(row.totalDebitos);
+        if (row.totalCreditos === null) appender.appendNull(); else appender.appendDouble(row.totalCreditos);
         appender.appendDouble(row.valor);
         appender.appendVarchar(row.naturezaFinal);
         appender.appendVarchar(row.status);

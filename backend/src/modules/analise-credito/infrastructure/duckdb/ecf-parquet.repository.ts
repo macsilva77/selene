@@ -190,11 +190,9 @@ function buildSelectQuery(
 ): { sql: string; params: DuckDbParams } {
   const clauses: string[] = [];
   const values: (string | number)[] = [];
-  let i = 1;
-
-  if (registroEcf)       { clauses.push(`registro_ecf = $${i++}`); values.push(registroEcf); }
-  if (trimestre !== undefined) { clauses.push(`trimestre = $${i++}`); values.push(trimestre); }
-  if (prefixo)           { clauses.push(`starts_with(linha_codigo, $${i++})`); values.push(prefixo); }
+  if (registroEcf)       { clauses.push(`registro_ecf = $${values.push(registroEcf)}`); }
+  if (trimestre !== undefined) { clauses.push(`trimestre = $${values.push(trimestre)}`); }
+  if (prefixo)           { clauses.push(`starts_with(linha_codigo, $${values.push(prefixo)})`); }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
 
