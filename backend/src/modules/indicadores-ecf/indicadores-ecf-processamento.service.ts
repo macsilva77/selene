@@ -7,6 +7,7 @@ import { parseEcfIndicadores } from './indicadores-ecf.parser';
 export interface ProcessarEcfInput {
   tenantId: string;
   empresaId: string;
+  cnpjFallback?: string;  // CNPJ da empresa (usado quando o parser não encontra no arquivo)
   anoCalendario: number;
   gcsUri: string;
 }
@@ -21,7 +22,7 @@ export class IndicadoresEcfProcessamentoService {
   ) {}
 
   async processar(input: ProcessarEcfInput): Promise<void> {
-    const { tenantId, empresaId, anoCalendario, gcsUri } = input;
+    const { tenantId, empresaId, cnpjFallback, anoCalendario, gcsUri } = input;
 
     this.logger.log(
       `Iniciando processamento ECF: tenantId=${tenantId} empresaId=${empresaId} ano=${anoCalendario} uri=${gcsUri}`,
@@ -35,6 +36,11 @@ export class IndicadoresEcfProcessamentoService {
 
     // 3. Parsear
     const parsed = parseEcfIndicadores(buffer);
+
+    // Quando o arquivo não tem CNPJ válido no registro 0000, usa o da empresa
+    if (parsed.cnpj === '00000000000000' && cnpjFallback) {
+      parsed.cnpj = cnpjFallback;
+    }
 
     this.logger.log(
       `ECF parseado: cnpj=${parsed.cnpj} razaoSocial="${parsed.razaoSocial}" ` +

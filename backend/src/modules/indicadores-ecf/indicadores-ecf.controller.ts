@@ -181,6 +181,7 @@ export class IndicadoresEcfController {
           await this.processamentoService.processar({
             tenantId,
             empresaId,
+            cnpjFallback:  ecf.cnpj,
             anoCalendario: ecf.dataInicial.getFullYear(),
             gcsUri:        ecf.caminhoBucket,
           });
@@ -212,7 +213,6 @@ export class IndicadoresEcfController {
       where: {
         tenantId,
         cnpj: { not: '00000000000000' },
-        faturamentoDeclarado: { gt: 0 },
       },
       distinct: ['cnpj'],
       select: { cnpj: true, razaoSocial: true },
