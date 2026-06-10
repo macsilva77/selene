@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Buildings, Truck, Certificate, Users, Warning, CheckCircle, Clock } from '@phosphor-icons/react';
+import { Buildings, Truck, Certificate, Users, Warning, CheckCircle, Clock, ChartBar } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 
 interface Stats {
@@ -8,6 +8,7 @@ interface Stats {
   fornecedores: number;
   certificados: { total: number; validos: number; vencendo: number; vencidos: number };
   usuarios: number;
+  empresasEcf: number;
 }
 
 function KpiCard({ title, value, sub, icon, topBar, borderColor, iconBg, iconColor }: {
@@ -47,8 +48,10 @@ export default function DashboardPage() {
       api.get('/fornecedores?limit=1').catch(() => ({ data: { total: 0 } })),
       api.get('/certificados?limit=200').catch(() => ({ data: { data: [], total: 0 } })),
       api.get('/auth/usuarios?limit=1').catch(() => ({ data: { total: 0 } })),
-    ]).then(([emp, forn, certs, usr]) => {
+      api.get('/indicadores-ecf/empresas').catch(() => ({ data: [] })),
+    ]).then(([emp, forn, certs, usr, ecf]) => {
       const certList: any[] = certs.data?.data ?? [];
+      const ecfList: any[] = Array.isArray(ecf.data) ? ecf.data : [];
       setStats({
         empresas: emp.data?.total ?? 0,
         fornecedores: forn.data?.total ?? 0,
@@ -59,6 +62,7 @@ export default function DashboardPage() {
           vencidos: certList.filter((c) => c.status === 'VENCIDO' || c.status === 'EXPIRADO').length,
         },
         usuarios: usr.data?.total ?? 0,
+        empresasEcf: ecfList.length,
       });
     }).finally(() => setLoading(false));
   }, []);
@@ -92,7 +96,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard title="Empresas" value={stats?.empresas ?? 0} icon={<Buildings size={20} />}
           topBar="bg-blue-400" borderColor="border-blue-200" iconBg="bg-blue-50" iconColor="text-blue-500" />
         <KpiCard title="Fornecedores" value={stats?.fornecedores ?? 0} icon={<Truck size={20} />}
@@ -106,6 +110,13 @@ export default function DashboardPage() {
         />
         <KpiCard title="Usuários" value={stats?.usuarios ?? 0} icon={<Users size={20} />}
           topBar="bg-emerald-400" borderColor="border-emerald-200" iconBg="bg-emerald-50" iconColor="text-emerald-500" />
+        <KpiCard
+          title="Indicadores ECF"
+          value={stats?.empresasEcf ?? 0}
+          sub="empresas com ECF processada"
+          icon={<ChartBar size={20} />}
+          topBar="bg-cyan-400" borderColor="border-cyan-200" iconBg="bg-cyan-50" iconColor="text-cyan-500"
+        />
       </div>
 
       {/* Cert status panel */}

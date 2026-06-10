@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { CaretDownIcon, ArrowClockwiseIcon } from '@phosphor-icons/react';
 import {
   LineChart,
   Line,
@@ -16,7 +17,11 @@ import {
 } from '@/components/ui/chart';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast, ToastContainer } from '@/components/ui/toast';
-import { indicadoresEcfApi, type EcfIndicador } from '@/lib/indicadores-ecf-api';
+import { indicadoresEcfApi, type EcfIndicador, type EmpresaComEcf } from '@/lib/indicadores-ecf-api';
+
+function formatarCnpj(cnpj: string): string {
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -271,29 +276,52 @@ function TabelaHistorica({ dados }: Readonly<{ dados: EcfIndicador[] }>) {
 export function IndicadoresEcfDashboard() {
   const { toasts, error: toastError, dismiss } = useToast();
 
-  const [cnpjInput, setCnpjInput]     = useState('');
-  const [carregando, setCarregando]   = useState(false);
-  const [dados, setDados]             = useState<EcfIndicador[] | null>(null);
+  /* ── Combobox de empresas ── */
+  const [empresas, setEmpresas]         = useState<EmpresaComEcf[]>([]);
+  const [empresaSearch, setEmpresaSearch] = useState('');
+  const [empresaOpen, setEmpresaOpen]   = useState(false);
+  const [cnpj, setCnpj]                 = useState('');
+  const empresaRef = useRef<HTMLDivElement>(null);
 
-  async function buscar() {
-    const cnpj = cnpjInput.replace(/\D/g, '');
-    if (cnpj.length !== 14) {
-      toastError('Informe um CNPJ válido com 14 dígitos');
-      return;
-    }
-    setCarregando(true);
-    try {
-      const resultado = await indicadoresEcfApi.individual(cnpj);
-      setDados(resultado);
-      if (resultado.length === 0) {
-        toastError('Nenhum indicador ECF encontrado para este CNPJ');
+  useEffect(() => {
+    indicadoresEcfApi.empresas().then(setEmpresas).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (empresaRef.current && !empresaRef.current.contains(e.target as Node)) {
+        setEmpresaOpen(false);
+        setEmpresaSearch('');
       }
-    } catch {
-      toastError('Erro ao carregar indicadores ECF');
-    } finally {
-      setCarregando(false);
-    }
-  }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const empresaSel = cnpj ? empresas.find(e => e.cnpj === cnpj) : null;
+  const displayEmpresa = empresaSel ? `${formatarCnpj(empresaSel.cnpj)} — ${empresaSel.razaoSocial}` : '';
+  const termo = empresaSearch.replace(/[.\-/]/g, '').toLowerCase();
+  const empresasFiltradas = termo
+    ? empresas.filter(e =>
+        e.cnpj.includes(empresaSearch.replace(/\D/g, '')) ||
+        e.razaoSocial.toLowerCase().includes(termo))
+    : empresas;
+
+  /* ── Dados ── */
+  const [carregando, setCarregando] = useState(false);
+  const [dados, setDados]           = useState<EcfIndicador[] | null>(null);
+
+  useEffect(() => {
+    if (!cnpj) return;
+    setCarregando(true);
+    indicadoresEcfApi.individual(cnpj)
+      .then(resultado => {
+        setDados(resultado);
+        if (resultado.length === 0) toastError('Nenhum indicador ECF encontrado para este CNPJ');
+      })
+      .catch(() => toastError('Erro ao carregar indicadores ECF'))
+      .finally(() => setCarregando(false));
+  }, [cnpj, toastError]);
 
   const ultimo = dados && dados.length > 0
     ? [...dados].sort((a, b) => b.anoCalendario - a.anoCalendario)[0]!
@@ -311,26 +339,47 @@ export function IndicadoresEcfDashboard() {
         </p>
       </div>
 
-      {/* Busca por CNPJ */}
-      <div className="flex gap-2 max-w-sm">
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="CNPJ (14 dígitos)"
-          value={cnpjInput}
-          onChange={e => setCnpjInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && buscar()}
-          maxLength={18}
-          className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        />
-        <button
-          type="button"
-          onClick={buscar}
-          disabled={carregando}
-          className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-60 transition-colors"
-        >
-          {carregando ? 'Buscando…' : 'Buscar'}
-        </button>
+      {/* Combobox de empresa */}
+      <div className="max-w-sm" ref={empresaRef}>
+        <div className="relative">
+          <input
+            type="text"
+            autoComplete="off"
+            placeholder={empresas.length === 0 ? 'Nenhuma empresa com ECF' : 'Pesquise por CNPJ ou nome…'}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 pr-8 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            value={empresaOpen ? empresaSearch : displayEmpresa}
+            onChange={e => { setEmpresaSearch(e.target.value); setEmpresaOpen(true); }}
+            onFocus={() => { setEmpresaSearch(''); setEmpresaOpen(true); }}
+            disabled={empresas.length === 0}
+          />
+          {carregando
+            ? <ArrowClockwiseIcon size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />
+            : <CaretDownIcon size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          }
+          {empresaOpen && (
+            <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[360px] rounded-md border border-input bg-background shadow-lg max-h-60 overflow-y-auto">
+              {empresasFiltradas.length === 0
+                ? <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
+                : empresasFiltradas.map(emp => (
+                    <button
+                      type="button"
+                      key={emp.cnpj}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj ? 'bg-primary/5 font-medium' : ''}`}
+                      onClick={() => {
+                        setCnpj(emp.cnpj);
+                        setDados(null);
+                        setEmpresaSearch('');
+                        setEmpresaOpen(false);
+                      }}
+                    >
+                      <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
+                      <span className="text-foreground truncate">{emp.razaoSocial}</span>
+                    </button>
+                  ))
+              }
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Estado de carregamento */}
@@ -339,19 +388,15 @@ export function IndicadoresEcfDashboard() {
       {/* Estado vazio inicial */}
       {!carregando && dados === null && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-muted-foreground text-sm">
-            Informe o CNPJ da empresa e clique em <strong>Buscar</strong> para ver os indicadores.
-          </p>
+          <p className="text-muted-foreground text-sm">Selecione uma empresa para ver os indicadores.</p>
         </div>
       )}
 
       {/* Resultados */}
       {!carregando && dados !== null && dados.length > 0 && ultimo && (
         <div className="flex flex-col gap-6">
-          {/* Cards */}
           <CardsIndicadores ultimo={ultimo} />
 
-          {/* Gráfico histórico */}
           {dados.length > 1 && (
             <Card>
               <CardContent className="p-4 space-y-3">
@@ -365,7 +410,6 @@ export function IndicadoresEcfDashboard() {
             </Card>
           )}
 
-          {/* Tabela */}
           <Card>
             <CardContent className="p-4 space-y-3">
               <p className="text-sm font-medium text-foreground">Histórico Detalhado</p>

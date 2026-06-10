@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   MagnifyingGlassIcon,
   ArrowClockwiseIcon,
@@ -22,6 +22,7 @@ import {
 import {
   clientesFornecedoresApi,
   type Competencia,
+  type EmpresaComSped,
   type RankingParticipanteRow,
   type RaizRankingRow,
   type DrillDownRow,
@@ -345,6 +346,27 @@ function GraficoTop10({ rows }: { rows: RankingParticipanteRow[] }) {
 export function ClientesFornecedoresDashboard() {
   const { toasts, error: toastError, dismiss } = useToast();
 
+  /* ── Lista de empresas com SPEDs ── */
+  const [empresas, setEmpresas]         = useState<EmpresaComSped[]>([]);
+  const [empresaSearch, setEmpresaSearch] = useState('');
+  const [empresaOpen, setEmpresaOpen]   = useState(false);
+  const empresaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    clientesFornecedoresApi.empresas().then(setEmpresas).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (empresaRef.current && !empresaRef.current.contains(e.target as Node)) {
+        setEmpresaOpen(false);
+        setEmpresaSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   /* ── Estado dos filtros ── */
   const [cnpj, setCnpj]                   = useState('');
   const [competencias, setCompetencias]   = useState<Competencia[]>([]);
@@ -377,19 +399,35 @@ export function ClientesFornecedoresDashboard() {
   /* ── Opções de período derivadas das competências ── */
   const opcoesPeriodo = useMemo(() => labelPeriodo(competencias), [competencias]);
 
-  /* ── Carregar competências ao alterar CNPJ ── */
+  /* ── Empresa selecionada e filtro do combobox ── */
+  const empresaSelecionada = cnpj ? empresas.find(e => e.cnpj === cnpj) : null;
+  const displayEmpresa     = empresaSelecionada
+    ? `${formatarCnpj(empresaSelecionada.cnpj)} — ${empresaSelecionada.razaoSocial}`
+    : '';
+  const termo = empresaSearch.replace(/[.\-/]/g, '').toLowerCase();
+  const empresasFiltradas = termo
+    ? empresas.filter(e => {
+        const cnpjNorm = e.cnpj.replace(/[.\-/]/g, '').toLowerCase();
+        const nome = e.razaoSocial.toLowerCase();
+        return cnpjNorm.includes(termo) || nome.includes(termo);
+      })
+    : empresas;
+
+  /* ── Carregar competências ao selecionar empresa ── */
   const carregarCompetencias = useCallback(async (cnpjValor: string) => {
-    if (!cnpjValor || cnpjValor.replace(/\D/g, '').length < 14) return;
+    if (!cnpjValor || cnpjValor.length < 14) return;
     setCarregandoComp(true);
     setCompetencias([]);
     setPeriodoInicio('');
     setPeriodoFim('');
+    setRanking([]);
+    setPorRaiz([]);
     try {
-      const data = await clientesFornecedoresApi.competencias(cnpjValor.replace(/\D/g, ''));
+      const data = await clientesFornecedoresApi.competencias(cnpjValor);
       setCompetencias(data);
       if (data.length > 0) {
-        const ultimo = data[data.length - 1];
         const primeiro = data[0];
+        const ultimo   = data[data.length - 1];
         setPeriodoInicio(`${primeiro.ano}-${String(primeiro.mes).padStart(2, '0')}`);
         setPeriodoFim(`${ultimo.ano}-${String(ultimo.mes).padStart(2, '0')}`);
       }
@@ -402,10 +440,7 @@ export function ClientesFornecedoresDashboard() {
 
   /* ── Buscar ranking ── */
   const buscar = useCallback(async () => {
-    if (!cnpj || !periodoInicio || !periodoFim) {
-      toastError('Preencha o CNPJ e o período antes de buscar');
-      return;
-    }
+    if (!cnpj || !periodoInicio || !periodoFim) return;
 
     const inicio = parsePeriodo(periodoInicio);
     const fim = parsePeriodo(periodoFim);
@@ -445,6 +480,12 @@ export function ClientesFornecedoresDashboard() {
       }
     }
   }, [cnpj, periodoInicio, periodoFim, tipo, topN, tab, toastError]);
+
+  /* ── Auto-busca quando empresa e período estão definidos ── */
+  useEffect(() => {
+    if (cnpj && periodoInicio && periodoFim) void buscar();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cnpj, periodoInicio, periodoFim, tipo]);
 
   /* ── Drill-down de grupo econômico ── */
   const abrirDrillDown = useCallback(async (row: RaizRankingRow) => {
@@ -528,25 +569,47 @@ export function ClientesFornecedoresDashboard() {
         <CardContent className="p-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
-            {/* CNPJ da empresa */}
-            <div className="flex flex-col gap-1 lg:col-span-1">
-              <label htmlFor="inp-cnpj" className="text-xs font-medium text-muted-foreground">
-                CNPJ da Empresa
+            {/* Empresa (combobox) */}
+            <div className="flex flex-col gap-1 lg:col-span-1" ref={empresaRef}>
+              <label className="text-xs font-medium text-muted-foreground">
+                Empresa
               </label>
-              <div className="flex gap-1.5">
+              <div className="relative">
                 <input
-                  id="inp-cnpj"
                   type="text"
-                  placeholder="00.000.000/0000-00"
-                  maxLength={18}
-                  value={cnpj}
-                  onChange={e => setCnpj(e.target.value)}
-                  onBlur={() => carregarCompetencias(cnpj)}
-                  className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  autoComplete="off"
+                  placeholder={empresas.length === 0 ? 'Nenhuma empresa com SPED' : 'Pesquise por CNPJ ou nome…'}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  value={empresaOpen ? empresaSearch : displayEmpresa}
+                  onChange={e => { setEmpresaSearch(e.target.value); setEmpresaOpen(true); }}
+                  onFocus={() => { setEmpresaSearch(''); setEmpresaOpen(true); }}
+                  disabled={empresas.length === 0}
                 />
-                {carregandoComp && (
-                  <div className="flex h-9 w-9 items-center justify-center">
-                    <ArrowClockwiseIcon size={14} className="animate-spin text-muted-foreground" />
+                {carregandoComp
+                  ? <ArrowClockwiseIcon size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />
+                  : <CaretDownIcon size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                }
+                {empresaOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 w-full min-w-[360px] rounded-md border border-input bg-background shadow-lg max-h-60 overflow-y-auto">
+                    {empresasFiltradas.length === 0
+                      ? <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma empresa encontrada</p>
+                      : empresasFiltradas.map(emp => (
+                          <button
+                            type="button"
+                            key={emp.cnpj}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj ? 'bg-primary/5 font-medium' : ''}`}
+                            onClick={() => {
+                              setCnpj(emp.cnpj);
+                              setEmpresaSearch('');
+                              setEmpresaOpen(false);
+                              void carregarCompetencias(emp.cnpj);
+                            }}
+                          >
+                            <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
+                            <span className="text-foreground truncate">{emp.razaoSocial}</span>
+                          </button>
+                        ))
+                    }
                   </div>
                 )}
               </div>

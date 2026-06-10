@@ -88,9 +88,18 @@ export interface DrillDownParams {
   cnpjRaiz:  string;
 }
 
+export interface EmpresaComSped {
+  cnpj:        string;
+  razaoSocial: string;
+}
+
 /* ─── API calls ──────────────────────────────────────────────────────────── */
 
 export const clientesFornecedoresApi = {
+  /** Empresas que possuem SPEDs processados no tenant */
+  empresas: (): Promise<EmpresaComSped[]> =>
+    api.get('/clientes-fornecedores/empresas').then(r => r.data),
+
   /** Competências disponíveis para um CNPJ */
   competencias: (cnpj: string): Promise<Competencia[]> =>
     api.get('/clientes-fornecedores/competencias', { params: { cnpj } }).then(r => r.data),

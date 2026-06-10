@@ -34,6 +34,33 @@ export class ClientesFornecedoresController {
   ) {}
 
   /**
+   * Lista todas as empresas que possuem SPEDs processados no tenant.
+   * Usado pelo frontend para popular o select de empresa.
+   */
+  @Get('empresas')
+  async listarEmpresas(@CurrentUser('tenantId') tenantId: string) {
+    const comps = await this.prisma.clientesFornecedoresCompetencia.findMany({
+      where: { tenantId, status: 'PROCESSADO' },
+      distinct: ['cnpj'],
+      select: { cnpj: true, empresaId: true },
+    });
+
+    if (comps.length === 0) return [];
+
+    const empresaIds = comps.map(c => c.empresaId);
+    const empresas = await this.prisma.empresa.findMany({
+      where: { id: { in: empresaIds } },
+      select: { id: true, nome: true, nomeFantasia: true },
+    });
+
+    const nomeMap = new Map(empresas.map(e => [e.id, e.nomeFantasia || e.nome]));
+
+    return comps
+      .map(c => ({ cnpj: c.cnpj, razaoSocial: nomeMap.get(c.empresaId) ?? c.cnpj }))
+      .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, 'pt-BR'));
+  }
+
+  /**
    * Lista as competências (meses) já processadas para uma empresa.
    * Usado pelo frontend para popular os seletores de período.
    */

@@ -16,6 +16,11 @@ export interface EcfIndicador {
   processadoEm: string;
 }
 
+export interface EmpresaComEcf {
+  cnpj:        string;
+  razaoSocial: string;
+}
+
 export interface BuscarFiltros {
   faturamentoMin?: number;
   faturamentoMax?: number;
@@ -26,6 +31,10 @@ export interface BuscarFiltros {
 /* ─── API calls ──────────────────────────────────────────────────────────── */
 
 export const indicadoresEcfApi = {
+  /** Empresas do tenant com dados ECF processados */
+  empresas: (): Promise<EmpresaComEcf[]> =>
+    api.get<EmpresaComEcf[]>('/indicadores-ecf/empresas').then(r => r.data),
+
   /** Todos os registros de um CNPJ em todos os anos */
   individual: (cnpj: string): Promise<EcfIndicador[]> =>
     api.get<EcfIndicador[]>('/indicadores-ecf/individual', { params: { cnpj } }).then(r => r.data),

@@ -130,6 +130,21 @@ export class IndicadoresEcfController {
   }
 
   /**
+   * Lista as empresas do tenant que possuem indicadores ECF processados.
+   */
+  @Get('empresas')
+  @RequiresPermission('indicadores-ecf.view')
+  @ApiOperation({ summary: 'Empresas do tenant com dados ECF' })
+  async empresas(@CurrentUser('tenantId') tenantId: string) {
+    return this.prisma.ecfIndicador.findMany({
+      where: { tenantId },
+      distinct: ['cnpj'],
+      select: { cnpj: true, razaoSocial: true },
+      orderBy: { razaoSocial: 'asc' },
+    });
+  }
+
+  /**
    * Retorna todos os registros de um CNPJ (todos os anos).
    */
   @Get('individual')
