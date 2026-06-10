@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ObrigacaoProcessamentoService } from './obrigacao-processamento.service';
 import { PrismaService } from '../../database/prisma.service';
 import { GcsService } from './gcs.service';
@@ -49,8 +50,9 @@ describe('ObrigacaoProcessamentoService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ObrigacaoProcessamentoService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: GcsService,    useValue: mockGcs },
+        { provide: PrismaService,  useValue: mockPrisma },
+        { provide: GcsService,     useValue: mockGcs },
+        { provide: EventEmitter2,  useValue: { emit: jest.fn() } },
       ],
     }).compile();
 

@@ -120,6 +120,12 @@ function consolidar(
 }
 
 export function parseBr(s: string): number {
-  const v = Number.parseFloat((s ?? '').replaceAll('.', '').replace(',', '.'));
+  const str = (s ?? '').trim();
+  if (!str) return 0;
+  // Formato BR (1.500,00): vírgula presente → ponto é separador de milhar
+  const normalized = str.includes(',')
+    ? str.replaceAll('.', '').replace(',', '.')
+    : str;
+  const v = Number.parseFloat(normalized);
   return Number.isNaN(v) ? 0 : v;
 }
