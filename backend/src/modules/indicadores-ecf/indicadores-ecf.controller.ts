@@ -141,6 +141,7 @@ export class IndicadoresEcfController {
     await this.processamentoService.processar({
       tenantId,
       empresaId: dto.empresaId,
+      cnpj:      dto.cnpj,
       anoCalendario: dto.anoCalendario,
       gcsUri: dto.gcsUri,
     });
@@ -181,7 +182,7 @@ export class IndicadoresEcfController {
           await this.processamentoService.processar({
             tenantId,
             empresaId,
-            cnpjFallback:  ecf.cnpj,
+            cnpj:          ecf.cnpj,
             anoCalendario: ecf.dataInicial.getFullYear(),
             gcsUri:        ecf.caminhoBucket,
           });

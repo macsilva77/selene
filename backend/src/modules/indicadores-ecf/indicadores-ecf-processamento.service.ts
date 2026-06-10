@@ -7,7 +7,7 @@ import { parseEcfIndicadores } from './indicadores-ecf.parser';
 export interface ProcessarEcfInput {
   tenantId: string;
   empresaId: string;
-  cnpjFallback?: string;  // CNPJ da empresa (usado quando o parser não encontra no arquivo)
+  cnpj: string;
   anoCalendario: number;
   gcsUri: string;
 }
@@ -22,10 +22,10 @@ export class IndicadoresEcfProcessamentoService {
   ) {}
 
   async processar(input: ProcessarEcfInput): Promise<void> {
-    const { tenantId, empresaId, cnpjFallback, anoCalendario, gcsUri } = input;
+    const { tenantId, empresaId, cnpj, anoCalendario, gcsUri } = input;
 
     this.logger.log(
-      `Iniciando processamento ECF: tenantId=${tenantId} empresaId=${empresaId} ano=${anoCalendario} uri=${gcsUri}`,
+      `Iniciando processamento ECF: tenantId=${tenantId} empresaId=${empresaId} cnpj=${cnpj} ano=${anoCalendario} uri=${gcsUri}`,
     );
 
     // 1. Baixar arquivo
@@ -34,16 +34,11 @@ export class IndicadoresEcfProcessamentoService {
     // 2. Calcular hash
     const hashArquivo = createHash('sha256').update(buffer).digest('hex');
 
-    // 3. Parsear
+    // 3. Parsear (o CNPJ vem sempre da empresa, não do arquivo)
     const parsed = parseEcfIndicadores(buffer);
 
-    // Quando o arquivo não tem CNPJ válido no registro 0000, usa o da empresa
-    if (parsed.cnpj === '00000000000000' && cnpjFallback) {
-      parsed.cnpj = cnpjFallback;
-    }
-
     this.logger.log(
-      `ECF parseado: cnpj=${parsed.cnpj} razaoSocial="${parsed.razaoSocial}" ` +
+      `ECF parseado: razaoSocial="${parsed.razaoSocial}" ` +
         `ano=${parsed.anoCalendario} regime=${parsed.formaTributacao} ` +
         `faturamento=${parsed.faturamentoDeclarado} prejuizo=${parsed.prejuizoFiscalAcumulado} ` +
         `baseNeg=${parsed.baseNegativaCsll}`,
@@ -61,7 +56,7 @@ export class IndicadoresEcfProcessamentoService {
       create: {
         tenantId,
         empresaId,
-        cnpj: parsed.cnpj,
+        cnpj,
         razaoSocial: parsed.razaoSocial,
         anoCalendario,
         formaTributacao: parsed.formaTributacao,
@@ -73,7 +68,7 @@ export class IndicadoresEcfProcessamentoService {
         hashArquivo,
       },
       update: {
-        cnpj: parsed.cnpj,
+        cnpj,
         razaoSocial: parsed.razaoSocial,
         formaTributacao: parsed.formaTributacao,
         faturamentoDeclarado: parsed.faturamentoDeclarado,
