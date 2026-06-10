@@ -210,15 +210,23 @@ export class IndicadoresEcfController {
   @RequiresPermission('indicadores-ecf.view')
   @ApiOperation({ summary: 'Empresas do tenant com dados ECF' })
   async empresas(@CurrentUser('tenantId') tenantId: string) {
-    return this.prisma.ecfIndicador.findMany({
-      where: {
-        tenantId,
-        cnpj: { not: '00000000000000' },
-      },
-      distinct: ['cnpj'],
-      select: { cnpj: true, razaoSocial: true },
-      orderBy: { razaoSocial: 'asc' },
+    // Agrupa por empresaId (robusto mesmo se ecfIndicador.cnpj estiver incorreto)
+    const comIndicadores = await this.prisma.ecfIndicador.findMany({
+      where: { tenantId },
+      distinct: ['empresaId'],
+      select: { empresaId: true },
     });
+    if (comIndicadores.length === 0) return [];
+
+    const empresaIds = comIndicadores.map(i => i.empresaId);
+    const empresas = await this.prisma.empresa.findMany({
+      where: { id: { in: empresaIds } },
+      select: { cnpj: true, nome: true, nomeFantasia: true },
+    });
+
+    return empresas
+      .map(e => ({ cnpj: e.cnpj, razaoSocial: e.nomeFantasia || e.nome }))
+      .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, 'pt-BR'));
   }
 
   /**
@@ -232,8 +240,9 @@ export class IndicadoresEcfController {
     @Query() query: IndividualQueryDto,
   ) {
     if (!query.cnpj) throw new BadRequestException('cnpj é obrigatório');
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
     const rows = await this.prisma.ecfIndicador.findMany({
-      where: { tenantId, cnpj: query.cnpj },
+      where: { tenantId, empresaId },
       orderBy: { anoCalendario: 'asc' },
     });
     return deduplicarPorAno(rows);
@@ -251,11 +260,12 @@ export class IndicadoresEcfController {
   ) {
     if (!query.cnpj) throw new BadRequestException('cnpj é obrigatório');
 
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
     const where: {
       tenantId: string;
-      cnpj: string;
+      empresaId: string;
       anoCalendario?: { gte?: number; lte?: number };
-    } = { tenantId, cnpj: query.cnpj };
+    } = { tenantId, empresaId };
 
     if (query.anoInicio !== undefined || query.anoFim !== undefined) {
       where.anoCalendario = {};
@@ -281,8 +291,9 @@ export class IndicadoresEcfController {
     @Query('cnpj') cnpj: string,
   ) {
     if (!cnpj) throw new BadRequestException('cnpj é obrigatório');
+    const empresaId = await this.resolverEmpresaId(tenantId, cnpj);
     const rows = await this.prisma.ecfIndicador.findMany({
-      where: { tenantId, cnpj },
+      where: { tenantId, empresaId },
       orderBy: { anoCalendario: 'desc' },
     });
     const deduped = deduplicarPorAno(rows);
@@ -322,5 +333,14 @@ export class IndicadoresEcfController {
       where,
       orderBy: [{ anoCalendario: 'desc' }, { razaoSocial: 'asc' }],
     });
+  }
+
+  private async resolverEmpresaId(tenantId: string, cnpj: string): Promise<string> {
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { tenantId, cnpj },
+      select: { id: true },
+    });
+    if (!empresa) throw new BadRequestException(`Empresa com CNPJ ${cnpj} não encontrada`);
+    return empresa.id;
   }
 }
