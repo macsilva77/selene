@@ -89,21 +89,6 @@ jobs:
           sarif_file: trivy-iac.sarif
           category: trivy-iac
 
-  # ── npm audit (backend usa npm) ──────────────────────────────────────────────
-  npm-audit:
-    name: npm audit — Backend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      - name: Audit backend
-        working-directory: backend
-        run: npm audit --audit-level=high --omit=dev
-
   # ── CodeQL: análise estática ─────────────────────────────────────────────────
   codeql:
     name: CodeQL — TypeScript
@@ -115,6 +100,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
@@ -122,11 +115,11 @@ jobs:
           queries: security-and-quality
 
       - name: Build backend (para análise)
-        working-directory: backend
         run: |
-          npm ci
-          npx prisma generate
-          npm run build
+          bun install --frozen-lockfile
+          cd backend
+          bunx prisma generate
+          bun run build
 
       - name: Analyze
         uses: github/codeql-action/analyze@v3
