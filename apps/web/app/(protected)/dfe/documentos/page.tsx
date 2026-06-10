@@ -1532,6 +1532,7 @@ export default function DfeDocumentosPage() {
         if (cnpjMonitorado) params.set('cnpjTransportador', cnpjMonitorado);
       } else if (t === 'citadas') {
         if (cnpjMonitorado) params.set('cnpjAutXml', cnpjMonitorado);
+        if (f.tipo) params.set('tipo', f.tipo);
       } else {
         // recebidas
         params.set('excluirOutrosPapeis', 'true');
@@ -1563,9 +1564,11 @@ export default function DfeDocumentosPage() {
   useEffect(() => { void buscar(activeFilters, page, tab); }, [buscar, activeFilters, page, tab]);
 
   const hasActiveFilters = useMemo(() =>
-    Object.entries(activeFilters).some(([k, v]) =>
-      k !== 'raizCnpj' && (Array.isArray(v) ? v.length > 0 : Boolean(v)),
-    ),
+    Object.entries(activeFilters).some(([k, v]) => {
+      if (k === 'raizCnpj') return false;
+      if (k === 'tipo') return v !== 'PROC_NFE'; // PROC_NFE é o default, não conta como filtro ativo
+      return Array.isArray(v) ? v.length > 0 : Boolean(v);
+    }),
     [activeFilters]);
 
   const aplicar = () => { setPage(1); setActiveFilters({ ...filters }); };
@@ -1634,6 +1637,7 @@ export default function DfeDocumentosPage() {
         if (cnpjMonitorado) params.set('cnpjTransportador', cnpjMonitorado);
       } else if (tab === 'citadas') {
         if (cnpjMonitorado) params.set('cnpjAutXml', cnpjMonitorado);
+        if (f.tipo) params.set('tipo', f.tipo);
       } else {
         params.set('excluirOutrosPapeis', 'true');
       }
