@@ -102,11 +102,11 @@ const chartConfig = {
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 function PeriodSelect({
-  label, value, onChange, competencias, disabled,
+  label, value, onChange, competencias, disabled, id,
 }: {
   label: string; value: string;
   onChange: (v: string) => void;
-  competencias: Competencia[]; disabled?: boolean;
+  competencias: Competencia[]; disabled?: boolean; id?: string;
 }) {
   const partes   = value ? value.split('-') : [];
   const anoAtual = partes[0] ? Number(partes[0]) : 0;
