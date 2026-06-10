@@ -66,7 +66,6 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
 
   let razaoSocial = '';
   let cnpj = '';
-  let anoCalendario: number;
   let formaTributacao = 'nao_identificado';
   let dtIni = '';
   let dtFin = '';
@@ -135,7 +134,7 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
     }
   }
 
-  anoCalendario = extrairAnoCalendario(dtIni, dtFin);
+  const anoCalendario = extrairAnoCalendario(dtIni, dtFin);
 
   const faturamentoDeclarado = isLucroReal ? maxCreditoL300 : somaP200;
 
