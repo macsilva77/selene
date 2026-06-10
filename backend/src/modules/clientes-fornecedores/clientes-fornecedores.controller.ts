@@ -241,26 +241,29 @@ export class ClientesFornecedoresController {
       select: { cnpj: true, dataInicial: true, caminhoBucket: true },
     });
 
+    // Busca todos os arquivos de Contribuições de uma vez (evita N+1)
+    const contribFiles = await this.prisma.obrigacaoAcessoria.findMany({
+      where: {
+        cnpj:                { in: cnpjs },
+        tipoObrigacao:       'EFD_CONTRIBUICOES',
+        statusProcessamento: 'Processado',
+        versaoAtual:         true,
+      },
+      select: { cnpj: true, dataInicial: true, caminhoBucket: true },
+    });
+    const contribMap = new Map(
+      contribFiles.map(c => [`${c.cnpj}|${c.dataInicial.getTime()}`, c.caminhoBucket]),
+    );
+
     void (async () => {
       let ok = 0;
       for (const icms of icmsFiles) {
         const empresaId = cnpjToId.get(icms.cnpj);
         if (!empresaId) continue;
 
-        const contrib = await this.prisma.obrigacaoAcessoria.findFirst({
-          where: {
-            cnpj:                icms.cnpj,
-            tipoObrigacao:       'EFD_CONTRIBUICOES',
-            statusProcessamento: 'Processado',
-            versaoAtual:         true,
-            dataInicial:         icms.dataInicial,
-          },
-          select: { caminhoBucket: true },
-        });
-        if (!contrib) continue;
-
         const ano = icms.dataInicial.getFullYear();
         const mes = icms.dataInicial.getMonth() + 1;
+        const spedContribGcsUri = contribMap.get(`${icms.cnpj}|${icms.dataInicial.getTime()}`);
         try {
           await this.processamentoService.processar({
             tenantId,
@@ -269,7 +272,7 @@ export class ClientesFornecedoresController {
             ano,
             mes,
             spedIcmsIpiGcsUri: icms.caminhoBucket,
-            spedContribGcsUri: contrib.caminhoBucket,
+            spedContribGcsUri,
           });
           ok++;
         } catch (err) {

@@ -15,9 +15,9 @@ export interface ProcessarSpedInput {
   spedIcmsIpiGcsUri: string;
   /**
    * URI GCS da EFD Contribuições — Blocos A (serviços ISS) e F (demais operações).
-   * Blocos C e D desta fonte são ignorados quando há EFD ICMS/IPI.
+   * Opcional: quando ausente, processa apenas com EFD ICMS/IPI.
    */
-  spedContribGcsUri: string;
+  spedContribGcsUri?: string;
 }
 
 @Injectable()
@@ -35,18 +35,19 @@ export class ClientesFornecedoresProcessamentoService {
     const label = `[${cnpj} ${ano}-${String(mes).padStart(2, '0')}]`;
     this.logger.log(`${label} Processando EFD ICMS/IPI + Contribuições → Parquet`);
 
-    // 1. Download paralelo das duas fontes
-    const [bufIcms, bufContrib] = await Promise.all([
+    // 1. Download paralelo (EFD Contribuições é opcional)
+    const downloads = await Promise.all([
       this.gcs.downloadFromUri(spedIcmsIpiGcsUri),
-      this.gcs.downloadFromUri(spedContribGcsUri),
+      spedContribGcsUri ? this.gcs.downloadFromUri(spedContribGcsUri) : Promise.resolve(null),
     ]);
-    this.logger.debug(`${label} Downloads: ICMS/IPI=${bufIcms.length}b, Contrib=${bufContrib.length}b`);
+    const bufIcms   = downloads[0];
+    const bufContrib = downloads[1];
+    const contribInfo = bufContrib ? `Contrib=${bufContrib.length}b` : 'sem Contrib';
+    this.logger.debug(`${label} Downloads: ICMS/IPI=${bufIcms.length}b, ${contribInfo}`);
 
     // 2. Parse de cada fonte
-    //    ICMS/IPI: Blocos C (NF-e) + D (CT-e) — primário para mercadorias e transporte
-    //    Contribuições: Blocos A (ISS) + F (demais) — sempre complementar
-    const fatosIcms   = parseEfdIcmsIpi(bufIcms);
-    const fatosContrib = parseEfdContribuicoes(bufContrib);
+    const fatosIcms    = parseEfdIcmsIpi(bufIcms);
+    const fatosContrib = bufContrib ? parseEfdContribuicoes(bufContrib) : [];
 
     this.logger.log(
       `${label} Parse: ICMS/IPI=${fatosIcms.length} participante(s), ` +
