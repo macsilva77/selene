@@ -10,7 +10,7 @@ import {
   CaretDownIcon,
   DownloadSimpleIcon,
 } from '@phosphor-icons/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Modal } from '@/components/ui/modal';
@@ -67,10 +67,11 @@ function periodosPorAno(competencias: Competencia[]) {
   return [...map.entries()].sort(([a], [b]) => a - b);
 }
 
+/* Cores hardcoded para funcionar como atributo fill em SVG (CSS var não funciona em SVG presentation attributes) */
 const COR_ABC: Record<string, string> = {
-  A: 'var(--color-A)',
-  B: 'var(--color-B)',
-  C: 'var(--color-C)',
+  A: '#10b981',  // emerald-500 — classe dominante
+  B: '#f59e0b',  // amber-500 — classe intermediária
+  C: '#f87171',  // red-400 — classe menor
 };
 
 const BADGE_ABC: Record<string, string> = {
@@ -96,33 +97,66 @@ const chartConfig = {
   C: { label: 'Classe C', color: 'hsl(var(--chart-1))' },
 } satisfies ChartConfig;
 
-/* ─── Seletor de período com agrupamento por ano ─────────────────────────── */
+/* ─── Seletor de período: dois selects (ano + mês) ──────────────────────── */
+
+const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 function PeriodSelect({
-  id, label, value, onChange, competencias, disabled,
+  label, value, onChange, competencias, disabled,
 }: {
-  id: string; label: string; value: string;
+  label: string; value: string;
   onChange: (v: string) => void;
   competencias: Competencia[]; disabled?: boolean;
 }) {
-  const grupos = periodosPorAno(competencias);
+  const partes   = value ? value.split('-') : [];
+  const anoAtual = partes[0] ? Number(partes[0]) : 0;
+  const mesAtual = partes[1] ? Number(partes[1]) : 0;
+
+  const anos = useMemo(
+    () => [...new Set(competencias.map(c => c.ano))].sort((a, b) => a - b),
+    [competencias],
+  );
+  const meses = useMemo(
+    () => competencias.filter(c => c.ano === anoAtual).map(c => c.mes).sort((a, b) => a - b),
+    [competencias, anoAtual],
+  );
+
+  const cls = 'h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50';
+
+  const handleAno = (novoAno: number) => {
+    const primeiro = competencias.filter(c => c.ano === novoAno).sort((a, b) => a.mes - b.mes)[0];
+    if (primeiro) onChange(`${novoAno}-${String(primeiro.mes).padStart(2, '0')}`);
+  };
+
+  const handleMes = (novoMes: number) => {
+    if (anoAtual) onChange(`${anoAtual}-${String(novoMes).padStart(2, '0')}`);
+  };
+
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">{label}</label>
-      <select
-        id={id}
-        className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled || grupos.length === 0}
-      >
-        <option value="">Selecione…</option>
-        {grupos.map(([ano, opts]) => (
-          <optgroup key={ano} label={String(ano)}>
-            {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </optgroup>
-        ))}
-      </select>
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <div className="flex gap-1.5">
+        <select
+          aria-label={`${label} — ano`}
+          value={anoAtual || ''}
+          onChange={e => handleAno(Number(e.target.value))}
+          disabled={disabled || anos.length === 0}
+          className={`${cls} flex-none w-[72px]`}
+        >
+          <option value="">Ano</option>
+          {anos.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select
+          aria-label={`${label} — mês`}
+          value={mesAtual || ''}
+          onChange={e => handleMes(Number(e.target.value))}
+          disabled={disabled || !anoAtual || meses.length === 0}
+          className={`${cls} flex-1`}
+        >
+          <option value="">Mês</option>
+          {meses.map(m => <option key={m} value={m}>{MESES[m - 1]}</option>)}
+        </select>
+      </div>
     </div>
   );
 }
@@ -134,7 +168,7 @@ interface GraficoRow { razaoSocial: string; valorTotal: number; classeAbc: strin
 function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string }) {
   const data = useMemo(
     () => rows.slice(0, 10).map(r => ({
-      nome: r.razaoSocial.length > 28 ? r.razaoSocial.slice(0, 26) + '…' : r.razaoSocial,
+      nome: r.razaoSocial.length > 24 ? r.razaoSocial.slice(0, 22) + '…' : r.razaoSocial,
       valorTotal: r.valorTotal,
       classeAbc: r.classeAbc,
     })),
@@ -142,24 +176,30 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
   );
   if (data.length === 0) return null;
 
+  const altura = data.length <= 5 ? 'h-52' : data.length <= 7 ? 'h-64' : 'h-80';
+
   return (
     <Card className="border">
       <CardContent className="p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
-        <ChartContainer config={chartConfig} className="h-72 w-full">
-          <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+        <ChartContainer config={chartConfig} className={`${altura} w-full`}>
+          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 140, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
             <XAxis
               type="number"
-              tickFormatter={(v: number) => BRL.format(v)}
-              tick={{ fontSize: 10 }}
+              tickFormatter={(v: number) =>
+                v >= 1_000_000 ? `R$ ${(v / 1_000_000).toFixed(1)}M`
+                : v >= 1_000 ? `R$ ${(v / 1_000).toFixed(0)}k`
+                : `R$ ${v.toFixed(0)}`
+              }
+              tick={{ fontSize: 9 }}
               tickLine={false}
               axisLine={false}
             />
             <YAxis
               type="category"
               dataKey="nome"
-              width={160}
+              width={148}
               tick={{ fontSize: 10 }}
               tickLine={false}
               axisLine={false}
@@ -171,18 +211,27 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
                 />
               }
             />
-            <Bar dataKey="valorTotal" radius={[0, 4, 4, 0]}>
+            <Bar dataKey="valorTotal" radius={[0, 4, 4, 0]} maxBarSize={28}>
+              <LabelList
+                dataKey="valorTotal"
+                position="right"
+                formatter={(v: number) => formatarBRL(v)}
+                className="fill-muted-foreground text-[9px]"
+              />
               {data.map((entry, i) => (
                 <Cell key={i} fill={COR_ABC[entry.classeAbc] ?? COR_ABC['C']} />
               ))}
             </Bar>
           </BarChart>
         </ChartContainer>
-        <div className="mt-2 flex items-center gap-4 justify-center">
+        <div className="mt-3 flex items-center gap-6 justify-center">
           {(['A', 'B', 'C'] as const).map(cls => (
             <div key={cls} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: COR_ABC[cls] }} />
-              Classe {cls}
+              <span
+                className="inline-block h-3 w-3 rounded-sm"
+                style={{ backgroundColor: COR_ABC[cls] }}
+              />
+              <span>Classe <strong className="text-foreground">{cls}</strong></span>
             </div>
           ))}
         </div>
