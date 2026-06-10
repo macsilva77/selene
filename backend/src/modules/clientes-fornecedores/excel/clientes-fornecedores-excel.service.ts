@@ -24,6 +24,7 @@ const COR_LINHA_IMPAR = 'FFFFFFFF';
 export interface GerarExcelParams {
   tenantId: string;
   empresaId: string;
+  cnpjEmpresa: string;
   anoInicio: number;
   mesInicio: number;
   anoFim: number;
@@ -37,9 +38,9 @@ export class ClientesFornecedoresExcelService {
   constructor(private readonly queryService: ClientesFornecedoresQueryService) {}
 
   async gerarExcel(params: GerarExcelParams): Promise<Buffer> {
-    const { tenantId, empresaId, anoInicio, mesInicio, anoFim, mesFim } = params;
+    const { tenantId, empresaId, cnpjEmpresa, anoInicio, mesInicio, anoFim, mesFim } = params;
 
-    const periodoBase = { tenantId, empresaId, anoInicio, mesInicio, anoFim, mesFim };
+    const periodoBase = { tenantId, empresaId, cnpjEmpresa, anoInicio, mesInicio, anoFim, mesFim };
 
     // Busca em paralelo: top N para CLIENTES e FORNECEDORES + grupos por raiz
     const [rankingClientes, rankingFornecedores, gruposClientes, gruposFornecedores] =

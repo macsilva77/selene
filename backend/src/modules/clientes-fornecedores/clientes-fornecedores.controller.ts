@@ -202,10 +202,11 @@ export class ClientesFornecedoresController {
     const buffer = await this.excelService.gerarExcel({
       tenantId,
       empresaId,
-      anoInicio: query.anoInicio,
-      mesInicio: query.mesInicio,
-      anoFim:    query.anoFim,
-      mesFim:    query.mesFim,
+      cnpjEmpresa: query.cnpj,
+      anoInicio:   query.anoInicio,
+      mesInicio:   query.mesInicio,
+      anoFim:      query.anoFim,
+      mesFim:      query.mesFim,
     });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
