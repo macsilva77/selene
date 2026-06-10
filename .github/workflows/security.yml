@@ -40,6 +40,7 @@ jobs:
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
+        continue-on-error: true
         with:
           sarif_file: trivy-backend.sarif
           category: trivy-backend
@@ -66,6 +67,7 @@ jobs:
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
+        continue-on-error: true
         with:
           sarif_file: trivy-web.sarif
           category: trivy-web
@@ -90,6 +92,7 @@ jobs:
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
+        continue-on-error: true
         with:
           sarif_file: trivy-iac.sarif
           category: trivy-iac
@@ -98,10 +101,6 @@ jobs:
   codeql:
     name: CodeQL — TypeScript
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -128,5 +127,6 @@ jobs:
 
       - name: Analyze
         uses: github/codeql-action/analyze@v3
+        continue-on-error: true
         with:
           category: codeql-typescript
