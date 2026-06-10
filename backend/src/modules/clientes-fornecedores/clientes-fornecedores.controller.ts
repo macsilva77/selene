@@ -231,14 +231,19 @@ export class ClientesFornecedoresController {
     const cnpjToId = new Map(empresas.map(e => [e.cnpj, e.id]));
     const cnpjs    = [...cnpjToId.keys()];
 
+    // Inclui 'Recebido' além de 'Processado' — arquivos recém-enviados podem
+    // ainda não ter passado pelo job de verificação de hash, mas o GCS já tem o arquivo.
+    const statusElegiveis = ['Processado', 'Recebido'];
+
     const icmsFiles = await this.prisma.obrigacaoAcessoria.findMany({
       where: {
         cnpj:                { in: cnpjs },
         tipoObrigacao:       'EFD_ICMS_IPI',
-        statusProcessamento: 'Processado',
+        statusProcessamento: { in: statusElegiveis },
         versaoAtual:         true,
       },
       select: { cnpj: true, dataInicial: true, caminhoBucket: true },
+      orderBy: { dataInicial: 'asc' },
     });
 
     // Busca todos os arquivos de Contribuições de uma vez (evita N+1)
@@ -246,7 +251,7 @@ export class ClientesFornecedoresController {
       where: {
         cnpj:                { in: cnpjs },
         tipoObrigacao:       'EFD_CONTRIBUICOES',
-        statusProcessamento: 'Processado',
+        statusProcessamento: { in: statusElegiveis },
         versaoAtual:         true,
       },
       select: { cnpj: true, dataInicial: true, caminhoBucket: true },
