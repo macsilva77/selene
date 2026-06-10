@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { AuthenticationService } from './authentication.service';
 import { UserManagementService } from './user-management.service';
 import { PrismaService } from '../../database/prisma.service';
 import { MailService } from '../../common/mail/mail.service';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { AppConfigService } from '../../config/app-config.service';
 
 jest.mock('../../common/context/tenant-context', () => ({
   requireTenantId: jest.fn().mockReturnValue('tenant-id'),
@@ -44,17 +44,15 @@ const mockJwt = {
   verify: jest.fn(),
 };
 
-const mockConfig = {
-  get: jest.fn((key: string) => {
-    const map: Record<string, string> = {
-      'jwt.secret': 'test-secret',
-      'jwt.expiresIn': '8h',
-      'jwt.refreshSecret': 'test-refresh',
-      'jwt.refreshExpiresIn': '30d',
-      'app.frontendUrl': 'https://app.test',
-    };
-    return map[key];
-  }),
+const mockAppConfig = {
+  jwt: {
+    secret:           'test-secret',
+    expiresIn:        '8h',
+    refreshSecret:    'test-refresh',
+    refreshExpiresIn: '30d',
+  },
+  frontendUrl:   'https://app.test',
+  isProduction:  false,
 };
 
 describe('AuthenticationService', () => {
@@ -64,9 +62,9 @@ describe('AuthenticationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthenticationService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: JwtService, useValue: mockJwt },
-        { provide: ConfigService, useValue: mockConfig },
+        { provide: PrismaService,        useValue: mockPrisma },
+        { provide: JwtService,           useValue: mockJwt },
+        { provide: AppConfigService,     useValue: mockAppConfig },
         { provide: TokenBlacklistService, useValue: mockBlacklist },
       ],
     }).compile();
@@ -120,9 +118,9 @@ describe('UserManagementService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserManagementService,
-        { provide: PrismaService, useValue: mockPrisma },
-        { provide: ConfigService, useValue: mockConfig },
-        { provide: MailService, useValue: mockMailService },
+        { provide: PrismaService,    useValue: mockPrisma },
+        { provide: AppConfigService, useValue: mockAppConfig },
+        { provide: MailService,      useValue: mockMailService },
       ],
     }).compile();
 

@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PerfisController } from './perfis.controller';
 import { PerfisService } from './perfis.service';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 
-// Mock PerfisService
 const mockPerfisService = {
   listar: jest.fn(),
-  criar: jest.fn(),
-  // Adicione outros métodos mockados conforme necessário
+  criar:  jest.fn(),
 };
 
 describe('PerfisController', () => {
@@ -19,10 +19,14 @@ describe('PerfisController', () => {
       providers: [
         { provide: PerfisService, useValue: mockPerfisService },
       ],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard).useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<PerfisController>(PerfisController);
     _service = module.get<PerfisService>(PerfisService);
+    jest.clearAllMocks();
   });
 
   it('deve ser definido', () => {
