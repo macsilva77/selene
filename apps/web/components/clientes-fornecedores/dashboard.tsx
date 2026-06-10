@@ -55,18 +55,6 @@ function parsePeriodo(value: string) {
   return { ano: Number(ano), mes: Number(mes) };
 }
 
-function periodosPorAno(competencias: Competencia[]) {
-  const map = new Map<number, { label: string; value: string }[]>();
-  for (const c of competencias) {
-    if (!map.has(c.ano)) map.set(c.ano, []);
-    map.get(c.ano)!.push({
-      label: `${labelMes(c.mes)}/${c.ano}`,
-      value: `${c.ano}-${String(c.mes).padStart(2, '0')}`,
-    });
-  }
-  return [...map.entries()].sort(([a], [b]) => a - b);
-}
-
 /* Cores hardcoded para funcionar como atributo fill em SVG (CSS var não funciona em SVG presentation attributes) */
 const COR_ABC: Record<string, string> = {
   A: '#10b981',  // emerald-500 — classe dominante
@@ -133,7 +121,7 @@ function PeriodSelect({
   };
 
   return (
-    <div className="flex flex-col gap-1">
+    <div id={id} className="flex flex-col gap-1">
       <label className="text-xs font-medium text-muted-foreground">{label}</label>
       <div className="flex gap-1.5">
         <select
