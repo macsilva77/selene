@@ -219,7 +219,7 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
                 className="fill-muted-foreground text-[9px]"
               />
               {data.map((entry, i) => (
-                <Cell key={i} fill={COR_ABC[entry.classeAbc] ?? COR_ABC['C']} />
+                <Cell key={i} style={{ fill: COR_ABC[entry.classeAbc] ?? COR_ABC['C'] }} />
               ))}
             </Bar>
           </BarChart>
