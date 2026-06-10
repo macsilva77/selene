@@ -55,6 +55,7 @@ jobs:
     name: Backend — E2E Tests
     runs-on: ubuntu-latest
     needs: backend-test
+    timeout-minutes: 8
 
     services:
       postgres:
@@ -140,7 +141,7 @@ jobs:
   docker-build:
     name: Docker — Build & Push
     runs-on: ubuntu-latest
-    needs: [backend-e2e, frontend-build]
+    needs: [backend-test, frontend-build]
     if: github.event_name == 'push'
 
     permissions:
