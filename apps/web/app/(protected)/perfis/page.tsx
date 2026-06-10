@@ -67,6 +67,8 @@ const PERMISSION_GROUPS = [
   { group: 'Relatórios',   module: 'relatorios',   label: 'Relatórios',   permissions: [{ key: 'relatorios.view', label: 'Visualizar' }] },
   { group: 'Obrigações Acessórias', module: 'obrigacoes', label: 'Obrigações Acessórias', permissions: [{ key: 'obrigacoes-acessorias.view', label: 'Visualizar / Upload' }] },
   { group: 'Análise de Crédito',   module: 'analise-credito', label: 'Análise de Crédito', permissions: [{ key: 'analise-credito.view', label: 'Visualizar' }, { key: 'analise-credito.processar', label: 'Processar pipeline' }, { key: 'analise-credito.regras', label: 'Manter regras de crédito' }] },
+  { group: 'Indicadores Fiscais ECF', module: 'indicadores-ecf', label: 'Indicadores Fiscais ECF', permissions: [{ key: 'indicadores-ecf.view', label: 'Visualizar' }, { key: 'indicadores-ecf.processar', label: 'Reprocessar ECF' }] },
+  { group: 'Análise Fiscal — Clientes e Fornecedores', module: 'clientes-fornecedores', label: 'Clientes e Fornecedores', permissions: [{ key: 'clientes-fornecedores.view', label: 'Visualizar' }, { key: 'clientes-fornecedores.processar', label: 'Reprocessar SPED' }] },
 ];
 
 

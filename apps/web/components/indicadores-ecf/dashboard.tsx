@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { CaretDownIcon, ArrowClockwiseIcon } from '@phosphor-icons/react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { CaretDownIcon, ArrowClockwiseIcon, ArrowsClockwiseIcon } from '@phosphor-icons/react';
 import {
   LineChart,
   Line,
@@ -274,7 +274,7 @@ function TabelaHistorica({ dados }: Readonly<{ dados: EcfIndicador[] }>) {
 /* ─── Dashboard principal ─────────────────────────────────────────────────── */
 
 export function IndicadoresEcfDashboard() {
-  const { toasts, error: toastError, dismiss } = useToast();
+  const { toasts, error: toastError, success: toastSuccess, dismiss } = useToast();
 
   /* ── Combobox de empresas ── */
   const [empresas, setEmpresas]         = useState<EmpresaComEcf[]>([]);
@@ -282,10 +282,27 @@ export function IndicadoresEcfDashboard() {
   const [empresaOpen, setEmpresaOpen]   = useState(false);
   const [cnpj, setCnpj]                 = useState('');
   const empresaRef = useRef<HTMLDivElement>(null);
+  const [reprocessando, setReprocessando] = useState(false);
 
-  useEffect(() => {
+  const carregarEmpresas = useCallback(() => {
     indicadoresEcfApi.empresas().then(setEmpresas).catch(() => {});
   }, []);
+
+  useEffect(() => { carregarEmpresas(); }, [carregarEmpresas]);
+
+  const reprocessarEcf = useCallback(async () => {
+    if (reprocessando) return;
+    setReprocessando(true);
+    try {
+      const res = await indicadoresEcfApi.reprocessar();
+      toastSuccess(`${res.mensagem} — aguarde o processamento em background`);
+      setTimeout(() => carregarEmpresas(), 5000);
+    } catch {
+      toastError('Erro ao iniciar reprocessamento');
+    } finally {
+      setReprocessando(false);
+    }
+  }, [reprocessando, carregarEmpresas, toastSuccess, toastError]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -332,11 +349,23 @@ export function IndicadoresEcfDashboard() {
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {/* Cabeçalho */}
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Indicadores Fiscais ECF</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Faturamento declarado, prejuízo fiscal e base negativa de CSLL extraídos da ECF
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Indicadores Fiscais ECF</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Faturamento declarado, prejuízo fiscal e base negativa de CSLL extraídos da ECF
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void reprocessarEcf()}
+          disabled={reprocessando}
+          title="Reprocessa todos os arquivos ECF disponíveis para extrair indicadores fiscais"
+          className="flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50 transition-colors shrink-0"
+        >
+          <ArrowsClockwiseIcon size={13} className={reprocessando ? 'animate-spin' : ''} />
+          {reprocessando ? 'Reprocessando…' : 'Reprocessar ECF'}
+        </button>
       </div>
 
       {/* Combobox de empresa */}

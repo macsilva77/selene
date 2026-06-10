@@ -52,4 +52,8 @@ export const indicadoresEcfApi = {
   /** Empresas do tenant que atendem aos filtros */
   buscar: (filtros: BuscarFiltros): Promise<EcfIndicador[]> =>
     api.get<EcfIndicador[]>('/indicadores-ecf/buscar', { params: filtros }).then(r => r.data),
+
+  /** Reprocessa todos os ECFs disponíveis em background — retorna total enfileirado */
+  reprocessar: (): Promise<{ mensagem: string; status: string; total: number }> =>
+    api.post<{ mensagem: string; status: string; total: number }>('/indicadores-ecf/reprocessar').then(r => r.data),
 };

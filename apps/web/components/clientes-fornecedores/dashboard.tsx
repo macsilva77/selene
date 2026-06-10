@@ -4,6 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   MagnifyingGlassIcon,
   ArrowClockwiseIcon,
+  ArrowsClockwiseIcon,
   UsersThreeIcon,
   BuildingsIcon,
   CaretDownIcon,
@@ -344,19 +345,36 @@ function GraficoTop10({ rows }: { rows: RankingParticipanteRow[] }) {
 /* ─── Componente principal ───────────────────────────────────────────────── */
 
 export function ClientesFornecedoresDashboard() {
-  const { toasts, error: toastError, dismiss } = useToast();
+  const { toasts, error: toastError, success: toastSuccess, dismiss } = useToast();
 
   /* ── Lista de empresas com SPEDs ── */
   const [empresas, setEmpresas]         = useState<EmpresaComSped[]>([]);
   const [empresaSearch, setEmpresaSearch] = useState('');
   const [empresaOpen, setEmpresaOpen]   = useState(false);
   const empresaRef = useRef<HTMLDivElement>(null);
+  const [reprocessando, setReprocessando] = useState(false);
 
-  useEffect(() => {
+  const carregarEmpresas = useCallback(() => {
     clientesFornecedoresApi.empresas()
       .then(setEmpresas)
       .catch(() => toastError('Erro ao carregar lista de empresas'));
   }, [toastError]);
+
+  useEffect(() => { carregarEmpresas(); }, [carregarEmpresas]);
+
+  const reprocessarSped = useCallback(async () => {
+    if (reprocessando) return;
+    setReprocessando(true);
+    try {
+      const res = await clientesFornecedoresApi.reprocessar();
+      toastSuccess(`${res.mensagem} — aguarde o processamento em background`);
+      setTimeout(() => carregarEmpresas(), 5000);
+    } catch {
+      toastError('Erro ao iniciar reprocessamento');
+    } finally {
+      setReprocessando(false);
+    }
+  }, [reprocessando, carregarEmpresas, toastSuccess, toastError]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -558,12 +576,24 @@ export function ClientesFornecedoresDashboard() {
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {/* ── Cabeçalho ── */}
-      <div className="flex items-center gap-3">
-        <UsersThreeIcon size={24} className="text-primary shrink-0" />
-        <div>
-          <h1 className="text-xl font-semibold">Clientes e Fornecedores</h1>
-          <p className="text-sm text-muted-foreground">Análise ABC de participantes por período</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <UsersThreeIcon size={24} className="text-primary shrink-0" />
+          <div>
+            <h1 className="text-xl font-semibold">Clientes e Fornecedores</h1>
+            <p className="text-sm text-muted-foreground">Análise ABC de participantes por período</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => void reprocessarSped()}
+          disabled={reprocessando}
+          title="Reprocessa todos os SPEDs EFD disponíveis para gerar dados de clientes e fornecedores"
+          className="flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50 transition-colors"
+        >
+          <ArrowsClockwiseIcon size={13} className={reprocessando ? 'animate-spin' : ''} />
+          {reprocessando ? 'Reprocessando…' : 'Reprocessar SPED'}
+        </button>
       </div>
 
       {/* ── Filtros ── */}

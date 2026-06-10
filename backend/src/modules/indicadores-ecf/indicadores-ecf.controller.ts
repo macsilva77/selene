@@ -3,9 +3,12 @@ import {
   Controller,
   Get,
   Post,
+  HttpCode,
+  HttpStatus,
   Query,
   UseGuards,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -105,6 +108,8 @@ class BuscarQueryDto {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('indicadores-ecf')
 export class IndicadoresEcfController {
+  private readonly logger = new Logger(IndicadoresEcfController.name);
+
   constructor(
     private readonly processamentoService: IndicadoresEcfProcessamentoService,
     private readonly prisma: PrismaService,
@@ -127,6 +132,60 @@ export class IndicadoresEcfController {
       gcsUri: dto.gcsUri,
     });
     return { message: 'Processado com sucesso' };
+  }
+
+  /**
+   * Reprocessa todos os ECFs disponíveis em ObrigacaoAcessoria para o tenant.
+   * Aciona o processamento em background e retorna HTTP 202 imediatamente.
+   */
+  @Post('reprocessar')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @RequiresPermission('indicadores-ecf.processar')
+  @ApiOperation({ summary: 'Reprocessa todos os ECFs do tenant em background' })
+  async reprocessar(@CurrentUser('tenantId') tenantId: string) {
+    const empresas = await this.prisma.empresa.findMany({
+      where:  { tenantId },
+      select: { id: true, cnpj: true },
+    });
+    const cnpjToId = new Map(empresas.map(e => [e.cnpj, e.id]));
+
+    const ecfFiles = await this.prisma.obrigacaoAcessoria.findMany({
+      where: {
+        cnpj:                { in: [...cnpjToId.keys()] },
+        tipoObrigacao:       'ECF',
+        statusProcessamento: 'Processado',
+        versaoAtual:         true,
+      },
+      select: { cnpj: true, dataInicial: true, caminhoBucket: true },
+    });
+
+    void (async () => {
+      let ok = 0;
+      for (const ecf of ecfFiles) {
+        const empresaId = cnpjToId.get(ecf.cnpj);
+        if (!empresaId) continue;
+        try {
+          await this.processamentoService.processar({
+            tenantId,
+            empresaId,
+            anoCalendario: ecf.dataInicial.getFullYear(),
+            gcsUri:        ecf.caminhoBucket,
+          });
+          ok++;
+        } catch (err) {
+          this.logger.warn(`[Reprocessar] ${ecf.cnpj}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      this.logger.log(`[Reprocessar] tenant=${tenantId} — ${ok}/${ecfFiles.length} ECF(s) concluído(s)`);
+    })().catch(err =>
+      this.logger.error('[Reprocessar] Erro em background', err instanceof Error ? err.stack : String(err)),
+    );
+
+    return {
+      mensagem: `Reprocessamento ECF iniciado para ${ecfFiles.length} arquivo(s)`,
+      status:   'aceito',
+      total:    ecfFiles.length,
+    };
   }
 
   /**

@@ -119,4 +119,8 @@ export const clientesFornecedoresApi = {
   /** Drill-down dos CNPJs individuais de um grupo econômico */
   drillDown: (params: DrillDownParams): Promise<DrillDownRow[]> =>
     api.get('/clientes-fornecedores/drill-down', { params }).then(r => r.data),
+
+  /** Reprocessa SPEDs disponíveis em background — retorna total de competências enfileiradas */
+  reprocessar: (): Promise<{ mensagem: string; status: string; total: number }> =>
+    api.post('/clientes-fornecedores/reprocessar').then(r => r.data),
 };

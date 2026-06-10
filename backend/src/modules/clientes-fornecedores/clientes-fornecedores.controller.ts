@@ -1,12 +1,16 @@
 import {
   Controller,
   Get,
+  Post,
+  HttpCode,
+  HttpStatus,
   Query,
   UseGuards,
   NotFoundException,
   BadRequestException,
   StreamableFile,
   Res,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -16,6 +20,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
 import { ClientesFornecedoresQueryService } from './query/clientes-fornecedores-query.service';
 import { ClientesFornecedoresExcelService } from './excel/clientes-fornecedores-excel.service';
+import { ClientesFornecedoresProcessamentoService } from './clientes-fornecedores-processamento.service';
 import {
   QueryRankingDto,
   QueryPorCnpjDto,
@@ -27,9 +32,12 @@ import {
 @RequiresPermission('clientes-fornecedores.view')
 @Controller('clientes-fornecedores')
 export class ClientesFornecedoresController {
+  private readonly logger = new Logger(ClientesFornecedoresController.name);
+
   constructor(
     private readonly queryService: ClientesFornecedoresQueryService,
     private readonly excelService: ClientesFornecedoresExcelService,
+    private readonly processamentoService: ClientesFornecedoresProcessamentoService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -200,6 +208,79 @@ export class ClientesFornecedoresController {
       'Content-Disposition': `attachment; filename="clientes-fornecedores.xlsx"`,
     });
     return new StreamableFile(buffer);
+  }
+
+  /**
+   * Reprocessa SPEDs já disponíveis em ObrigacaoAcessoria para o tenant.
+   * Para cada par EFD_ICMS_IPI + EFD_CONTRIBUICOES com mesmo CNPJ e período,
+   * aciona o processamento em background e retorna imediatamente (HTTP 202).
+   */
+  @Post('reprocessar')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @RequiresPermission('clientes-fornecedores.processar')
+  async reprocessar(@CurrentUser('tenantId') tenantId: string) {
+    const empresas = await this.prisma.empresa.findMany({
+      where:  { tenantId },
+      select: { id: true, cnpj: true },
+    });
+    const cnpjToId = new Map(empresas.map(e => [e.cnpj, e.id]));
+    const cnpjs    = [...cnpjToId.keys()];
+
+    const icmsFiles = await this.prisma.obrigacaoAcessoria.findMany({
+      where: {
+        cnpj:                { in: cnpjs },
+        tipoObrigacao:       'EFD_ICMS_IPI',
+        statusProcessamento: 'Processado',
+        versaoAtual:         true,
+      },
+      select: { cnpj: true, dataInicial: true, caminhoBucket: true },
+    });
+
+    void (async () => {
+      let ok = 0;
+      for (const icms of icmsFiles) {
+        const empresaId = cnpjToId.get(icms.cnpj);
+        if (!empresaId) continue;
+
+        const contrib = await this.prisma.obrigacaoAcessoria.findFirst({
+          where: {
+            cnpj:                icms.cnpj,
+            tipoObrigacao:       'EFD_CONTRIBUICOES',
+            statusProcessamento: 'Processado',
+            versaoAtual:         true,
+            dataInicial:         icms.dataInicial,
+          },
+          select: { caminhoBucket: true },
+        });
+        if (!contrib) continue;
+
+        const ano = icms.dataInicial.getFullYear();
+        const mes = icms.dataInicial.getMonth() + 1;
+        try {
+          await this.processamentoService.processar({
+            tenantId,
+            empresaId,
+            cnpj:              icms.cnpj,
+            ano,
+            mes,
+            spedIcmsIpiGcsUri: icms.caminhoBucket,
+            spedContribGcsUri: contrib.caminhoBucket,
+          });
+          ok++;
+        } catch (err) {
+          this.logger.warn(`[Reprocessar] ${icms.cnpj} ${ano}/${mes}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      this.logger.log(`[Reprocessar] tenant=${tenantId} — ${ok}/${icmsFiles.length} competência(s) concluída(s)`);
+    })().catch(err =>
+      this.logger.error('[Reprocessar] Erro em background', err instanceof Error ? err.stack : String(err)),
+    );
+
+    return {
+      mensagem: `Reprocessamento iniciado para até ${icmsFiles.length} competência(s)`,
+      status:   'aceito',
+      total:    icmsFiles.length,
+    };
   }
 
   // ─── Helpers privados ─────────────────────────────────────────────────────────
