@@ -18,8 +18,10 @@ import {
   ReceiptIcon,
   CaretDownIcon,
   ChartLineIcon,
+  ChartBarIcon,
   FilesIcon,
   SlidersIcon,
+  UsersThreeIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -57,6 +59,14 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/analise-credito',                icon: ChartLineIcon, label: 'Dashboard' },
       { href: '/analise-credito/demonstracoes',  icon: FilesIcon,     label: 'Demonstrações Financeiras' },
       { href: '/analise-credito/regras',         icon: SlidersIcon,   label: 'Regras de Crédito' },
+      { href: '/indicadores-ecf',                icon: ChartBarIcon,  label: 'Indicadores Fiscais ECF' },
+    ],
+  },
+  {
+    id: 'fiscal-analytics',
+    label: 'Análise Fiscal',
+    items: [
+      { href: '/clientes-fornecedores', icon: UsersThreeIcon, label: 'Clientes e Fornecedores' },
     ],
   },
   {

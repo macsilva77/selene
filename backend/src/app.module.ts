@@ -33,6 +33,8 @@ import { EtiquetasModule } from './modules/etiquetas/etiquetas.module';
 import { SpedModule } from './modules/sped/sped.module';
 import { ObrigacoesAcessoriasModule } from './modules/obrigacoes-acessorias/obrigacoes-acessorias.module';
 import { AnaliseCreditoModule } from './modules/analise-credito/analise-credito.module';
+import { ClientesFornecedoresModule } from './modules/clientes-fornecedores/clientes-fornecedores.module';
+import { IndicadoresEcfModule } from './modules/indicadores-ecf/indicadores-ecf.module';
 
 
 @Module({
@@ -119,6 +121,8 @@ import { AnaliseCreditoModule } from './modules/analise-credito/analise-credito.
     SpedModule,
     ObrigacoesAcessoriasModule,
     AnaliseCreditoModule,
+    ClientesFornecedoresModule,
+    IndicadoresEcfModule,
   ],
   providers: [
     // Global exception filter

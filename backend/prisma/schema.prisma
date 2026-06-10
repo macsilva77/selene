@@ -55,6 +55,8 @@ model Tenant {
   etiquetas            Etiqueta[]
   spedArquivos         SpedArquivo[]
   creditoEmpresas      CreditoEmpresa[]
+  cfCompetencias       ClientesFornecedoresCompetencia[]
+  ecfIndicadores       EcfIndicador[]
 
   @@map("tenants")
 }
@@ -1811,4 +1813,53 @@ model CreditoRegra {
   @@index([severidade])
   @@index([ativo])
   @@map("credito_regras")
+}
+
+// ─── CLIENTES E FORNECEDORES ──────────────────────────────────────────────────
+
+model ClientesFornecedoresCompetencia {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  empresaId             String   @map("empresa_id")
+  cnpj                  String   @db.VarChar(14)
+  ano                   Int
+  mes                   Int
+  spedGcsUri            String   @map("sped_gcs_uri")
+  parquetPathCliente    String?  @map("parquet_path_cliente")
+  parquetPathFornecedor String?  @map("parquet_path_fornecedor")
+  qtdClientes           Int      @default(0) @map("qtd_clientes")
+  qtdFornecedores       Int      @default(0) @map("qtd_fornecedores")
+  status                String   @default("PROCESSADO") @db.VarChar(20)
+  processadoEm          DateTime @default(now()) @map("processado_em")
+  atualizadoEm          DateTime @updatedAt @map("atualizado_em")
+
+  tenant                Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, empresaId, ano, mes], name: "tenantId_empresaId_ano_mes")
+  @@index([tenantId, empresaId])
+  @@map("cf_competencias")
+}
+
+model EcfIndicador {
+  id                      String   @id @default(uuid())
+  tenantId                String   @map("tenant_id")
+  empresaId               String   @map("empresa_id")
+  cnpj                    String   @db.VarChar(14)
+  razaoSocial             String   @map("razao_social")
+  anoCalendario           Int      @map("ano_calendario")
+  formaTributacao         String   @map("forma_tributacao") @db.VarChar(30)
+  faturamentoDeclarado    Decimal  @map("faturamento_declarado") @db.Decimal(18, 2)
+  prejuizoFiscalAcumulado Decimal  @default(0) @map("prejuizo_fiscal_acumulado") @db.Decimal(18, 2)
+  baseNegativaCsll        Decimal  @default(0) @map("base_negativa_csll") @db.Decimal(18, 2)
+  exercicioEcf            String   @map("exercicio_ecf") @db.VarChar(20)
+  gcsUri                  String   @map("gcs_uri")
+  hashArquivo             String   @map("hash_arquivo") @db.VarChar(64)
+  versaoProcesso          String   @default("1.0") @map("versao_processo") @db.VarChar(20)
+  processadoEm            DateTime @default(now()) @map("processado_em")
+  atualizadoEm            DateTime @updatedAt @map("atualizado_em")
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, empresaId, anoCalendario], name: "tenantId_empresaId_anoCalendario")
+  @@index([tenantId, cnpj])
+  @@map("ecf_indicadores")
 }

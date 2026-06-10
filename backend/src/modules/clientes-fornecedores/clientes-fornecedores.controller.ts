@@ -1,0 +1,207 @@
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  NotFoundException,
+  BadRequestException,
+  StreamableFile,
+  Res,
+} from '@nestjs/common';
+import { Response } from 'express';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequiresPermission } from '../../common/decorators/permissions.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PrismaService } from '../../database/prisma.service';
+import { ClientesFornecedoresQueryService } from './query/clientes-fornecedores-query.service';
+import { ClientesFornecedoresExcelService } from './excel/clientes-fornecedores-excel.service';
+import {
+  QueryRankingDto,
+  QueryPorCnpjDto,
+  QueryPeriodoDto,
+  QueryDrillDownDto,
+} from './dto/query.dto';
+
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequiresPermission('clientes-fornecedores.view')
+@Controller('clientes-fornecedores')
+export class ClientesFornecedoresController {
+  constructor(
+    private readonly queryService: ClientesFornecedoresQueryService,
+    private readonly excelService: ClientesFornecedoresExcelService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  /**
+   * Lista as competências (meses) já processadas para uma empresa.
+   * Usado pelo frontend para popular os seletores de período.
+   */
+  @Get('competencias')
+  async competencias(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('cnpj') cnpj: string,
+  ) {
+    if (!cnpj) throw new BadRequestException('cnpj é obrigatório');
+    return this.prisma.clientesFornecedoresCompetencia.findMany({
+      where: { tenantId, cnpj },
+      select: {
+        ano:             true,
+        mes:             true,
+        qtdClientes:     true,
+        qtdFornecedores: true,
+        status:          true,
+        processadoEm:    true,
+      },
+      orderBy: [{ ano: 'asc' }, { mes: 'asc' }],
+    });
+  }
+
+  /**
+   * Ranking geral de participantes com classificação ABC dinâmica.
+   * Aceita topN opcional para retornar apenas os N maiores.
+   */
+  @Get('ranking')
+  async ranking(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: QueryRankingDto,
+  ) {
+    this.validarPeriodo(query);
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
+    return this.queryService.consultarTopN({
+      tenantId,
+      empresaId,
+      anoInicio:        query.anoInicio,
+      mesInicio:        query.mesInicio,
+      anoFim:           query.anoFim,
+      mesFim:           query.mesFim,
+      tipoParticipante: query.tipo,
+      topN:             query.topN,
+    });
+  }
+
+  /**
+   * Busca um participante pelo CNPJ e retorna sua posição no ranking global
+   * com a classificação ABC calculada sobre o universo completo do período.
+   */
+  @Get('por-cnpj')
+  async porCnpj(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: QueryPorCnpjDto,
+  ) {
+    this.validarPeriodo(query);
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
+    return this.queryService.consultarPorCnpj({
+      tenantId,
+      empresaId,
+      anoInicio:        query.anoInicio,
+      mesInicio:        query.mesInicio,
+      anoFim:           query.anoFim,
+      mesFim:           query.mesFim,
+      tipoParticipante: query.tipo,
+      cnpj:             query.cnpjParticipante,
+    });
+  }
+
+  /**
+   * Ranking consolidado por grupo econômico (raiz CNPJ).
+   * A razão social de cada grupo é resolvida com prioridade para a matriz.
+   */
+  @Get('por-raiz')
+  async porRaiz(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: QueryPeriodoDto,
+  ) {
+    this.validarPeriodo(query);
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
+    return this.queryService.consultarPorRaiz({
+      tenantId,
+      empresaId,
+      anoInicio:        query.anoInicio,
+      mesInicio:        query.mesInicio,
+      anoFim:           query.anoFim,
+      mesFim:           query.mesFim,
+      tipoParticipante: query.tipo,
+    });
+  }
+
+  /**
+   * Detalha todos os CNPJs individuais de um grupo econômico,
+   * com a participação percentual dentro do grupo e flag de matriz.
+   */
+  @Get('drill-down')
+  async drillDown(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: QueryDrillDownDto,
+  ) {
+    this.validarPeriodo(query);
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
+    return this.queryService.consultarDrillDown({
+      tenantId,
+      empresaId,
+      anoInicio:        query.anoInicio,
+      mesInicio:        query.mesInicio,
+      anoFim:           query.anoFim,
+      mesFim:           query.mesFim,
+      tipoParticipante: query.tipo,
+      cnpjRaiz:         query.cnpjRaiz,
+    });
+  }
+
+  /**
+   * Exporta o ranking de clientes e fornecedores para um arquivo Excel (.xlsx)
+   * com 4 abas: Clientes, Fornecedores, Grupos Clientes, Grupos Fornecedores.
+   */
+  @Get('exportar')
+  async exportar(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: QueryRankingDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    this.validarPeriodo(query);
+    const empresaId = await this.resolverEmpresaId(tenantId, query.cnpj);
+    const buffer = await this.excelService.gerarExcel({
+      tenantId,
+      empresaId,
+      anoInicio: query.anoInicio,
+      mesInicio: query.mesInicio,
+      anoFim:    query.anoFim,
+      mesFim:    query.mesFim,
+    });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="clientes-fornecedores.xlsx"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  // ─── Helpers privados ─────────────────────────────────────────────────────────
+
+  /** Lança 400 se anoFim/mesFim for anterior a anoInicio/mesInicio. */
+  private validarPeriodo(dto: QueryPeriodoDto): void {
+    const ymInicio = dto.anoInicio * 100 + dto.mesInicio;
+    const ymFim    = dto.anoFim    * 100 + dto.mesFim;
+    if (ymFim < ymInicio) {
+      throw new BadRequestException(
+        `O período fim (${dto.anoFim}/${dto.mesFim}) deve ser posterior ao período início (${dto.anoInicio}/${dto.mesInicio})`,
+      );
+    }
+  }
+
+  /**
+   * Resolve o empresaId a partir do CNPJ da empresa.
+   * Lança 404 se não há nenhuma competência processada para esse CNPJ no tenant.
+   */
+  private async resolverEmpresaId(tenantId: string, cnpj: string): Promise<string> {
+    const comp = await this.prisma.clientesFornecedoresCompetencia.findFirst({
+      where: { tenantId, cnpj },
+      select: { empresaId: true },
+    });
+    if (!comp) {
+      throw new NotFoundException(
+        `Empresa CNPJ ${cnpj} não possui dados de clientes/fornecedores processados`,
+      );
+    }
+    return comp.empresaId;
+  }
+}
