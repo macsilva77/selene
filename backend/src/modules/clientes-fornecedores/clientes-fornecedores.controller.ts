@@ -337,9 +337,9 @@ export class ClientesFornecedoresController {
   }
 
   /**
-   * Reprocessa SPEDs já disponíveis em ObrigacaoAcessoria para o tenant.
-   * Para cada par EFD_ICMS_IPI + EFD_CONTRIBUICOES com mesmo CNPJ e período,
-   * aciona o processamento em background e retorna imediatamente (HTTP 202).
+   * Reprocessa SPEDs pendentes (pula os já com status=PROCESSADO em cf_competencias).
+   * Processa em batches paralelos de 4 para reduzir o tempo total.
+   * Retorna imediatamente HTTP 202; o trabalho ocorre em background.
    */
   @Post('reprocessar')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -352,82 +352,116 @@ export class ClientesFornecedoresController {
     const cnpjToId = new Map(empresas.map(e => [e.cnpj, e.id]));
     const cnpjs    = [...cnpjToId.keys()];
 
-    // Inclui 'Recebido' (arquivo chegou mas hash ainda não verificado) e
-    // 'Erro_Hash_Divergente' (hash falhou mas arquivo existe no GCS — vale tentar).
     const statusElegiveis = ['Processado', 'Recebido', 'Erro_Hash_Divergente'];
 
-    const icmsFiles = await this.prisma.obrigacaoAcessoria.findMany({
-      where: {
-        cnpj:                { in: cnpjs },
-        tipoObrigacao:       'EFD_ICMS_IPI',
-        statusProcessamento: { in: statusElegiveis },
-        versaoAtual:         true,
-      },
-      select: { cnpj: true, dataInicial: true, caminhoBucket: true },
-      orderBy: { dataInicial: 'asc' },
+    const [icmsFiles, jaProcessadas, contribFiles] = await Promise.all([
+      this.prisma.obrigacaoAcessoria.findMany({
+        where: {
+          cnpj:                { in: cnpjs },
+          tipoObrigacao:       'EFD_ICMS_IPI',
+          statusProcessamento: { in: statusElegiveis },
+          versaoAtual:         true,
+        },
+        select:  { cnpj: true, dataInicial: true, caminhoBucket: true },
+        orderBy: { dataInicial: 'asc' },
+      }),
+      // Busca competências já processadas para skip
+      this.prisma.clientesFornecedoresCompetencia.findMany({
+        where:  { tenantId, status: 'PROCESSADO' },
+        select: { cnpj: true, ano: true, mes: true },
+      }),
+      this.prisma.obrigacaoAcessoria.findMany({
+        where: {
+          cnpj:                { in: cnpjs },
+          tipoObrigacao:       'EFD_CONTRIBUICOES',
+          statusProcessamento: { in: statusElegiveis },
+          versaoAtual:         true,
+        },
+        select: { cnpj: true, dataInicial: true, caminhoBucket: true },
+      }),
+    ]);
+
+    // Monta set de chaves já processadas para skip O(1)
+    const processadasSet = new Set(
+      jaProcessadas.map(p => `${p.cnpj}|${p.ano}|${p.mes}`),
+    );
+
+    const pendentes = icmsFiles.filter(f => {
+      const ano = f.dataInicial.getFullYear();
+      const mes = f.dataInicial.getMonth() + 1;
+      return !processadasSet.has(`${f.cnpj}|${ano}|${mes}`);
     });
 
-    // Diagnóstico: quais CNPJs têm ICMS/IPI e quais não têm
-    const cnpjsComIcms = new Set(icmsFiles.map(f => f.cnpj));
-    const cnpjsSemIcms = cnpjs.filter(c => !cnpjsComIcms.has(c));
+    const ignoradas = icmsFiles.length - pendentes.length;
+
     this.logger.log(
-      `[Reprocessar] tenant=${tenantId} — ${empresas.length} empresa(s), ` +
-      `${icmsFiles.length} arquivo(s) EFD_ICMS_IPI elegível(is)`,
+      `[Reprocessar] tenant=${tenantId} — ${pendentes.length} pendente(s), ` +
+      `${ignoradas} já processada(s) ignorada(s)`,
     );
-    if (cnpjsSemIcms.length > 0) {
-      this.logger.warn(
-        `[Reprocessar] ${cnpjsSemIcms.length} CNPJ(s) sem EFD_ICMS_IPI elegível: ` +
-        cnpjsSemIcms.join(', '),
-      );
+
+    if (pendentes.length === 0) {
+      return {
+        mensagem:  'Todas as competências já foram processadas',
+        status:    'aceito',
+        total:     0,
+        ignoradas,
+      };
     }
 
-    // Busca todos os arquivos de Contribuições de uma vez (evita N+1)
-    const contribFiles = await this.prisma.obrigacaoAcessoria.findMany({
-      where: {
-        cnpj:                { in: cnpjs },
-        tipoObrigacao:       'EFD_CONTRIBUICOES',
-        statusProcessamento: { in: statusElegiveis },
-        versaoAtual:         true,
-      },
-      select: { cnpj: true, dataInicial: true, caminhoBucket: true },
-    });
     const contribMap = new Map(
       contribFiles.map(c => [`${c.cnpj}|${c.dataInicial.getTime()}`, c.caminhoBucket]),
     );
 
+    const BATCH_SIZE = 4;
+
     void (async () => {
       let ok = 0;
-      for (const icms of icmsFiles) {
-        const empresaId = cnpjToId.get(icms.cnpj);
-        if (!empresaId) continue;
+      let erros = 0;
 
-        const ano = icms.dataInicial.getFullYear();
-        const mes = icms.dataInicial.getMonth() + 1;
-        const spedContribGcsUri = contribMap.get(`${icms.cnpj}|${icms.dataInicial.getTime()}`);
-        try {
-          await this.processamentoService.processar({
-            tenantId,
-            empresaId,
-            cnpj:              icms.cnpj,
-            ano,
-            mes,
-            spedIcmsIpiGcsUri: icms.caminhoBucket,
-            spedContribGcsUri,
-          });
-          ok++;
-        } catch (err) {
-          this.logger.warn(`[Reprocessar] ${icms.cnpj} ${ano}/${mes}: ${err instanceof Error ? err.message : String(err)}`);
+      for (let i = 0; i < pendentes.length; i += BATCH_SIZE) {
+        const batch = pendentes.slice(i, i + BATCH_SIZE);
+        const resultados = await Promise.allSettled(
+          batch.map(async (icms) => {
+            const empresaId = cnpjToId.get(icms.cnpj);
+            if (!empresaId) throw new Error(`empresaId não encontrado para ${icms.cnpj}`);
+            const ano = icms.dataInicial.getFullYear();
+            const mes = icms.dataInicial.getMonth() + 1;
+            await this.processamentoService.processar({
+              tenantId,
+              empresaId,
+              cnpj:              icms.cnpj,
+              ano,
+              mes,
+              spedIcmsIpiGcsUri: icms.caminhoBucket,
+              spedContribGcsUri: contribMap.get(`${icms.cnpj}|${icms.dataInicial.getTime()}`),
+            });
+          }),
+        );
+
+        for (const r of resultados) {
+          if (r.status === 'fulfilled') ok++;
+          else {
+            erros++;
+            this.logger.warn(
+              `[Reprocessar] Erro no batch: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+            );
+          }
         }
       }
-      this.logger.log(`[Reprocessar] tenant=${tenantId} — ${ok}/${icmsFiles.length} competência(s) concluída(s)`);
+
+      this.logger.log(
+        `[Reprocessar] tenant=${tenantId} — ${ok}/${pendentes.length} concluída(s), ${erros} erro(s)`,
+      );
     })().catch(err =>
       this.logger.error('[Reprocessar] Erro em background', err instanceof Error ? err.stack : String(err)),
     );
 
     return {
-      mensagem: `Reprocessamento iniciado para até ${icmsFiles.length} competência(s)`,
-      status:   'aceito',
-      total:    icmsFiles.length,
+      mensagem:  `Reprocessamento iniciado para ${pendentes.length} competência(s) pendente(s)` +
+                 (ignoradas > 0 ? ` — ${ignoradas} já processada(s) ignorada(s)` : ''),
+      status:    'aceito',
+      total:     pendentes.length,
+      ignoradas,
     };
   }
 
