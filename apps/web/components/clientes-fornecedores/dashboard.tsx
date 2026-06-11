@@ -409,6 +409,7 @@ export function ClientesFornecedoresDashboard() {
   const [periodoFim, setPeriodoFim]       = useState('');
   const [tipo, setTipo]                   = useState<TipoParticipante>('CLIENTE');
   const [topN, setTopN]                   = useState(10);
+  const topNRef                            = useRef(10);    // leitura síncrona em onPointerUp
   const [tab, setTab]                     = useState<Tab>('individual');
   const [busca, setBusca]                 = useState('');
 
@@ -530,7 +531,7 @@ export function ClientesFornecedoresDashboard() {
     if (tab === 'individual') {
       setCarregandoRank(true);
       try {
-        const data = await clientesFornecedoresApi.ranking({ ...base, topN });
+        const data = await clientesFornecedoresApi.ranking({ ...base, topN: topNRef.current });
         setRanking(data);
       } catch {
         toastError('Erro ao buscar ranking');
@@ -548,7 +549,7 @@ export function ClientesFornecedoresDashboard() {
         setCarregandoGrupo(false);
       }
     }
-  }, [cnpj, periodoInicio, periodoFim, tipo, topN, tab, toastError]);
+  }, [cnpj, periodoInicio, periodoFim, tipo, tab, toastError]);
 
   /* ── Ref para evitar stale closure no auto-busca ── */
   const buscarRef = useRef(buscar);
@@ -746,7 +747,7 @@ export function ClientesFornecedoresDashboard() {
                 max={100}
                 step={5}
                 value={topN}
-                onChange={e => setTopN(Number(e.target.value))}
+                onChange={e => { const v = Number(e.target.value); topNRef.current = v; setTopN(v); }}
                 onPointerUp={() => { if (cnpj && periodoInicio && periodoFim) void buscarRef.current(); }}
                 className="h-9 w-full accent-primary"
               />
