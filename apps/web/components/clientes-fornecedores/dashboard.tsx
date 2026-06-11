@@ -144,7 +144,7 @@ function PeriodSelect({
 
 /* ─── Gráfico de barras ABC (individual e grupo) ─────────────────────────── */
 
-interface GraficoRow { razaoSocial: string; valorTotal: number; classeAbc: string; percentual: number; }
+interface GraficoRow { razaoSocial: string; cnpj: string; valorTotal: number; classeAbc: string; percentual: number; }
 
 function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string }) {
   const data = useMemo(() => rows.slice(0, 10), [rows]);
@@ -160,10 +160,11 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
           {data.map((row, i) => {
             const largura = maxValor > 0 ? (row.valorTotal / maxValor) * 100 : 0;
             const cor = COR_ABC[row.classeAbc] ?? COR_ABC['C'];
+            const nome = row.razaoSocial?.trim() || formatarCnpj(row.cnpj);
             return (
-              <div key={i} className="flex items-center gap-3" title={`${row.razaoSocial} — ${formatarBRL(row.valorTotal)}`}>
-                <span className="w-40 shrink-0 text-right text-xs text-muted-foreground leading-tight truncate">
-                  {row.razaoSocial}
+              <div key={i} className="flex items-center gap-3" title={`${nome} — ${formatarBRL(row.valorTotal)}`}>
+                <span className="w-44 shrink-0 text-right text-xs text-muted-foreground leading-tight truncate" title={nome}>
+                  {nome}
                 </span>
                 <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
                   <div
@@ -556,7 +557,7 @@ export function ClientesFornecedoresDashboard() {
   /* ── Dados do gráfico (aba ativa) ── */
   const dadosGrafico: GraficoRow[] = tab === 'individual'
     ? rankingFiltrado
-    : raizFiltrado;
+    : raizFiltrado.map(r => ({ ...r, cnpj: r.cnpjRaiz }));
 
   const tituloGrafico = tab === 'individual'
     ? `Top ${Math.min(rankingFiltrado.length, 10)} por Valor Total`
