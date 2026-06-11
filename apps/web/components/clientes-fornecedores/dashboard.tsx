@@ -10,7 +10,12 @@ import {
   CaretDownIcon,
   DownloadSimpleIcon,
 } from '@phosphor-icons/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
+import {
+  ChartContainer,
+  ChartTooltip,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Modal } from '@/components/ui/modal';
@@ -39,10 +44,6 @@ function formatarCnpj(cnpj: string) {
 
 function formatarPct(v: number) { return `${v.toFixed(2)}%`; }
 
-function labelMes(mes: number) {
-  const s = new Date(2000, mes - 1, 1).toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 function parsePeriodo(value: string) {
   const [ano, mes] = value.split('-');
@@ -151,6 +152,10 @@ function PeriodSelect({
 
 interface GraficoRow { razaoSocial: string; valorTotal: number; classeAbc: string; }
 
+const chartConfig: ChartConfig = {
+  valorTotal: { color: COR_ABC['C'] },
+};
+
 function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string }) {
   const data = useMemo(
     () => rows.slice(0, 10).map(r => ({
@@ -168,55 +173,73 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
     <Card className="border">
       <CardContent className="p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
-        {/* ResponsiveContainer direto — sem ChartContainer do shadcn para evitar
-            que o CSS var(--color-valorTotal) indefinido sobrescreva os fills dos Cell */}
-        <div style={{ width: '100%', height: alturaBase }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} layout="vertical" margin={{ top: 4, right: 140, bottom: 4, left: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
-              <XAxis
-                type="number"
-                tickFormatter={(v: number) =>
-                  v >= 1_000_000 ? `R$ ${(v / 1_000_000).toFixed(1)}M`
-                  : v >= 1_000 ? `R$ ${(v / 1_000).toFixed(0)}k`
-                  : `R$ ${v.toFixed(0)}`
-                }
-                tick={{ fontSize: 9 }}
-                tickLine={false}
-                axisLine={false}
+        <ChartContainer
+          config={chartConfig}
+          style={{ height: alturaBase }}
+          className="w-full aspect-auto"
+        >
+          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 140, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
+            <XAxis
+              type="number"
+              tickFormatter={(v: number) =>
+                v >= 1_000_000 ? `R$ ${(v / 1_000_000).toFixed(1)}M`
+                : v >= 1_000 ? `R$ ${(v / 1_000).toFixed(0)}k`
+                : `R$ ${v.toFixed(0)}`
+              }
+              tick={{ fontSize: 9 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis
+              type="category"
+              dataKey="nome"
+              width={148}
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <ChartTooltip
+              formatter={(value: unknown) => {
+                const v = typeof value === 'number' ? formatarBRL(value) : String(value);
+                return [v, 'Valor Total'] as [string, string];
+              }}
+              contentStyle={{
+                fontSize: 12,
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+                color: 'var(--card-foreground)',
+              }}
+            />
+            <Bar
+              dataKey="valorTotal"
+              maxBarSize={28}
+              shape={(rawProps: unknown) => {
+                const p = rawProps as { x: number; y: number; width: number; height: number; classeAbc: string };
+                if (!p.width || p.width <= 0 || !p.height || p.height <= 0) return <g />;
+                return (
+                  <rect
+                    x={p.x}
+                    y={p.y}
+                    width={p.width}
+                    height={p.height}
+                    rx={4}
+                    ry={4}
+                    style={{ fill: COR_ABC[p.classeAbc] ?? COR_ABC['C'] }}
+                  />
+                );
+              }}
+            >
+              <LabelList
+                dataKey="valorTotal"
+                position="right"
+                style={{ fontSize: 9, fill: 'var(--muted-foreground)' }}
+                formatter={(v: unknown) => typeof v === 'number' ? formatarBRL(v) : String(v)}
               />
-              <YAxis
-                type="category"
-                dataKey="nome"
-                width={148}
-                tick={{ fontSize: 10 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                formatter={(value) => [typeof value === 'number' ? formatarBRL(value) : String(value), 'Valor Total']}
-                contentStyle={{
-                  fontSize: 12,
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  background: 'var(--card)',
-                  color: 'var(--card-foreground)',
-                }}
-              />
-              <Bar dataKey="valorTotal" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                <LabelList
-                  dataKey="valorTotal"
-                  position="right"
-                  style={{ fontSize: 9, fill: 'var(--muted-foreground)' }}
-                  formatter={(v: unknown) => typeof v === 'number' ? formatarBRL(v) : String(v)}
-                />
-                {data.map((entry, i) => (
-                  <Cell key={i} fill={COR_ABC[entry.classeAbc] ?? COR_ABC['C']} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+            </Bar>
+          </BarChart>
+        </ChartContainer>
         <div className="mt-3 flex items-center gap-6 justify-center">
           {(['A', 'B', 'C'] as const).map(cls => (
             <div key={cls} className="flex items-center gap-1.5 text-xs text-muted-foreground">
