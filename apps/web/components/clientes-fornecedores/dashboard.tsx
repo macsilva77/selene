@@ -10,17 +10,11 @@ import {
   CaretDownIcon,
   DownloadSimpleIcon,
 } from '@phosphor-icons/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Modal } from '@/components/ui/modal';
 import { useToast, ToastContainer } from '@/components/ui/toast';
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart';
 import {
   clientesFornecedoresApi,
   type Competencia,
@@ -77,13 +71,6 @@ function BadgeAbc({ classe }: { classe: string }) {
 }
 
 type Tab = 'individual' | 'grupo';
-
-const chartConfig = {
-  valorTotal: { label: 'Valor Total' },
-  A: { label: 'Classe A', color: 'hsl(var(--chart-2))' },
-  B: { label: 'Classe B', color: 'hsl(var(--chart-4))' },
-  C: { label: 'Classe C', color: 'hsl(var(--chart-1))' },
-} satisfies ChartConfig;
 
 /* ─── Seletor de período: dois selects (ano + mês) ──────────────────────── */
 
@@ -175,54 +162,61 @@ function GraficoBarras({ rows, titulo }: { rows: GraficoRow[]; titulo: string })
   );
   if (data.length === 0) return null;
 
-  const altura = data.length <= 5 ? 'h-52' : data.length <= 7 ? 'h-64' : 'h-80';
+  const alturaBase = data.length <= 5 ? 208 : data.length <= 7 ? 256 : 320;
 
   return (
     <Card className="border">
       <CardContent className="p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</p>
-        <ChartContainer config={chartConfig} className={`${altura} w-full`}>
-          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 140, bottom: 4, left: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-            <XAxis
-              type="number"
-              tickFormatter={(v: number) =>
-                v >= 1_000_000 ? `R$ ${(v / 1_000_000).toFixed(1)}M`
-                : v >= 1_000 ? `R$ ${(v / 1_000).toFixed(0)}k`
-                : `R$ ${v.toFixed(0)}`
-              }
-              tick={{ fontSize: 9 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              type="category"
-              dataKey="nome"
-              width={148}
-              tick={{ fontSize: 10 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => typeof value === 'number' ? formatarBRL(value) : String(value)}
-                />
-              }
-            />
-            <Bar dataKey="valorTotal" radius={[0, 4, 4, 0]} maxBarSize={28}>
-              <LabelList
-                dataKey="valorTotal"
-                position="right"
-                formatter={(v) => typeof v === 'number' ? formatarBRL(v) : String(v)}
-                className="fill-muted-foreground text-[9px]"
+        {/* ResponsiveContainer direto — sem ChartContainer do shadcn para evitar
+            que o CSS var(--color-valorTotal) indefinido sobrescreva os fills dos Cell */}
+        <div style={{ width: '100%', height: alturaBase }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} layout="vertical" margin={{ top: 4, right: 140, bottom: 4, left: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
+              <XAxis
+                type="number"
+                tickFormatter={(v: number) =>
+                  v >= 1_000_000 ? `R$ ${(v / 1_000_000).toFixed(1)}M`
+                  : v >= 1_000 ? `R$ ${(v / 1_000).toFixed(0)}k`
+                  : `R$ ${v.toFixed(0)}`
+                }
+                tick={{ fontSize: 9 }}
+                tickLine={false}
+                axisLine={false}
               />
-              {data.map((entry, i) => (
-                <Cell key={i} fill={COR_ABC[entry.classeAbc] ?? COR_ABC['C']} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ChartContainer>
+              <YAxis
+                type="category"
+                dataKey="nome"
+                width={148}
+                tick={{ fontSize: 10 }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                formatter={(value) => [typeof value === 'number' ? formatarBRL(value) : String(value), 'Valor Total']}
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: 8,
+                  border: '1px solid var(--border)',
+                  background: 'var(--card)',
+                  color: 'var(--card-foreground)',
+                }}
+              />
+              <Bar dataKey="valorTotal" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                <LabelList
+                  dataKey="valorTotal"
+                  position="right"
+                  style={{ fontSize: 9, fill: 'var(--muted-foreground)' }}
+                  formatter={(v: unknown) => typeof v === 'number' ? formatarBRL(v) : String(v)}
+                />
+                {data.map((entry, i) => (
+                  <Cell key={i} fill={COR_ABC[entry.classeAbc] ?? COR_ABC['C']} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
         <div className="mt-3 flex items-center gap-6 justify-center">
           {(['A', 'B', 'C'] as const).map(cls => (
             <div key={cls} className="flex items-center gap-1.5 text-xs text-muted-foreground">
