@@ -839,7 +839,14 @@ export function ClientesFornecedoresDashboard() {
       {!hasData && !carregandoPrincipal && (
         <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
           <BuildingsIcon size={40} />
-          <p className="text-sm">Selecione uma empresa e o período para iniciar a análise</p>
+          {cnpj && periodoInicio && periodoFim ? (
+            <p className="text-sm text-center">
+              Nenhum dado encontrado para este período.<br />
+              <span className="text-xs">Clique em <strong className="text-foreground">Reprocessar SPED</strong> para processar os arquivos desta empresa.</span>
+            </p>
+          ) : (
+            <p className="text-sm">Selecione uma empresa e o período para iniciar a análise</p>
+          )}
         </div>
       )}
 
