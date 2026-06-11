@@ -96,32 +96,32 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
       const indFormaTrib = (campos[4] ?? '').trim();
       formaTributacao = IND_FORMA_TRIB_MAP[indFormaTrib] ?? 'nao_identificado';
       isLucroReal = formaTributacao === 'lucro_real';
-    } else if (rec === 'L300' && campos.length >= 7) {
+    } else if (rec === 'L300' && campos.length >= 6) {
       // L300: |REG|NUM_ORD|COD_AGL|DESC_AGL|IND_DC|VL_CTA|
-      // fields[0]='' fields[1]=REG fields[2]=NUM_ORD fields[3]=COD_AGL fields[4]=DESC_AGL fields[5]=IND_DC fields[6]=VL_CTA
-      const indDc = (campos[5] ?? '').trim();
-      const vlCta = parseValorBr(campos[6] ?? '');
+      // campos[0]=REG  [1]=NUM_ORD  [2]=COD_AGL  [3]=DESC_AGL  [4]=IND_DC  [5]=VL_CTA
+      const indDc = (campos[4] ?? '').trim();
+      const vlCta = parseValorBr(campos[5] ?? '');
       if (indDc === 'C' && vlCta > maxCreditoL300) {
         maxCreditoL300 = vlCta;
       }
     } else if (rec === 'P200' && campos.length >= 4) {
       // P200: |REG|PER_APU|VL_RECITA_BRUTA|VL_BASE_CALC|...
-      // fields[0]='' fields[1]=REG fields[2]=PER_APU fields[3]=VL_RECITA_BRUTA
-      somaP200 += parseValorBr(campos[3] ?? '');
+      // campos[0]=REG  [1]=PER_APU  [2]=VL_RECITA_BRUTA  [3]=VL_BASE_CALC
+      somaP200 += parseValorBr(campos[2] ?? '');
     } else if (rec === 'M010' && campos.length >= 5) {
       // M010: |REG|COD_CONTA|DESC_CONTA|TIPO_CONTA|SLD_INI|IND_DC_SLD_INI|...
-      // fields[0]='' fields[1]=REG fields[2]=COD_CONTA fields[3]=DESC_CONTA fields[4]=TIPO_CONTA
-      const codConta = (campos[2] ?? '').trim();
-      const tipoConta = (campos[4] ?? '').trim();
+      // campos[0]=REG  [1]=COD_CONTA  [2]=DESC_CONTA  [3]=TIPO_CONTA
+      const codConta = (campos[1] ?? '').trim();
+      const tipoConta = (campos[3] ?? '').trim();
       if (codConta) {
         m010Map.set(codConta, tipoConta);
       }
     } else if (rec === 'M500' && campos.length >= 5) {
       // M500: |REG|COD_CONTA|VL_SLD_FIN|IND_DC_SLD_FIN|...
-      // fields[0]='' fields[1]=REG fields[2]=COD_CONTA fields[3]=VL_SLD_FIN fields[4]=IND_DC_SLD_FIN
-      const codConta = (campos[2] ?? '').trim();
-      const vlSldFin = parseValorBr(campos[3] ?? '');
-      const indDcSldFin = (campos[4] ?? '').trim();
+      // campos[0]=REG  [1]=COD_CONTA  [2]=VL_SLD_FIN  [3]=IND_DC_SLD_FIN
+      const codConta = (campos[1] ?? '').trim();
+      const vlSldFin = parseValorBr(campos[2] ?? '');
+      const indDcSldFin = (campos[3] ?? '').trim();
 
       if (indDcSldFin === 'D' && vlSldFin > 0) {
         const tipoConta = m010Map.get(codConta) ?? '';
