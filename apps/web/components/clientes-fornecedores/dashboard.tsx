@@ -109,6 +109,13 @@ function PeriodSelect({
     [competencias, anoAtual],
   );
 
+  const naoProcessados = useMemo(
+    () => new Set(
+      competencias.filter(c => c.ano === anoAtual && c.status === 'NÃO_PROCESSADO').map(c => c.mes),
+    ),
+    [competencias, anoAtual],
+  );
+
   const cls = 'h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50';
 
   const handleAno = (novoAno: number) => {
@@ -142,7 +149,11 @@ function PeriodSelect({
           className={`${cls} flex-1`}
         >
           <option value="">Mês</option>
-          {meses.map(m => <option key={m} value={m}>{MESES[m - 1]}</option>)}
+          {meses.map(m => (
+            <option key={m} value={m}>
+              {MESES[m - 1]}{naoProcessados.has(m) ? ' *' : ''}
+            </option>
+          ))}
         </select>
       </div>
     </div>
@@ -374,20 +385,6 @@ export function ClientesFornecedoresDashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const reprocessarSped = useCallback(async () => {
-    if (reprocessando) return;
-    setReprocessando(true);
-    try {
-      const res = await clientesFornecedoresApi.reprocessar();
-      toastSuccess(`${res.mensagem} — aguarde o processamento em background`);
-      setTimeout(() => carregarEmpresas(), 5000);
-    } catch {
-      toastError('Erro ao iniciar reprocessamento');
-    } finally {
-      setReprocessando(false);
-    }
-  }, [reprocessando, carregarEmpresas, toastSuccess, toastError]);
-
   /* ── Filtros ── */
   const [cnpj, setCnpj]                   = useState('');
   const [competencias, setCompetencias]   = useState<Competencia[]>([]);
@@ -460,10 +457,12 @@ export function ClientesFornecedoresDashboard() {
       const data = await clientesFornecedoresApi.competencias(cnpjValor);
       setCompetencias(data);
       if (data.length > 0) {
-        const primeiro = data[0];
-        const ultimo   = data[data.length - 1];
-        setPeriodoInicio(`${primeiro.ano}-${String(primeiro.mes).padStart(2, '0')}`);
-        setPeriodoFim(`${ultimo.ano}-${String(ultimo.mes).padStart(2, '0')}`);
+        // Prefere inicializar no range dos períodos já processados;
+        // se nenhum ainda foi processado, usa o range completo disponível.
+        const processados = data.filter(c => c.status !== 'NÃO_PROCESSADO');
+        const base = processados.length > 0 ? processados : data;
+        setPeriodoInicio(`${base[0].ano}-${String(base[0].mes).padStart(2, '0')}`);
+        setPeriodoFim(`${base[base.length - 1].ano}-${String(base[base.length - 1].mes).padStart(2, '0')}`);
       }
     } catch {
       toastError('Erro ao carregar competências disponíveis');
@@ -471,6 +470,27 @@ export function ClientesFornecedoresDashboard() {
       setCarregandoComp(false);
     }
   }, [toastError]);
+
+  const reprocessarSped = useCallback(async () => {
+    if (reprocessando) return;
+    setReprocessando(true);
+    try {
+      const res = await clientesFornecedoresApi.reprocessar();
+      toastSuccess(`${res.mensagem} — aguarde o processamento em background`);
+      // Reload em 5s: cobre processamentos rápidos (cache GCS quente)
+      // Reload em 20s: cobre arquivos maiores e múltiplas competências
+      const reload = (recarregarComp: boolean) => {
+        carregarEmpresas();
+        if (recarregarComp && cnpj) void carregarCompetencias(cnpj);
+      };
+      setTimeout(() => reload(true),  5_000);
+      setTimeout(() => reload(false), 20_000);
+    } catch {
+      toastError('Erro ao iniciar reprocessamento');
+    } finally {
+      setReprocessando(false);
+    }
+  }, [reprocessando, cnpj, carregarEmpresas, carregarCompetencias, toastSuccess, toastError]);
 
   /* ── Buscar ranking ── */
   const buscar = useCallback(async () => {

@@ -42,35 +42,43 @@ export class ClientesFornecedoresController {
   ) {}
 
   /**
-   * Lista todas as empresas que possuem SPEDs processados no tenant.
-   * Usado pelo frontend para popular o select de empresa.
+   * Lista todas as empresas do tenant que possuem arquivos EFD_ICMS_IPI elegíveis
+   * (independente de já terem sido processados). Usado pelo frontend para popular o select.
    */
   @Get('empresas')
   async listarEmpresas(@CurrentUser('tenantId') tenantId: string) {
-    const comps = await this.prisma.clientesFornecedoresCompetencia.findMany({
-      where: { tenantId, status: 'PROCESSADO' },
+    const todasEmpresas = await this.prisma.empresa.findMany({
+      where: { tenantId },
+      select: { id: true, cnpj: true, nome: true, nomeFantasia: true },
+    });
+
+    if (todasEmpresas.length === 0) return [];
+
+    const cnpjs = todasEmpresas.map(e => e.cnpj);
+
+    const comSped = await this.prisma.obrigacaoAcessoria.findMany({
+      where: {
+        cnpj:                { in: cnpjs },
+        tipoObrigacao:       'EFD_ICMS_IPI',
+        statusProcessamento: { in: ['Processado', 'Recebido', 'Erro_Hash_Divergente'] },
+        versaoAtual:         true,
+      },
       distinct: ['cnpj'],
-      select: { cnpj: true, empresaId: true },
+      select:   { cnpj: true },
     });
 
-    if (comps.length === 0) return [];
+    const cnpjsComSped = new Set(comSped.map(c => c.cnpj));
 
-    const empresaIds = comps.map(c => c.empresaId);
-    const empresas = await this.prisma.empresa.findMany({
-      where: { id: { in: empresaIds } },
-      select: { id: true, nome: true, nomeFantasia: true },
-    });
-
-    const nomeMap = new Map(empresas.map(e => [e.id, e.nomeFantasia || e.nome]));
-
-    return comps
-      .map(c => ({ cnpj: c.cnpj, razaoSocial: nomeMap.get(c.empresaId) ?? c.cnpj }))
+    return todasEmpresas
+      .filter(e => cnpjsComSped.has(e.cnpj))
+      .map(e => ({ cnpj: e.cnpj, razaoSocial: e.nomeFantasia || e.nome }))
       .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial, 'pt-BR'));
   }
 
   /**
-   * Lista as competências (meses) já processadas para uma empresa.
-   * Usado pelo frontend para popular os seletores de período.
+   * Lista as competências (meses) disponíveis para uma empresa.
+   * Fonte primária: arquivos EFD_ICMS_IPI em ObrigacaoAcessoria.
+   * Enriquece com qtd/status dos meses já processados em cf_competencias.
    */
   @Get('competencias')
   async competencias(
@@ -78,18 +86,56 @@ export class ClientesFornecedoresController {
     @Query('cnpj') cnpj: string,
   ) {
     if (!cnpj) throw new BadRequestException('cnpj é obrigatório');
-    return this.prisma.clientesFornecedoresCompetencia.findMany({
+
+    // Garante que o CNPJ pertence ao tenant
+    const empresa = await this.prisma.empresa.findFirst({
       where: { tenantId, cnpj },
-      select: {
-        ano:             true,
-        mes:             true,
-        qtdClientes:     true,
-        qtdFornecedores: true,
-        status:          true,
-        processadoEm:    true,
-      },
-      orderBy: [{ ano: 'asc' }, { mes: 'asc' }],
+      select: { id: true },
     });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    const [arquivos, processadas] = await Promise.all([
+      this.prisma.obrigacaoAcessoria.findMany({
+        where: {
+          cnpj,
+          tipoObrigacao:       'EFD_ICMS_IPI',
+          statusProcessamento: { in: ['Processado', 'Recebido', 'Erro_Hash_Divergente'] },
+          versaoAtual:         true,
+        },
+        select:   { dataInicial: true },
+        orderBy:  { dataInicial: 'asc' },
+      }),
+      this.prisma.clientesFornecedoresCompetencia.findMany({
+        where:  { tenantId, cnpj },
+        select: { ano: true, mes: true, qtdClientes: true, qtdFornecedores: true, status: true, processadoEm: true },
+      }),
+    ]);
+
+    const processadasMap = new Map(
+      processadas.map(p => [`${p.ano}-${p.mes}`, p]),
+    );
+
+    const vistos = new Set<string>();
+    return arquivos
+      .filter(a => {
+        const key = `${a.dataInicial.getFullYear()}-${a.dataInicial.getMonth() + 1}`;
+        if (vistos.has(key)) return false;
+        vistos.add(key);
+        return true;
+      })
+      .map(a => {
+        const ano = a.dataInicial.getFullYear();
+        const mes = a.dataInicial.getMonth() + 1;
+        const p   = processadasMap.get(`${ano}-${mes}`);
+        return {
+          ano,
+          mes,
+          qtdClientes:     p?.qtdClientes     ?? 0,
+          qtdFornecedores: p?.qtdFornecedores ?? 0,
+          status:          p?.status          ?? 'NÃO_PROCESSADO',
+          processadoEm:    p?.processadoEm?.toISOString() ?? null,
+        };
+      });
   }
 
   /**
@@ -231,9 +277,9 @@ export class ClientesFornecedoresController {
     const cnpjToId = new Map(empresas.map(e => [e.cnpj, e.id]));
     const cnpjs    = [...cnpjToId.keys()];
 
-    // Inclui 'Recebido' além de 'Processado' — arquivos recém-enviados podem
-    // ainda não ter passado pelo job de verificação de hash, mas o GCS já tem o arquivo.
-    const statusElegiveis = ['Processado', 'Recebido'];
+    // Inclui 'Recebido' (arquivo chegou mas hash ainda não verificado) e
+    // 'Erro_Hash_Divergente' (hash falhou mas arquivo existe no GCS — vale tentar).
+    const statusElegiveis = ['Processado', 'Recebido', 'Erro_Hash_Divergente'];
 
     const icmsFiles = await this.prisma.obrigacaoAcessoria.findMany({
       where: {
@@ -245,6 +291,20 @@ export class ClientesFornecedoresController {
       select: { cnpj: true, dataInicial: true, caminhoBucket: true },
       orderBy: { dataInicial: 'asc' },
     });
+
+    // Diagnóstico: quais CNPJs têm ICMS/IPI e quais não têm
+    const cnpjsComIcms = new Set(icmsFiles.map(f => f.cnpj));
+    const cnpjsSemIcms = cnpjs.filter(c => !cnpjsComIcms.has(c));
+    this.logger.log(
+      `[Reprocessar] tenant=${tenantId} — ${empresas.length} empresa(s), ` +
+      `${icmsFiles.length} arquivo(s) EFD_ICMS_IPI elegível(is)`,
+    );
+    if (cnpjsSemIcms.length > 0) {
+      this.logger.warn(
+        `[Reprocessar] ${cnpjsSemIcms.length} CNPJ(s) sem EFD_ICMS_IPI elegível: ` +
+        cnpjsSemIcms.join(', '),
+      );
+    }
 
     // Busca todos os arquivos de Contribuições de uma vez (evita N+1)
     const contribFiles = await this.prisma.obrigacaoAcessoria.findMany({
@@ -311,18 +371,23 @@ export class ClientesFornecedoresController {
 
   /**
    * Resolve o empresaId a partir do CNPJ da empresa.
-   * Lança 404 se não há nenhuma competência processada para esse CNPJ no tenant.
+   * Tenta primeiro em cf_competencias (fast path); fallback para empresa table.
+   * Lança 404 apenas se o CNPJ não existir no tenant.
    */
   private async resolverEmpresaId(tenantId: string, cnpj: string): Promise<string> {
     const comp = await this.prisma.clientesFornecedoresCompetencia.findFirst({
       where: { tenantId, cnpj },
       select: { empresaId: true },
     });
-    if (!comp) {
-      throw new NotFoundException(
-        `Empresa CNPJ ${cnpj} não possui dados de clientes/fornecedores processados`,
-      );
+    if (comp) return comp.empresaId;
+
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { tenantId, cnpj },
+      select: { id: true },
+    });
+    if (!empresa) {
+      throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada neste tenant`);
     }
-    return comp.empresaId;
+    return empresa.id;
   }
 }
