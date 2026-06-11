@@ -135,7 +135,7 @@ export class ClientesFornecedoresController {
         const processadasSet = new Set(proc.map(p => p.key));
         const ultimaProcessadoEm = proc
           .map(p => p.processadoEm)
-          .filter(Boolean)
+          .filter((a): a is string => a !== null)
           .sort((a, b) => a.localeCompare(b))
           .at(-1) ?? null;
         return {
