@@ -76,6 +76,81 @@ export class ClientesFornecedoresController {
   }
 
   /**
+   * Retorna o status de processamento CF de todas as empresas do tenant.
+   * Cada empresa mostra: total de competências EFD disponíveis, quantas já
+   * foram processadas e quantas ainda estão pendentes.
+   */
+  @Get('status-processamento')
+  async statusProcessamento(@CurrentUser('tenantId') tenantId: string) {
+    const todasEmpresas = await this.prisma.empresa.findMany({
+      where: { tenantId },
+      select: { id: true, cnpj: true, nome: true, nomeFantasia: true },
+    });
+    if (todasEmpresas.length === 0) return [];
+
+    const cnpjs = todasEmpresas.map(e => e.cnpj);
+
+    const statusElegiveis = ['Processado', 'Recebido', 'Erro_Hash_Divergente'] as const;
+
+    const [arquivos, processadas] = await Promise.all([
+      this.prisma.obrigacaoAcessoria.findMany({
+        where: {
+          cnpj:                { in: cnpjs },
+          tipoObrigacao:       'EFD_ICMS_IPI',
+          statusProcessamento: { in: [...statusElegiveis] },
+          versaoAtual:         true,
+        },
+        select: { cnpj: true, dataInicial: true },
+      }),
+      this.prisma.clientesFornecedoresCompetencia.findMany({
+        where:  { tenantId },
+        select: { cnpj: true, ano: true, mes: true, status: true, processadoEm: true },
+      }),
+    ]);
+
+    // Deduplica competências disponíveis por CNPJ+ano+mes
+    const disponiveisByCnpj = new Map<string, Set<string>>();
+    for (const a of arquivos) {
+      const ano = a.dataInicial.getFullYear();
+      const mes = a.dataInicial.getMonth() + 1;
+      const key = `${ano}-${mes}`;
+      if (!disponiveisByCnpj.has(a.cnpj)) disponiveisByCnpj.set(a.cnpj, new Set());
+      disponiveisByCnpj.get(a.cnpj)!.add(key);
+    }
+
+    // Agrupa processadas por CNPJ
+    const processadasByCnpj = new Map<string, { key: string; processadoEm: string | null }[]>();
+    for (const p of processadas) {
+      if (p.status !== 'PROCESSADO') continue;
+      const key = `${p.ano}-${p.mes}`;
+      if (!processadasByCnpj.has(p.cnpj)) processadasByCnpj.set(p.cnpj, []);
+      processadasByCnpj.get(p.cnpj)!.push({ key, processadoEm: p.processadoEm?.toISOString() ?? null });
+    }
+
+    return todasEmpresas
+      .filter(e => disponiveisByCnpj.has(e.cnpj))
+      .map(e => {
+        const disponiveis = disponiveisByCnpj.get(e.cnpj)!;
+        const proc        = processadasByCnpj.get(e.cnpj) ?? [];
+        const processadasSet = new Set(proc.map(p => p.key));
+        const ultimaProcessadoEm = proc
+          .map(p => p.processadoEm)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b))
+          .at(-1) ?? null;
+        return {
+          cnpj:             e.cnpj,
+          razaoSocial:      e.nomeFantasia || e.nome,
+          totalDisponivel:  disponiveis.size,
+          processadas:      processadasSet.size,
+          pendentes:        disponiveis.size - processadasSet.size,
+          ultimaAtualizacao: ultimaProcessadoEm,
+        };
+      })
+      .sort((a, b) => b.pendentes - a.pendentes || a.razaoSocial.localeCompare(b.razaoSocial, 'pt-BR'));
+  }
+
+  /**
    * Lista as competências (meses) disponíveis para uma empresa.
    * Fonte primária: arquivos EFD_ICMS_IPI em ObrigacaoAcessoria.
    * Enriquece com qtd/status dos meses já processados em cf_competencias.

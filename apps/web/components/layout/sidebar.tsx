@@ -22,6 +22,7 @@ import {
   FilesIcon,
   SlidersIcon,
   UsersThreeIcon,
+  ArrowsClockwiseIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -66,7 +67,8 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'fiscal-analytics',
     label: 'Análise Fiscal',
     items: [
-      { href: '/clientes-fornecedores', icon: UsersThreeIcon, label: 'Clientes e Fornecedores' },
+      { href: '/clientes-fornecedores',             icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
+      { href: '/clientes-fornecedores/processamento', icon: ArrowsClockwiseIcon, label: 'Processamento CF' },
     ],
   },
   {

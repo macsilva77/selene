@@ -93,6 +93,15 @@ export interface EmpresaComSped {
   razaoSocial: string;
 }
 
+export interface StatusProcessamentoEmpresa {
+  cnpj:              string;
+  razaoSocial:       string;
+  totalDisponivel:   number;
+  processadas:       number;
+  pendentes:         number;
+  ultimaAtualizacao: string | null;
+}
+
 /* ─── API calls ──────────────────────────────────────────────────────────── */
 
 export const clientesFornecedoresApi = {
@@ -119,6 +128,10 @@ export const clientesFornecedoresApi = {
   /** Drill-down dos CNPJs individuais de um grupo econômico */
   drillDown: (params: DrillDownParams): Promise<DrillDownRow[]> =>
     api.get('/clientes-fornecedores/drill-down', { params }).then(r => r.data),
+
+  /** Status de processamento CF por empresa */
+  statusProcessamento: (): Promise<StatusProcessamentoEmpresa[]> =>
+    api.get('/clientes-fornecedores/status-processamento').then(r => r.data),
 
   /** Reprocessa SPEDs disponíveis em background — retorna total de competências enfileiradas */
   reprocessar: (): Promise<{ mensagem: string; status: string; total: number }> =>
