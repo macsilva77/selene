@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService }      from '../../database/prisma.service';
-import { P02DreService }      from './p02/p02-dre.service';
+import { P02DreService, type DreResult } from './p02/p02-dre.service';
 import { P04Service }         from './p04/p04.service';
 import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
 import {
@@ -129,7 +129,11 @@ export class AnaliseCreditoCalcularService {
     return null;
   }
 
-  async ecfDreData(empresaId: string, exercicio: number, regime: string | null): Promise<DreData | null> {
+  async ecfDreData(
+    empresaId: string,
+    exercicio: number,
+    regime: string | null,
+  ): Promise<{ data: DreData; result: DreResult } | null> {
     const candidatos = this.registrosPorRegime(regime, 'dre');
     for (const registroEcf of candidatos) {
       try {
@@ -142,9 +146,9 @@ export class AnaliseCreditoCalcularService {
         const res = await this.dreService.montar(empresaId, exercicio, regime, trimestre);
         if (res.linhas.length === 0) continue;
 
-        const dre: DreData = new Map();
-        for (const row of res.linhas) dre.set(row.linhaDre, row.valor);
-        return dre;
+        const data: DreData = new Map();
+        for (const row of res.linhas) data.set(row.linhaDre, row.valor);
+        return { data, result: res };
       } catch { continue; }
     }
     return null;
@@ -169,24 +173,28 @@ export class AnaliseCreditoCalcularService {
     const resultados: CalcularResultado[] = [];
 
     for (const ano of anos) {
-      const [bal, dre] = await Promise.all([
+      const [bal, drePair] = await Promise.all([
         this.ecfBalData(empresa.id, ano, empresa.regimeTributario),
         this.ecfDreData(empresa.id, ano, empresa.regimeTributario),
       ]);
 
-      if (!bal || !dre) {
+      if (!bal || !drePair) {
         resultados.push({ exercicio: ano, indicadores: 0, comDados: false });
         continue;
       }
 
-      const [balAnt, dreAnt] = await Promise.all([
+      const dre = drePair.data;
+      const dreResult = drePair.result;
+
+      const [balAnt, dreAntPair] = await Promise.all([
         this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
         this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),
       ]);
 
-      const indicadores = calcularIndicadores(bal, dre, balAnt ?? undefined, dreAnt ?? undefined, 1);
+      const dreAnt = dreAntPair?.data;
+
+      const indicadores = calcularIndicadores(bal, dre, balAnt ?? undefined, dreAnt, 1);
       const estrutura   = calcularEstruturaCapital(bal, dre);
-      const dreResult   = await this.dreService.montar(empresa.id, ano, empresa.regimeTributario);
 
       await this.prisma.$transaction(async tx => {
         await tx.creditoIndicador.deleteMany({ where: { empresaId: empresa.id, exercicio: ano } });

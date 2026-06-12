@@ -38,7 +38,11 @@ const L300_PREFIX_MAP: Array<{ prefixo: string; linha: LinhaDre }> = [
   { prefixo: '3.01.01.01.01', linha: 'receita_bruta'     },
   { prefixo: '3.01.01.01.02', linha: 'deducoes'           },
   { prefixo: '3.01.01.01',    linha: 'receita_liquida'    },
-  { prefixo: '3.01.01.03',    linha: 'cmv'                },
+  // Plano referencial RFB L300 (Lucro Real):
+  //   3.01.01.02 = (-) Custo dos Produtos/Serviços/Mercadorias Vendidos (CMV/CPV)
+  //   3.01.01.03 = (=) Lucro Bruto  ← era mapeado como cmv por engano
+  { prefixo: '3.01.01.02',    linha: 'cmv'                },
+  { prefixo: '3.01.01.03',    linha: 'lucro_bruto'        },
   { prefixo: '3.01.01.04.01', linha: 'desp_vendas'        },
   { prefixo: '3.01.01.04.02', linha: 'desp_admin'         },
   { prefixo: '3.01.01.04.03', linha: 'outras_desp'        },
@@ -212,6 +216,22 @@ export class P02DreService {
     }
     if (deprec.greaterThan(0)) acc.set('depreciacao', deprec);
     else acc.set('depreciacao', new Decimal(0));
+
+    // Despesas financeiras: fallback por descrição quando o prefixo 3.01.01.05.02 não encontrou nada.
+    // null (ausente) é diferente de 0 (empresa sem dívida); se o fallback também não achar,
+    // cobertura_juros permanece null — nunca exibir 0 como se não houvesse despesa financeira.
+    if (!acc.has('desp_financeiras') || acc.get('desp_financeiras')!.isZero()) {
+      const despFinDesc = registros
+        .filter(r => {
+          const d = r.descricao.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+          return d.includes('despesa financeira') || d.includes('juro pago') ||
+                 d.includes('encargo financeiro') || d.includes('juros sobre emprestimo') ||
+                 d.includes('juros e encargos');
+        })
+        .reduce((s, r) => s.add(abs(r.valor)), new Decimal(0));
+      if (despFinDesc.greaterThan(0)) acc.set('desp_financeiras', despFinDesc);
+      // Se ainda não encontrado, mantém ausente (não seta zero) para que cobertura_juros fique null
+    }
 
     // ── Caminho primário: top-down a partir da Receita Líquida ────────────────
     // Mais robusto que o add-back (LL + IR + DespFin - RecFin) porque não depende
