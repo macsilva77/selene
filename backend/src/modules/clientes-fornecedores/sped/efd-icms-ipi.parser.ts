@@ -46,17 +46,12 @@ const IDX_C100 = { IND_OPER: 2, COD_PART: 4, COD_SIT: 6, VL_DOC: 12 } as const;
 const IDX_D100 = { IND_OPER: 2, COD_PART: 4, COD_SIT: 6, VL_DOC: 15 } as const;
 
 export function parseEfdIcmsIpi(buffer: Buffer): FatoParticipante[] {
-  const lines = buffer.toString('latin1').split(/\r?\n/);
-
   const participantes = new Map<string, Participante>();
   // chave: `${codPart}|${CLIENTE|FORNECEDOR}`
   const agregados = new Map<string, { valor: number; qtd: number }>();
 
-  for (const raw of lines) {
-    const trimmed = raw.trimEnd();
-    if (!trimmed) continue;
-
-    const fields = trimmed.split('|');
+  for (const raw of iterLines(buffer)) {
+    const fields = raw.split('|');
     const reg = fields[1];
 
     if (reg === '0150') {
@@ -78,6 +73,23 @@ export function parseEfdIcmsIpi(buffer: Buffer): FatoParticipante[] {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Itera linhas do buffer latin1 sem criar a string gigante intermediária.
+ * Reduz pico de memória de ~3× para ~1× o tamanho do arquivo.
+ */
+export function* iterLines(buf: Buffer): Generator<string> {
+  let start = 0;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === 0x0a) {
+      // strip \r de \r\n
+      const end = i > 0 && buf[i - 1] === 0x0d ? i - 1 : i;
+      if (end > start) yield buf.toString('latin1', start, end);
+      start = i + 1;
+    }
+  }
+  if (start < buf.length) yield buf.toString('latin1', start);
+}
 
 function acumular(
   fields: string[],

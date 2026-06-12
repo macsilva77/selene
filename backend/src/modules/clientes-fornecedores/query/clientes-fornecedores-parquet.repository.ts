@@ -52,12 +52,35 @@ export interface DrillDownRow {
  *   - Valores do usuário (empresaId, tipo, cnpj, cnpjRaiz) usam parâmetros posicionais $1, $2…
  *   - topN é validado como inteiro positivo antes de ser interpolado no LIMIT.
  */
+// Cache de buffers Parquet — evita re-download em queries repetidas do mesmo período.
+// TTL de 5 min: query-chains do mesmo usuário (ranking + por-raiz + drill-down) reusam.
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface BufferCacheEntry { buf: Buffer; expiry: number }
+
 @Injectable()
 export class ClientesFornecedoresParquetRepository {
+  private readonly bufferCache = new Map<string, BufferCacheEntry>();
+
   constructor(
     private readonly duckdb: DuckDbService,
     private readonly gcs: ClientesFornecedoresGcsService,
   ) {}
+
+  private async downloadOrCache(uri: string): Promise<Buffer> {
+    const now = Date.now();
+    const cached = this.bufferCache.get(uri);
+    if (cached && now < cached.expiry) return cached.buf;
+    // Evict expired on growth
+    if (this.bufferCache.size > 100) {
+      for (const [k, v] of this.bufferCache) {
+        if (now > v.expiry) this.bufferCache.delete(k);
+      }
+    }
+    const buf = await this.gcs.downloadFromUri(uri);
+    this.bufferCache.set(uri, { buf, expiry: now + CACHE_TTL_MS });
+    return buf;
+  }
 
   // ─── Top N / ranking completo ─────────────────────────────────────────────
 
@@ -215,7 +238,7 @@ export class ClientesFornecedoresParquetRepository {
   ): Promise<T> {
     const tmpFiles: string[] = [];
     try {
-      const buffers = await Promise.all(gcsUris.map((uri) => this.gcs.downloadFromUri(uri)));
+      const buffers = await Promise.all(gcsUris.map((uri) => this.downloadOrCache(uri)));
       for (const buf of buffers) {
         const fp = path.join(os.tmpdir(), `selene-cf-qry-${randomUUID()}.parquet`);
         await fs.writeFile(fp, buf);

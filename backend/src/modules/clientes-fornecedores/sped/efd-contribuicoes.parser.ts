@@ -16,7 +16,7 @@
  *   |F100|IND_OPER|CNPJ|DT_EMIS|VL_DOC|...|
  */
 
-import { FatoParticipante, parseBr } from './efd-icms-ipi.parser';
+import { FatoParticipante, parseBr, iterLines } from './efd-icms-ipi.parser';
 
 // Índices após split('|')
 const IDX_0150 = { COD_PART: 2, NOME: 3, CNPJ: 5 } as const;
@@ -34,8 +34,6 @@ interface Participante {
 }
 
 export function parseEfdContribuicoes(buffer: Buffer): FatoParticipante[] {
-  const lines = buffer.toString('latin1').split(/\r?\n/);
-
   // Mapa de participantes do 0150 (por COD_PART para A100)
   const partPorCodigo = new Map<string, Participante>();
   // Mapa reverso CNPJ→Participante (para lookup de F100)
@@ -44,11 +42,8 @@ export function parseEfdContribuicoes(buffer: Buffer): FatoParticipante[] {
   // chave: `${codPart|cnpj}|${CLIENTE|FORNECEDOR}`
   const agregados = new Map<string, { valor: number; qtd: number; part: Participante }>();
 
-  for (const raw of lines) {
-    const trimmed = raw.trimEnd();
-    if (!trimmed) continue;
-
-    const fields = trimmed.split('|');
+  for (const raw of iterLines(buffer)) {
+    const fields = raw.split('|');
     const reg = fields[1];
 
     if (reg === '0150') {
