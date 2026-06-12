@@ -6,7 +6,7 @@
  *   Positivo = valor bruto da linha (sempre >= 0)
  *   A fórmula de cálculo é responsabilidade de quem lê tb_dre (P03/P05).
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { EcfDataSourceService } from '../infrastructure/ecf-data-source.service';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -76,6 +76,8 @@ function abs(d: Decimal): Decimal { return d.isNegative() ? d.negated() : d; }
 
 @Injectable()
 export class P02DreService {
+  private readonly logger = new Logger(P02DreService.name);
+
   constructor(
     private readonly prisma:        PrismaService,
     private readonly ecfDataSource: EcfDataSourceService,
@@ -95,6 +97,7 @@ export class P02DreService {
 
     for (const registroEcf of candidatos) {
       const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
+      this.logger.log(`[DIAG-DRE] empresaId=${empresaId} exercicio=${exercicio} trimestre=${trimestre ?? 'n/a'} registroEcf=${registroEcf} rows=${rows.length}`);
       if (rows.length === 0) continue;
 
       // Mapeia para o formato interno (valor como Decimal)
@@ -104,10 +107,11 @@ export class P02DreService {
         valor:       new Decimal(r.valor),
       }));
 
-      if (registroEcf === 'L300') return this.montarDeL300(registros);
+      if (registroEcf === 'L300') return this.montarDeL300(registros, empresaId, exercicio);
       return this.montarDeEcfKeywords(registros, registroEcf);
     }
 
+    this.logger.log(`[DIAG-DRE] empresaId=${empresaId} exercicio=${exercicio} → fallback ECD`);
     return this.montarDeEcd(empresaId, exercicio);
   }
 
@@ -126,8 +130,18 @@ export class P02DreService {
 
   // ─── Fonte L300 (Lucro Real — mapeamento por prefixo de código) ──────────────
 
-  private montarDeL300(registros: { linhaCodigo: string; descricao: string; valor: Decimal }[]): DreResult {
+  private montarDeL300(
+    registros: { linhaCodigo: string; descricao: string; valor: Decimal }[],
+    diagEmpresaId = '',
+    diagExercicio = 0,
+  ): DreResult {
     const alertas: string[] = [];
+
+    // LOG DIAG: dump de todas as linhas L300 brutas (código, descrição, valor com sinal)
+    this.logger.log(
+      `[DIAG-DRE] L300 raw rows (empresaId=${diagEmpresaId} exercicio=${diagExercicio}) total=${registros.length}:\n` +
+      registros.map(r => `  ${r.linhaCodigo.padEnd(25)} | ${String(r.valor.toFixed(2)).padStart(18)} | ${r.descricao.slice(0, 60)}`).join('\n'),
+    );
 
     // Agrupa candidatos por linha DRE e depois usa SOMENTE o nó de menor
     // profundidade (nó pai/raiz da hierarquia), que já é o valor agregado.
@@ -146,6 +160,13 @@ export class P02DreService {
 
     const acc = new Map<LinhaDre, Decimal>();
     for (const [linha, r] of candidatos) acc.set(linha, abs(r.valor));
+
+    // LOG DIAG: resultado do prefix-match
+    this.logger.log(
+      `[DIAG-DRE] L300 prefix-match (empresaId=${diagEmpresaId} exercicio=${diagExercicio}):\n` +
+      [...candidatos.entries()].map(([l, r]) => `  ${l.padEnd(20)} ← ${r.linhaCodigo.padEnd(25)} valor_bruto=${r.valor.toFixed(2)} abs=${abs(r.valor).toFixed(2)}`).join('\n') +
+      (candidatos.size === 0 ? '  (nenhum match — prefixos não encontrados nos códigos do ECF)' : ''),
+    );
 
     // lucro_liquido: nó raiz (menor quantidade de segmentos)
     if (!acc.has('lucro_liquido')) {
@@ -232,6 +253,13 @@ export class P02DreService {
       if (despFinDesc.greaterThan(0)) acc.set('desp_financeiras', despFinDesc);
       // Se ainda não encontrado, mantém ausente (não seta zero) para que cobertura_juros fique null
     }
+
+    // LOG DIAG: estado do acc antes de calcular EBIT/EBITDA
+    this.logger.log(
+      `[DIAG-DRE] acc pré-ebitda:\n` +
+      [...acc.entries()].map(([k, v]) => `  ${k.padEnd(20)} = ${v.toFixed(2)}`).join('\n') +
+      `\n  deprec=${deprec.toFixed(2)}`,
+    );
 
     // ── Caminho primário: top-down a partir da Receita Líquida ────────────────
     // Mais robusto que o add-back (LL + IR + DespFin - RecFin) porque não depende
