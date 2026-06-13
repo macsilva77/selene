@@ -118,6 +118,11 @@ function processarBP(
 
 // DRE: L300 (Lucro Real) | P150 (Lucro Presumido/Arbitrado) | U150 (Imunes/Isentas)
 // Sinal: C = positivo (receita), D = negativo (despesa/custo)
+
+// [FASE0-DRE] Contador para logar apenas as primeiras 3 linhas L300 por arquivo
+let _fase0DreRowCount = 0;
+let _fase0DreLoggedFile = '';
+
 function processarDRE(
   reg: RegistroEcfDRE,
   campos: string[],
@@ -129,13 +134,22 @@ function processarDRE(
   const cod  = (campos[1] ?? '').trim();
   const desc = (campos[2] ?? '').trim();
   try {
+    // [FASE0-DRE] Log estrutural: mostra TODOS os campos brutos das primeiras 3 linhas L300
+    if (reg === 'L300' && _fase0DreRowCount < 3) {
+      console.log(
+        `[FASE0-DRE] campos brutos (row ${_fase0DreRowCount + 1}/3):\n` +
+        campos.map((v, i) => `  [${i}]=${JSON.stringify(v)}`).join('\n'),
+      );
+      _fase0DreRowCount++;
+    }
+
     registros.push({
       registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc,
       indCta: null, nivel: null,
       saldoAnterior: 0, naturezaAnterior: 'C',
       totalDebitos: null, totalCreditos: null,
       valor: valorComSinal(campos, 7, 8, 'C'),
-      naturezaFinal: 'C',
+      naturezaFinal: (campos[8] ?? 'C').trim() || 'C',
       status: 'ok',
     });
   } catch {
@@ -201,6 +215,9 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
       razaoSocial = (campos[4] ?? '').trim();
       if (!regimeTributario)
         regimeTributario = IND_TRIB_MAP[(campos[6] ?? '').trim()] ?? null;
+      // [FASE0-DRE] Logar versão do leiaute (COD_VER_LC = campos[2]) e total de campos
+      _fase0DreRowCount = 0; // reset por arquivo
+      console.log(`[FASE0-DRE] 0000: campos.length=${campos.length} COD_VER_LC=${campos[2]?.trim() ?? 'n/a'} CNPJ=${campos[3]?.trim() ?? 'n/a'}`);
 
     } else if (rec === '0010' && campos.length >= 5) {
       regimeTributario = IND_FORMA_TRIB_MAP[(campos[4] ?? '').trim()] ?? regimeTributario;

@@ -137,10 +137,12 @@ export class P02DreService {
   ): DreResult {
     const alertas: string[] = [];
 
-    // LOG DIAG: dump de todas as linhas L300 brutas (código, descrição, valor com sinal)
+    // LOG DIAG: dump de todas as linhas L300 brutas (código, valor com sinal, indCta, naturezaFinal, descrição)
     this.logger.log(
       `[DIAG-DRE] L300 raw rows (empresaId=${diagEmpresaId} exercicio=${diagExercicio}) total=${registros.length}:\n` +
-      registros.map(r => `  ${r.linhaCodigo.padEnd(25)} | ${String(r.valor.toFixed(2)).padStart(18)} | ${r.descricao.slice(0, 60)}`).join('\n'),
+      registros.map(r =>
+        `  ${r.linhaCodigo.padEnd(25)} | ${String(r.valor.toFixed(2)).padStart(18)} | indCta=${r.indCta ?? 'null'} nat=${r.naturezaFinal} nivel=${r.nivel ?? 'null'} | ${r.descricao.slice(0, 50)}`,
+      ).join('\n'),
     );
 
     // Agrupa candidatos por linha DRE e depois usa SOMENTE o nó de menor
