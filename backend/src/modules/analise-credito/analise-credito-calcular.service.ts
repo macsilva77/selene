@@ -186,6 +186,15 @@ export class AnaliseCreditoCalcularService {
       const dre = drePair.data;
       const dreResult = drePair.result;
 
+      if (!dreResult.validacaoOk) {
+        this.logger.warn(
+          `[Calcular] ${empresa.cnpj} ano=${ano}: DRE falhou validação — indicadores NÃO publicados.\n` +
+          dreResult.alertas.filter(a => a.startsWith('[VALID')).map(a => `  ${a}`).join('\n'),
+        );
+        resultados.push({ exercicio: ano, indicadores: 0, comDados: false });
+        continue;
+      }
+
       const [balAnt, dreAntPair] = await Promise.all([
         this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
         this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),

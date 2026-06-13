@@ -26,10 +26,11 @@ export interface DreRow {
 }
 
 export interface DreResult {
-  linhas:     DreRow[];
-  completo:   boolean;   // false se faltam linhas essenciais
-  fonteUsada: string;
-  alertas:    string[];
+  linhas:      DreRow[];
+  completo:    boolean;   // false se faltam linhas essenciais
+  fonteUsada:  string;
+  alertas:     string[];
+  validacaoOk: boolean;   // false = NÃO publicar indicadores (ver alertas)
 }
 
 // ─── Mapeamento de prefixos L300 → linha DRE ─────────────────────────────────
@@ -108,9 +109,10 @@ export class P02DreService {
 
       // Mapeia para o formato interno (valor como Decimal)
       const registros = rows.map(r => ({
-        linhaCodigo: r.linhaCodigo,
-        descricao:   r.descricao,
-        valor:       new Decimal(r.valor),
+        linhaCodigo:   r.linhaCodigo,
+        descricao:     r.descricao,
+        valor:         new Decimal(r.valor),
+        naturezaFinal: r.naturezaFinal,  // 'C'=crédito/receita | 'D'=débito/despesa
       }));
 
       if (registroEcf === 'L300') return this.montarDeL300(registros, empresaId, exercicio);
@@ -137,7 +139,7 @@ export class P02DreService {
   // ─── Fonte L300 (Lucro Real — mapeamento por prefixo de código) ──────────────
 
   private montarDeL300(
-    registros: { linhaCodigo: string; descricao: string; valor: Decimal }[],
+    registros: { linhaCodigo: string; descricao: string; valor: Decimal; naturezaFinal: string }[],
     diagEmpresaId = '',
     diagExercicio = 0,
   ): DreResult {
@@ -168,7 +170,8 @@ export class P02DreService {
       acc.set(match.linha, (acc.get(match.linha) ?? new Decimal(0)).add(abs(r.valor)));
     }
 
-    // LOG DIAG: buckets resultantes + não classificados
+    // A2 — LOG: natureza D/C de cada folha classificada (confirma que IND_DC real chega corretamente)
+    // naturezaFinal vem de campos[8] no parser (Parquet) ou é 'D' hardcoded (fallback DB legado).
     this.logger.log(
       `[DIAG-DRE] L300 buckets (empresaId=${diagEmpresaId} exercicio=${diagExercicio}):\n` +
       (acc.size > 0
@@ -177,7 +180,13 @@ export class P02DreService {
       (naoClassificados.length
         ? `\n  NAO_CLASS (${naoClassificados.length}):\n` +
           naoClassificados.map(x => `    ${x.cod.padEnd(28)} ${x.valor.toFixed(2).padStart(16)} | ${x.desc.slice(0, 40)}`).join('\n')
-        : ''),
+        : '') +
+      `\n  [A2-natureza] amostra (primeiras 5 folhas):\n` +
+      registros
+        .filter(r => isFolha(r.linhaCodigo))
+        .slice(0, 5)
+        .map(r => `    ${r.linhaCodigo.padEnd(28)} nat=${r.naturezaFinal} val=${r.valor.toFixed(2).padStart(16)}`)
+        .join('\n'),
     );
 
     // lucro_liquido: nó raiz da DRE (sintético — intencionalmente não é folha)
@@ -204,14 +213,36 @@ export class P02DreService {
 
     this.calcularEbitEbitda(acc, registros, alertas);
 
+    // A3 — verificação hierárquica (alerta, não aborta)
+    this.verificarHierarquia(registros, isFolha, alertas);
+
+    // B + C — reconciliação e invariantes (aborta se falhar)
+    const naoClassTotal = naoClassificados.reduce((s, x) => s.add(abs(x.valor)), new Decimal(0));
+    const reconciliaOk = this.verificarReconciliacao(acc, alertas);
+    const invariantesOk = this.verificarInvariantes(acc, naoClassTotal, alertas);
+    const validacaoOk = reconciliaOk && invariantesOk;
+
+    if (!validacaoOk) {
+      this.logger.warn(
+        `[VALID-DRE] empresaId=${diagEmpresaId} exercicio=${diagExercicio} FALHOU — indicadores não serão publicados:\n` +
+        alertas.filter(a => a.startsWith('[VALID')).map(a => `  ${a}`).join('\n'),
+      );
+    }
+
     const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({ linhaDre, valor, fonte: 'ecf_l300' }));
-    return { linhas, completo: acc.has('receita_liquida') && acc.has('lucro_liquido'), fonteUsada: 'ecf_l300', alertas };
+    return {
+      linhas,
+      completo:    acc.has('receita_liquida') && acc.has('lucro_liquido'),
+      fonteUsada:  'ecf_l300',
+      alertas,
+      validacaoOk,
+    };
   }
 
   // ─── Fonte P150 / U150 (mapeamento por palavras-chave nas descrições RFB) ───
 
   private montarDeEcfKeywords(
-    registros: { linhaCodigo: string; descricao: string; valor: Decimal }[],
+    registros: { linhaCodigo: string; descricao: string; valor: Decimal; naturezaFinal: string }[],
     registroEcf: string,
   ): DreResult {
     const alertas: string[] = [];
@@ -232,14 +263,14 @@ export class P02DreService {
 
     const fonte = `ecf_${registroEcf.toLowerCase()}`;
     const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({ linhaDre, valor, fonte }));
-    return { linhas, completo: acc.has('receita_liquida'), fonteUsada: fonte, alertas };
+    return { linhas, completo: acc.has('receita_liquida'), fonteUsada: fonte, alertas, validacaoOk: true };
   }
 
   // ─── EBIT / EBITDA ───────────────────────────────────────────────────────────
 
   private calcularEbitEbitda(
     acc: Map<LinhaDre, Decimal>,
-    registros: { linhaCodigo: string; descricao: string; valor: Decimal }[],
+    registros: { descricao: string; valor: Decimal }[],
     alertas: string[],
   ) {
     // Depreciação: mapa ou busca por descrição
@@ -310,6 +341,91 @@ export class P02DreService {
     if (!deprec.greaterThan(0)) alertas.push('Depreciação não encontrada — EBITDA = EBIT');
   }
 
+  // ─── Validações A3 / B / C ───────────────────────────────────────────────────
+
+  // A3: verifica que soma das folhas de cada galho sintético fecha com o valor declarado.
+  // Apenas registra alertas (não aborta) — ECF pode omitir sub-itens zerados.
+  private verificarHierarquia(
+    registros: { linhaCodigo: string; valor: Decimal }[],
+    isFolha:   (cod: string) => boolean,
+    alertas:   string[],
+  ): void {
+    const sinteticos = registros.filter(r => !isFolha(r.linhaCodigo) && r.linhaCodigo.startsWith('3.01'));
+    for (const s of sinteticos) {
+      const folhas = registros.filter(
+        r => isFolha(r.linhaCodigo) && r.linhaCodigo.startsWith(s.linhaCodigo + '.'),
+      );
+      if (folhas.length === 0) continue;
+      const somaFolhas = folhas.reduce((acc, r) => acc.add(abs(r.valor)), new Decimal(0));
+      const esperado   = abs(s.valor);
+      if (esperado.isZero()) continue;
+      const dif = somaFolhas.minus(esperado).abs();
+      const tol = Decimal.max(new Decimal(1), esperado.mul('0.001')); // ±0.1% ou R$1
+      if (dif.greaterThan(tol)) {
+        alertas.push(
+          `[VALID-A3] galho ${s.linhaCodigo}: folhas=${somaFolhas.toFixed(0)} ECF=${esperado.toFixed(0)} dif=${dif.toFixed(0)}`,
+        );
+      }
+    }
+  }
+
+  // B: reconciliação contábil — EBITDA = LL + IR/CSLL + DespFin − RecFin + D&A
+  // Falha forte: mapeamento incompleto → não publicar.
+  private verificarReconciliacao(acc: Map<LinhaDre, Decimal>, alertas: string[]): boolean {
+    const ebitda = acc.get('ebitda');
+    const ll     = acc.get('lucro_liquido');
+    if (!ebitda || !ll || ebitda.isZero()) return true; // sem dados suficientes
+
+    const ir      = acc.get('ir_csll')          ?? new Decimal(0);
+    const despFin = acc.get('desp_financeiras') ?? new Decimal(0);
+    const recFin  = acc.get('rec_financeiras')  ?? new Decimal(0);
+    const deprec  = acc.get('depreciacao')      ?? new Decimal(0);
+
+    const ebitdaReconciliado = ll.add(ir).add(despFin).minus(recFin).add(deprec);
+    const dif = ebitdaReconciliado.minus(ebitda).abs();
+    const tol = Decimal.max(new Decimal(1), ebitda.abs().mul('0.005')); // ±0.5% ou R$1
+
+    if (dif.greaterThan(tol)) {
+      alertas.push(
+        `[VALID-B] reconciliação falhou: LL=${ll.toFixed(0)} IR=${ir.toFixed(0)} ` +
+        `DespFin=${despFin.toFixed(0)} RecFin=${recFin.toFixed(0)} D&A=${deprec.toFixed(0)} ` +
+        `→ ${ebitdaReconciliado.toFixed(0)} vs EBITDA=${ebitda.toFixed(0)} dif=${dif.toFixed(0)}`,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // C: invariantes de sanidade — garantem que os indicadores calculados fazem sentido.
+  private verificarInvariantes(
+    acc:            Map<LinhaDre, Decimal>,
+    naoClassTotal:  Decimal,
+    alertas:        string[],
+  ): boolean {
+    const rl     = acc.get('receita_liquida');
+    const ebit   = acc.get('ebit')   ?? new Decimal(0);
+    const ebitda = acc.get('ebitda') ?? new Decimal(0);
+    let ok = true;
+
+    if (rl?.greaterThan(0)) {
+      const margem = ebitda.dividedBy(rl);
+      if (margem.greaterThanOrEqualTo('0.99')) {
+        alertas.push(`[VALID-C] margemEbitda=${(margem.toNumber() * 100).toFixed(1)}% ≥ 99% — mapeamento incompleto`);
+        ok = false;
+      }
+      const naoClassRatio = naoClassTotal.dividedBy(rl);
+      if (naoClassRatio.greaterThan('0.02')) {
+        alertas.push(`[VALID-C] nao_class/RL=${(naoClassRatio.toNumber() * 100).toFixed(1)}% > 2%`);
+        ok = false;
+      }
+    }
+    if (ebitda.lessThan(ebit)) {
+      alertas.push(`[VALID-C] ebitda=${ebitda.toFixed(0)} < ebit=${ebit.toFixed(0)} (D&A negativa?)`);
+      // warning apenas — não bloqueia
+    }
+    return ok;
+  }
+
   private derivarLucroLiquido(acc: Map<LinhaDre, Decimal>, alertas: string[]) {
     if (acc.has('lucro_liquido')) return;
     const rl = acc.get('receita_liquida') ?? new Decimal(0);
@@ -368,6 +484,6 @@ export class P02DreService {
     this.calcularEbitEbitda(acc, [], alertas);
 
     const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({ linhaDre, valor, fonte: 'ecd_inferido' }));
-    return { linhas, completo: acc.has('receita_liquida'), fonteUsada: 'ecd_inferido', alertas };
+    return { linhas, completo: acc.has('receita_liquida'), fonteUsada: 'ecd_inferido', alertas, validacaoOk: true };
   }
 }
