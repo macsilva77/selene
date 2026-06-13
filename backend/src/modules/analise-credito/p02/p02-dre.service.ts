@@ -34,22 +34,28 @@ export interface DreResult {
 
 // ─── Mapeamento de prefixos L300 → linha DRE ─────────────────────────────────
 // Plano Referencial RFB para Lucro Real (L300).
+// ORDENADO do mais específico para o menos específico: find() retorna o primeiro
+// match, que será sempre o prefixo mais longo (longest-prefix-match).
 const L300_PREFIX_MAP: Array<{ prefixo: string; linha: LinhaDre }> = [
-  { prefixo: '3.01.01.01.01', linha: 'receita_bruta'     },
-  { prefixo: '3.01.01.01.02', linha: 'deducoes'           },
-  { prefixo: '3.01.01.01',    linha: 'receita_liquida'    },
-  // Plano referencial RFB L300 (Lucro Real):
-  //   3.01.01.02 = (-) Custo dos Produtos/Serviços/Mercadorias Vendidos (CMV/CPV)
-  //   3.01.01.03 = (=) Lucro Bruto  ← era mapeado como cmv por engano
-  { prefixo: '3.01.01.02',    linha: 'cmv'                },
-  { prefixo: '3.01.01.03',    linha: 'lucro_bruto'        },
-  { prefixo: '3.01.01.04.01', linha: 'desp_vendas'        },
-  { prefixo: '3.01.01.04.02', linha: 'desp_admin'         },
-  { prefixo: '3.01.01.04.03', linha: 'outras_desp'        },
-  { prefixo: '3.01.01.05.01', linha: 'rec_financeiras'    },
-  { prefixo: '3.01.01.05.02', linha: 'desp_financeiras'   },
-  { prefixo: '3.01.02',       linha: 'ir_csll'            },
-  { prefixo: '3.01.03',       linha: 'ir_csll'            }, // CSLL → soma com IR
+  // ── Nível 6 (mais específico) ────────────────────────────────────────────────
+  { prefixo: '3.01.01.09.01.08', linha: 'desp_financeiras' }, // Outras Desp. Financeiras
+  // ── Nível 5 ──────────────────────────────────────────────────────────────────
+  { prefixo: '3.01.01.01.01',    linha: 'receita_bruta'    }, // Receita Bruta
+  { prefixo: '3.01.01.01.02',    linha: 'deducoes'          }, // Deduções da RB
+  { prefixo: '3.01.01.04.01',    linha: 'desp_vendas'       }, // Desp. Vendas (plano compacto)
+  { prefixo: '3.01.01.04.02',    linha: 'desp_admin'        }, // Desp. Adm (plano compacto)
+  { prefixo: '3.01.01.04.03',    linha: 'outras_desp'       }, // Outras Desp (plano compacto)
+  { prefixo: '3.01.01.05.01',    linha: 'outras_rec'        }, // Outras Rec Op (plano compacto)
+  { prefixo: '3.01.01.05.02',    linha: 'desp_financeiras'  }, // Desp. Fin (plano compacto)
+  // ── Nível 4 (plano expandido RFB — maioria das Lucro Real) ───────────────────
+  { prefixo: '3.01.01.01',       linha: 'receita_liquida'  }, // Receita Líquida
+  { prefixo: '3.01.01.03',       linha: 'cmv'              }, // Custo dos Bens e Serviços
+  { prefixo: '3.01.01.05',       linha: 'outras_rec'       }, // Outras Receitas Operacionais
+  { prefixo: '3.01.01.07',       linha: 'desp_admin'       }, // Despesas Operacionais
+  { prefixo: '3.01.01.09',       linha: 'outras_desp'      }, // Outras Desp. Operacionais
+  // ── Nível 3 ──────────────────────────────────────────────────────────────────
+  { prefixo: '3.01.02',          linha: 'ir_csll'          }, // IR
+  { prefixo: '3.01.03',          linha: 'ir_csll'          }, // CSLL → soma com IR
 ];
 
 // Palavras-chave para P150/U150 e fallback ECD (descrições padronizadas RFB)
@@ -137,40 +143,44 @@ export class P02DreService {
   ): DreResult {
     const alertas: string[] = [];
 
-    // LOG DIAG: dump de todas as linhas L300 brutas (código, valor com sinal, indCta, naturezaFinal, descrição)
-    this.logger.log(
-      `[DIAG-DRE] L300 raw rows (empresaId=${diagEmpresaId} exercicio=${diagExercicio}) total=${registros.length}:\n` +
-      registros.map(r =>
-        `  ${r.linhaCodigo.padEnd(25)} | ${String(r.valor.toFixed(2)).padStart(18)} | indCta=${r.indCta ?? 'null'} nat=${r.naturezaFinal} nivel=${r.nivel ?? 'null'} | ${r.descricao.slice(0, 50)}`,
-      ).join('\n'),
-    );
+    // Derivar S/A: conta é folha (analítica) se nenhuma outra começa com cod + '.'
+    // O '.' literal evita confundir 3.01.01.1 com 3.01.01.10.
+    const todosCodigos = new Set(registros.map(r => r.linhaCodigo));
+    const isFolha = (cod: string): boolean => {
+      for (const outro of todosCodigos) {
+        if (outro !== cod && outro.startsWith(cod + '.')) return false;
+      }
+      return true;
+    };
 
-    // Agrupa candidatos por linha DRE e depois usa SOMENTE o nó de menor
-    // profundidade (nó pai/raiz da hierarquia), que já é o valor agregado.
-    // Somar pai + filhos causaria dupla/tripla contagem (3.01.01.03 = CMV total,
-    // 3.01.01.03.01 = subtotal, 3.01.01.03.01.01 = folha — mesmo valor em 3 níveis).
-    const candidatos = new Map<LinhaDre, { linhaCodigo: string; valor: Decimal }>();
+    // Longest-prefix-match sobre folhas: L300_PREFIX_MAP está ordenado do mais
+    // específico para o menos específico — find() retorna o primeiro (mais longo).
+    const acc = new Map<LinhaDre, Decimal>();
+    const naoClassificados: Array<{ cod: string; valor: Decimal; desc: string }> = [];
 
     for (const r of registros) {
+      if (!isFolha(r.linhaCodigo)) continue;
       const match = L300_PREFIX_MAP.find(m => r.linhaCodigo.startsWith(m.prefixo));
-      if (!match) continue;
-      const atual = candidatos.get(match.linha);
-      const profAtual  = atual?.linhaCodigo.split('.').length ?? Infinity;
-      const profNovo   = r.linhaCodigo.split('.').length;
-      if (profNovo < profAtual) candidatos.set(match.linha, r);
+      if (!match) {
+        naoClassificados.push({ cod: r.linhaCodigo, valor: r.valor, desc: r.descricao });
+        continue;
+      }
+      acc.set(match.linha, (acc.get(match.linha) ?? new Decimal(0)).add(abs(r.valor)));
     }
 
-    const acc = new Map<LinhaDre, Decimal>();
-    for (const [linha, r] of candidatos) acc.set(linha, abs(r.valor));
-
-    // LOG DIAG: resultado do prefix-match
+    // LOG DIAG: buckets resultantes + não classificados
     this.logger.log(
-      `[DIAG-DRE] L300 prefix-match (empresaId=${diagEmpresaId} exercicio=${diagExercicio}):\n` +
-      [...candidatos.entries()].map(([l, r]) => `  ${l.padEnd(20)} ← ${r.linhaCodigo.padEnd(25)} valor_bruto=${r.valor.toFixed(2)} abs=${abs(r.valor).toFixed(2)}`).join('\n') +
-      (candidatos.size === 0 ? '  (nenhum match — prefixos não encontrados nos códigos do ECF)' : ''),
+      `[DIAG-DRE] L300 buckets (empresaId=${diagEmpresaId} exercicio=${diagExercicio}):\n` +
+      (acc.size > 0
+        ? [...acc.entries()].map(([l, v]) => `  ${l.padEnd(20)} = ${v.toFixed(2)}`).join('\n')
+        : '  (nenhum match)') +
+      (naoClassificados.length
+        ? `\n  NAO_CLASS (${naoClassificados.length}):\n` +
+          naoClassificados.map(x => `    ${x.cod.padEnd(28)} ${x.valor.toFixed(2).padStart(16)} | ${x.desc.slice(0, 40)}`).join('\n')
+        : ''),
     );
 
-    // lucro_liquido: nó raiz (menor quantidade de segmentos)
+    // lucro_liquido: nó raiz da DRE (sintético — intencionalmente não é folha)
     if (!acc.has('lucro_liquido')) {
       const raiz = [...registros].sort((a, b) => {
         const la = a.linhaCodigo.split('.').length;
@@ -183,8 +193,13 @@ export class P02DreService {
     if (acc.has('receita_bruta') && acc.has('deducoes') && !acc.has('receita_liquida')) {
       acc.set('receita_liquida', acc.get('receita_bruta')!.minus(acc.get('deducoes')!).abs());
     }
-    if (acc.has('receita_liquida') && acc.has('cmv') && !acc.has('lucro_bruto')) {
-      acc.set('lucro_bruto', acc.get('receita_liquida')!.minus(acc.get('cmv')!));
+    if (acc.has('receita_liquida') && !acc.has('lucro_bruto')) {
+      const cmv = acc.get('cmv') ?? new Decimal(0);
+      acc.set('lucro_bruto', acc.get('receita_liquida')!.minus(cmv));
+    }
+
+    if (naoClassificados.length > 0) {
+      alertas.push(`${naoClassificados.length} folha(s) L300 não classificadas: ${naoClassificados.slice(0, 3).map(x => x.cod).join(', ')}`);
     }
 
     this.calcularEbitEbitda(acc, registros, alertas);
@@ -264,16 +279,17 @@ export class P02DreService {
     );
 
     // ── Caminho primário: top-down a partir da Receita Líquida ────────────────
-    // Mais robusto que o add-back (LL + IR + DespFin - RecFin) porque não depende
-    // de rec_financeiras estar corretamente mapeada no ECF da empresa.
+    // Despesas operacionais (desp_admin + outras_desp) já incluem D&A.
+    // EBIT = RL − CMV − DespOp + OutrasRec  (D&A embutida, sem deduzi-la separado)
+    // EBITDA = EBIT + deprec  (add-back D&A encontrado por descrição)
     const rl = acc.get('receita_liquida');
     if (rl?.greaterThan(0)) {
-      const cmv  = acc.get('cmv')        ?? new Decimal(0);
-      const dV   = acc.get('desp_vendas')  ?? new Decimal(0);
-      const dA   = acc.get('desp_admin')   ?? new Decimal(0);
-      const oD   = acc.get('outras_desp')  ?? new Decimal(0);
-      const oR   = acc.get('outras_rec')   ?? new Decimal(0);
-      const ebit  = rl.minus(cmv).minus(dV).minus(dA).minus(oD).add(oR).minus(deprec);
+      const cmv = acc.get('cmv')           ?? new Decimal(0);
+      const dV  = acc.get('desp_vendas')   ?? new Decimal(0);
+      const dA  = acc.get('desp_admin')    ?? new Decimal(0);
+      const oD  = acc.get('outras_desp')   ?? new Decimal(0);
+      const oR  = acc.get('outras_rec')    ?? new Decimal(0);
+      const ebit   = rl.minus(cmv).minus(dV).minus(dA).minus(oD).add(oR);
       const ebitda = ebit.add(deprec);
       acc.set('ebit',   ebit);
       acc.set('ebitda', ebitda);
