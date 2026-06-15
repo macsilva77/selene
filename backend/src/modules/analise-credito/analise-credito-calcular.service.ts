@@ -133,7 +133,7 @@ export class AnaliseCreditoCalcularService {
     empresaId: string,
     exercicio: number,
     regime: string | null,
-  ): Promise<{ data: DreData; result: DreResult } | null> {
+  ): Promise<{ data: DreData; result: DreResult; origemDados: 'ecf_fresco' | 'db_legado' | undefined } | null> {
     const candidatos = this.registrosPorRegime(regime, 'dre');
     for (const registroEcf of candidatos) {
       try {
@@ -142,13 +142,14 @@ export class AnaliseCreditoCalcularService {
         );
         if (!resultado || resultado.registros.length === 0) continue;
 
-        const trimestre = resultado.trimestreAtivo;
+        const trimestre  = resultado.trimestreAtivo;
+        const origemDados = resultado.origemDados;
         const res = await this.dreService.montar(empresaId, exercicio, regime, trimestre);
         if (res.linhas.length === 0) continue;
 
         const data: DreData = new Map();
         for (const row of res.linhas) data.set(row.linhaDre, row.valor);
-        return { data, result: res };
+        return { data, result: res, origemDados };
       } catch { continue; }
     }
     return null;
@@ -183,8 +184,11 @@ export class AnaliseCreditoCalcularService {
         continue;
       }
 
-      const dre = drePair.data;
-      const dreResult = drePair.result;
+      const dre        = drePair.data;
+      const dreResult  = drePair.result;
+      const origemDados = drePair.origemDados;
+
+      this.logger.log(`[Calcular] ${empresa.cnpj} ano=${ano} origem=${origemDados ?? 'desconhecida'} fonte=${dreResult.fonteUsada}`);
 
       if (!dreResult.validacaoOk) {
         this.logger.warn(

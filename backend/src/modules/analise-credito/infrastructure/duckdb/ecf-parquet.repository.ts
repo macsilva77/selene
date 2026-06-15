@@ -17,6 +17,7 @@ export interface EcfConsultaResult {
   trimestres:     number[];
   trimestreAtivo: number;
   registros:      EcfRegistroRow[];
+  origemDados?:   'ecf_fresco' | 'db_legado'; // Parquet GCS vs banco relacional legado — setado pelo EcfDataSourceService
 }
 
 /**

@@ -74,9 +74,10 @@ export class EcfDataSourceService {
         });
         // Persiste schema detectado para próximas chamadas
         if (resultado) this.cache.setNovoSchema(cacheKey, resultado.novoSchema);
-        // Armazena resultado no cache
-        this.resultCache.set(resultKey, { result: resultado, expiresAt: Date.now() + EcfDataSourceService.RESULT_TTL_MS });
-        return resultado;
+        // Anotar origem antes de cachear
+        const resultadoComOrigem = resultado ? { ...resultado, origemDados: 'ecf_fresco' as const } : null;
+        this.resultCache.set(resultKey, { result: resultadoComOrigem, expiresAt: Date.now() + EcfDataSourceService.RESULT_TTL_MS });
+        return resultadoComOrigem;
       }
     }
 
@@ -165,7 +166,7 @@ export class EcfDataSourceService {
       trimestre: trimestreAtivo,
       linhaCodigoPrefixo,
     });
-    return { trimestres, trimestreAtivo, registros: rows };
+    return { trimestres, trimestreAtivo, registros: rows, origemDados: 'db_legado' };
   }
 
   private async consultarDb(empresaId: string, exercicio: number, opts: EcfConsultaOptions): Promise<EcfRegistroRow[]> {
