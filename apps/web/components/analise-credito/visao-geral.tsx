@@ -339,6 +339,12 @@ export function VisaoGeral({
         {IND_LISTA.map(({ key, label, fmt }) => {
           const item = ind(key);
           if (!item) return null;
+
+          // Margem bruta = n/a quando CMV=0: empresa com custos em despesas operacionais
+          // (ex.: extrativista). Exibir 100% "saudável" seria enganoso — ver margem EBITDA.
+          const cmvNulo = key === 'margem_bruta' &&
+            (dre['cmv'] == null || Number(dre['cmv']) === 0);
+
           return (
             <div
               key={key}
@@ -346,10 +352,19 @@ export function VisaoGeral({
             >
               <span className="text-sm text-foreground">{label}</span>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold tabular-nums text-foreground">
-                  {fmt(item.valor)}
-                </span>
-                <SemanticBadge indicador={key} severidade={sev(key)} />
+                {cmvNulo ? (
+                  <>
+                    <span className="text-sm font-semibold tabular-nums text-muted-foreground">—</span>
+                    <span className="text-[10px] text-muted-foreground italic">custo em desp. op.</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
+                      {fmt(item.valor)}
+                    </span>
+                    <SemanticBadge indicador={key} severidade={sev(key)} />
+                  </>
+                )}
               </div>
             </div>
           );
