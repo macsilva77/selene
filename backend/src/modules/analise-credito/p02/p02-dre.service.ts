@@ -170,6 +170,28 @@ export class P02DreService {
       acc.set(match.linha, (acc.get(match.linha) ?? new Decimal(0)).add(abs(r.valor)));
     }
 
+    // Débito 3: D&A folhas-only — evita dupla contagem quando nó sintético e folha
+    // compartilham descrição similar (ex: "Deprec. e Amort." pai + "Deprec. Equip." filho).
+    // Log [DA-ORIGEM] expõe os códigos referenciais reais para futura migração por código.
+    if (!acc.has('depreciacao') || acc.get('depreciacao')!.isZero()) {
+      const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const folhasDA = registros.filter(r => {
+        if (!isFolha(r.linhaCodigo)) return false;
+        const d = norm(r.descricao);
+        return d.includes('depreciac') || d.includes('amortizac') || d.includes('exaust');
+      });
+      if (folhasDA.length > 0) {
+        const totalDA = folhasDA.reduce((s, r) => s.add(abs(r.valor)), new Decimal(0));
+        acc.set('depreciacao', totalDA);
+        const codigos = folhasDA.map(r => r.linhaCodigo).join(',');
+        this.logger.log(
+          `[DA-ORIGEM] dep_amort_origem=heuristica empresaId=${diagEmpresaId} ` +
+          `exercicio=${diagExercicio} total=${totalDA.toFixed(0)} codigos=${codigos}`,
+        );
+        alertas.push(`D&A por heurística de descrição: ${codigos}`);
+      }
+    }
+
     // A2 — LOG: natureza D/C de cada folha classificada (confirma que IND_DC real chega corretamente)
     // naturezaFinal vem de campos[8] no parser (Parquet) ou é 'D' hardcoded (fallback DB legado).
     this.logger.log(
@@ -362,8 +384,10 @@ export class P02DreService {
       const dif = somaFolhas.minus(esperado).abs();
       const tol = Decimal.max(new Decimal(1), esperado.mul('0.001')); // ±0.1% ou R$1
       if (dif.greaterThan(tol)) {
+        const excesso = somaFolhas.greaterThan(esperado);
         alertas.push(
-          `[VALID-A3] galho ${s.linhaCodigo}: folhas=${somaFolhas.toFixed(0)} ECF=${esperado.toFixed(0)} dif=${dif.toFixed(0)}`,
+          `[VALID-A3] galho ${s.linhaCodigo}: folhas=${somaFolhas.toFixed(0)} ECF=${esperado.toFixed(0)} ` +
+          `dif=${dif.toFixed(0)} — ${excesso ? 'dupla contagem provável' : 'omissão tolerável'}`,
         );
       }
     }
