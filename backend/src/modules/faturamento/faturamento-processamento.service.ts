@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { FaturamentoGcsService } from './faturamento-gcs.service';
 import { parseEfdIcmsIpiFaturamento } from './sped/efd-icms-ipi-faturamento.parser';
 import { parseEfdContribuicoesFaturamento } from './sped/efd-contribuicoes-faturamento.parser';
+import type { SpedArquivoDisponivelEvent } from '../sped/sped.service';
 
 // ─── Inputs ───────────────────────────────────────────────────────────────────
 
@@ -293,6 +295,35 @@ export class FaturamentoProcessamentoService {
     );
 
     return true;
+  }
+
+  // ── Auto-processamento via evento interno ────────────────────────────────────
+
+  @OnEvent('sped.arquivo.disponivel', { async: true })
+  async handleSpedDisponivel(event: SpedArquivoDisponivelEvent): Promise<void> {
+    const { tenantId, cnpj, tipo, gcsUri } = event;
+
+    if (tipo !== 'EFD_ICMS' && tipo !== 'EFD_CONTRIBUICOES') return;
+
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { tenantId, cnpj },
+      select: { id: true },
+    });
+
+    if (!empresa) {
+      this.logger.warn(`handleSpedDisponivel: empresa não encontrada CNPJ=${cnpj} tenant=${tenantId}`);
+      return;
+    }
+
+    try {
+      if (tipo === 'EFD_ICMS') {
+        await this.processarArquivo({ tenantId, empresaId: empresa.id, cnpj, gcsUri });
+      } else {
+        await this.processarContribArquivo({ tenantId, empresaId: empresa.id, cnpj, gcsUri });
+      }
+    } catch (err) {
+      this.logger.error(`handleSpedDisponivel: erro ao processar ${tipo} cnpj=${cnpj}: ${String(err)}`);
+    }
   }
 }
 

@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../database/prisma.service';
 import { SpedStatus } from '@prisma/client';
+
+export interface SpedArquivoDisponivelEvent {
+  tenantId: string;
+  cnpj: string;
+  tipo: string;
+  gcsUri: string;
+}
 
 export interface SpedProcessadoPayload {
   evento: string;
@@ -20,7 +28,10 @@ export interface SpedProcessadoPayload {
 export class SpedService {
   private readonly logger = new Logger(SpedService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   async registrarArquivo(payload: SpedProcessadoPayload): Promise<void> {
     const statusMap: Record<string, SpedStatus> = {
@@ -64,6 +75,16 @@ export class SpedService {
     this.logger.log(
       `[${payload.cnpj}] ${payload.tipo} ${payload.dataDocumento} → ${payload.status}`,
     );
+
+    if (status === SpedStatus.DISPONIVEL) {
+      const event: SpedArquivoDisponivelEvent = {
+        tenantId: payload.tenantId,
+        cnpj:     payload.cnpj,
+        tipo:     payload.tipo,
+        gcsUri:   `gs://${payload.gcsBucket}/${payload.gcsPath}`,
+      };
+      this.eventEmitter.emit('sped.arquivo.disponivel', event);
+    }
   }
 
   async listarPorCnpj(tenantId: string, cnpj: string) {

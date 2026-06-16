@@ -1874,7 +1874,7 @@ model FaturamentoCompetencia {
   cnpj                 String   @db.VarChar(14)
   ano                  Int
   mes                  Int
-  /** 'EFD_ICMS' | 'EFD_CONTRIB' | 'AMBOS' */
+  // 'EFD_ICMS' | 'EFD_CONTRIB' | 'AMBOS'
   fonte                String   @default("EFD_ICMS") @db.VarChar(20)
   vlFaturamentoBruto   Decimal  @default(0) @map("vl_faturamento_bruto")  @db.Decimal(18, 2)
   vlIcms               Decimal  @default(0) @map("vl_icms")               @db.Decimal(18, 2)
@@ -1884,7 +1884,6 @@ model FaturamentoCompetencia {
   qtdDocumentos        Int      @default(0) @map("qtd_documentos")
   gcsUri               String   @map("gcs_uri")
   hashArquivo          String   @map("hash_arquivo") @db.VarChar(64)
-  /** JSON serializado de FatoCfop[] para breakdown por CFOP. */
   cfopsJson            String?  @map("cfops_json")   @db.Text
   processadoEm         DateTime @default(now()) @map("processado_em")
   atualizadoEm         DateTime @updatedAt           @map("atualizado_em")
