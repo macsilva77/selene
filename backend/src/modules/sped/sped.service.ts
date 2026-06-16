@@ -34,6 +34,21 @@ export class SpedService {
   ) {}
 
   async registrarArquivo(payload: SpedProcessadoPayload): Promise<void> {
+    const tenantOk = await this.prisma.tenant.findUnique({
+      where: { id: payload.tenantId },
+      select: { id: true },
+    });
+    if (!tenantOk) {
+      this.logger.warn(`sped_processado: tenantId desconhecido — descartado`);
+      return;
+    }
+
+    const dataDocumento = new Date(payload.dataDocumento);
+    if (Number.isNaN(dataDocumento.getTime())) {
+      this.logger.warn(`sped_processado: dataDocumento inválida "${payload.dataDocumento}" — descartado`);
+      return;
+    }
+
     const statusMap: Record<string, SpedStatus> = {
       disponivel:   SpedStatus.DISPONIVEL,
       erro:         SpedStatus.ERRO,
@@ -41,7 +56,6 @@ export class SpedService {
     };
 
     const status = statusMap[payload.status] ?? SpedStatus.ERRO;
-    const dataDocumento = new Date(payload.dataDocumento);
 
     await this.prisma.spedArquivo.upsert({
       where: {

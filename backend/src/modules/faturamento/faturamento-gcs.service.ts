@@ -19,14 +19,23 @@ export class FaturamentoGcsService implements OnModuleInit {
     this.logger.log(`FaturamentoGcsService: GCS inicializado (bucket permitido: ${this.allowedBucket})`);
   }
 
-  /** Baixa um arquivo a partir do URI gs://bucket/path. Rejeita buckets fora do configurado. */
+  // 500 MB — arquivos SPED legítimos raramente passam de 100 MB
+  private static readonly MAX_BYTES = 500 * 1024 * 1024;
+
+  /** Baixa um arquivo a partir do URI gs://bucket/path. Rejeita buckets fora do configurado e arquivos > 500 MB. */
   async downloadFromUri(gcsUri: string): Promise<Buffer> {
     const { bucket, filePath } = parseGcsUri(gcsUri);
     if (this.allowedBucket && bucket !== this.allowedBucket) {
       throw new ForbiddenException(`Bucket GCS não autorizado: ${bucket}`);
     }
-    this.logger.debug(`Baixando EFD: path=${filePath}`);
-    const [buffer] = await this.storage.bucket(bucket).file(filePath).download();
+    const file = this.storage.bucket(bucket).file(filePath);
+    const [meta] = await file.getMetadata();
+    const size = Number(meta.size ?? 0);
+    if (size > FaturamentoGcsService.MAX_BYTES) {
+      throw new Error(`Arquivo muito grande (${size} bytes) — limite ${FaturamentoGcsService.MAX_BYTES}`);
+    }
+    this.logger.debug(`Baixando EFD: path=${filePath} size=${size}`);
+    const [buffer] = await file.download();
     return buffer;
   }
 }

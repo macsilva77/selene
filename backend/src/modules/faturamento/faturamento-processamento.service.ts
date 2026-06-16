@@ -55,7 +55,8 @@ export class FaturamentoProcessamentoService {
   async processarArquivo(input: ProcessarFaturamentoInput): Promise<ResultadoProcessamento> {
     const { tenantId, empresaId, cnpj, gcsUri } = input;
 
-    this.logger.log(`Iniciando faturamento ICMS: tenantId=${tenantId} cnpj=${cnpj} uri=${gcsUri}`);
+    this.logger.log(`Iniciando faturamento EFD ICMS: empresaId=${empresaId}`);
+    this.logger.debug(`uri=${gcsUri}`);
 
     const buffer = await this.gcs.downloadFromUri(gcsUri);
     const hashArquivo = createHash('sha256').update(buffer).digest('hex');
@@ -73,7 +74,7 @@ export class FaturamentoProcessamentoService {
 
     const { ano, mes } = parsearCompetencia(faturamento.competencia);
 
-    this.logger.log(
+    this.logger.debug(
       `EFD ICMS parseado: competencia=${faturamento.competencia} ` +
       `bruto=${faturamento.vlFaturamentoBruto} docs=${faturamento.qtdDocumentos} ` +
       `cfops=${faturamento.cfops.length}`,
@@ -104,7 +105,7 @@ export class FaturamentoProcessamentoService {
     // Tenta mesclar caso EFD_CONTRIB já exista para a mesma competência
     await this.mesclarCompetencias(tenantId, empresaId, ano, mes);
 
-    this.logger.log(`Faturamento ICMS persistido: ${cnpj} ${faturamento.competencia}`);
+    this.logger.log(`Faturamento EFD ICMS persistido: empresaId=${empresaId} competencia=${faturamento.competencia}`);
 
     return {
       cnpj,
@@ -162,7 +163,8 @@ export class FaturamentoProcessamentoService {
   async processarContribArquivo(input: ProcessarFaturamentoInput): Promise<ResultadoProcessamentoContrib> {
     const { tenantId, empresaId, cnpj, gcsUri } = input;
 
-    this.logger.log(`Iniciando faturamento Contrib: tenantId=${tenantId} cnpj=${cnpj} uri=${gcsUri}`);
+    this.logger.log(`Iniciando faturamento EFD Contrib: empresaId=${empresaId}`);
+    this.logger.debug(`uri=${gcsUri}`);
 
     const buffer = await this.gcs.downloadFromUri(gcsUri);
     const hashArquivo = createHash('sha256').update(buffer).digest('hex');
@@ -180,7 +182,7 @@ export class FaturamentoProcessamentoService {
 
     const { ano, mes } = parsearCompetencia(contrib.competencia);
 
-    this.logger.log(
+    this.logger.debug(
       `EFD Contrib parseado: competencia=${contrib.competencia} ` +
       `servicos=${contrib.vlServicos} pis=${contrib.vlPis} cofins=${contrib.vlCofins} ` +
       `docs=${contrib.qtdDocumentosServicos}`,
@@ -209,7 +211,7 @@ export class FaturamentoProcessamentoService {
     // Mescla automaticamente se EFD_ICMS já existir para a mesma competência
     const mesclado = await this.mesclarCompetencias(tenantId, empresaId, ano, mes);
 
-    this.logger.log(`Faturamento Contrib persistido: ${cnpj} ${contrib.competencia} mesclado=${mesclado}`);
+    this.logger.log(`Faturamento EFD Contrib persistido: empresaId=${empresaId} competencia=${contrib.competencia} mesclado=${mesclado}`);
 
     return {
       cnpj,
@@ -287,14 +289,12 @@ export class FaturamentoProcessamentoService {
     // Mesclagem só executa quando AMBAS as fontes estiverem presentes
     if (!icms || !contrib) return false;
 
-    const vlFaturamentoBruto =
-      Number(icms?.vlFaturamentoBruto ?? 0) + Number(contrib?.vlFaturamentoBruto ?? 0);
-    const vlIcms    = Number(icms?.vlIcms    ?? 0);
-    const vlIpi     = Number(icms?.vlIpi     ?? 0);
-    const vlPis     = Number(contrib?.vlPis    ?? 0);
-    const vlCofins  = Number(contrib?.vlCofins ?? 0);
-    const qtdDocumentos =
-      (icms?.qtdDocumentos ?? 0) + (contrib?.qtdDocumentos ?? 0);
+    const vlFaturamentoBruto = Number(icms.vlFaturamentoBruto) + Number(contrib.vlFaturamentoBruto);
+    const vlIcms         = Number(icms.vlIcms);
+    const vlIpi          = Number(icms.vlIpi);
+    const vlPis          = Number(contrib.vlPis);
+    const vlCofins       = Number(contrib.vlCofins);
+    const qtdDocumentos  = icms.qtdDocumentos + contrib.qtdDocumentos;
 
     const base = icms;
 
@@ -304,20 +304,19 @@ export class FaturamentoProcessamentoService {
         tenantId, empresaId, cnpj: base.cnpj, ano, mes, fonte: 'AMBOS',
         vlFaturamentoBruto, vlIcms, vlIpi, vlPis, vlCofins, qtdDocumentos,
         gcsUri: base.gcsUri, hashArquivo: base.hashArquivo,
-        cfopsJson: icms?.cfopsJson ?? null,
+        cfopsJson: icms.cfopsJson ?? null,
       },
       update: {
         cnpj: base.cnpj,
         gcsUri: base.gcsUri,
         hashArquivo: base.hashArquivo,
         vlFaturamentoBruto, vlIcms, vlIpi, vlPis, vlCofins, qtdDocumentos,
-        cfopsJson: icms?.cfopsJson ?? null,
+        cfopsJson: icms.cfopsJson ?? null,
       },
     });
 
     this.logger.log(
-      `AMBOS mesclado: ${base.cnpj} ${ano}-${String(mes).padStart(2, '0')} ` +
-      `bruto=${vlFaturamentoBruto} (icms=${icms?.vlFaturamentoBruto ?? 0} + contrib=${contrib?.vlFaturamentoBruto ?? 0})`,
+      `AMBOS mesclado: empresaId=${empresaId} ${ano}-${String(mes).padStart(2, '0')} bruto=${vlFaturamentoBruto}`,
     );
 
     return true;

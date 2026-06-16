@@ -31,16 +31,19 @@ export class SpedPubSubConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleMessage(msg: Message): Promise<void> {
-    let payload: SpedProcessadoPayload;
+    let raw: unknown;
     try {
-      payload = JSON.parse(msg.data.toString()) as SpedProcessadoPayload;
-      if (payload.evento !== 'sped_processado') {
-        msg.ack();
-        return;
-      }
-    } catch (err) {
-      this.logger.error(`Payload inválido: ${err}`);
-      msg.nack();
+      raw = JSON.parse(msg.data.toString());
+    } catch {
+      this.logger.warn('Pub/Sub: payload não é JSON — descartado');
+      msg.ack();
+      return;
+    }
+
+    const payload = validarPayload(raw);
+    if (!payload) {
+      this.logger.warn('Pub/Sub: payload inválido ou evento desconhecido — descartado');
+      msg.ack();
       return;
     }
 
@@ -57,4 +60,24 @@ export class SpedPubSubConsumer implements OnModuleInit, OnModuleDestroy {
     await this.subscription?.close();
     await this.client.close();
   }
+}
+
+// ─── Validação de payload externo ────────────────────────────────────────────
+
+const VALID_STATUS = new Set(['disponivel', 'erro', 'indisponivel']);
+
+function validarPayload(raw: unknown): SpedProcessadoPayload | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const p = raw as Record<string, unknown>;
+  if (p['evento'] !== 'sped_processado') return null;
+  if (!p['tenantId']  || typeof p['tenantId']  !== 'string') return null;
+  if (!p['cnpj']      || typeof p['cnpj']      !== 'string') return null;
+  if (!p['tipo']      || typeof p['tipo']       !== 'string') return null;
+  if (!p['gcsBucket'] || typeof p['gcsBucket']  !== 'string') return null;
+  if (!p['gcsPath']   || typeof p['gcsPath']    !== 'string') return null;
+  const datadoc = p['dataDocumento'];
+  if (typeof datadoc !== 'string' || Number.isNaN(Date.parse(datadoc))) return null;
+  const status = p['status'];
+  if (typeof status !== 'string' || !VALID_STATUS.has(status)) return null;
+  return p as unknown as SpedProcessadoPayload;
 }
