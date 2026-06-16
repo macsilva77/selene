@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Storage } from '@google-cloud/storage';
 
@@ -6,6 +6,7 @@ import { Storage } from '@google-cloud/storage';
 export class FaturamentoGcsService implements OnModuleInit {
   private readonly logger = new Logger(FaturamentoGcsService.name);
   private storage!: Storage;
+  private allowedBucket!: string;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -14,13 +15,17 @@ export class FaturamentoGcsService implements OnModuleInit {
     const keyFilename = this.config.get<string>('gcs.keyFilename');
     const opts = keyFilename ? { projectId, keyFilename } : { projectId };
     this.storage = new Storage(opts);
-    this.logger.log('FaturamentoGcsService: GCS inicializado');
+    this.allowedBucket = this.config.get<string>('gcs.spedBucketName') ?? '';
+    this.logger.log(`FaturamentoGcsService: GCS inicializado (bucket permitido: ${this.allowedBucket})`);
   }
 
-  /** Baixa um arquivo a partir do URI gs://bucket/path */
+  /** Baixa um arquivo a partir do URI gs://bucket/path. Rejeita buckets fora do configurado. */
   async downloadFromUri(gcsUri: string): Promise<Buffer> {
     const { bucket, filePath } = parseGcsUri(gcsUri);
-    this.logger.debug(`Baixando EFD: bucket=${bucket} path=${filePath}`);
+    if (this.allowedBucket && bucket !== this.allowedBucket) {
+      throw new ForbiddenException(`Bucket GCS não autorizado: ${bucket}`);
+    }
+    this.logger.debug(`Baixando EFD: path=${filePath}`);
     const [buffer] = await this.storage.bucket(bucket).file(filePath).download();
     return buffer;
   }

@@ -65,6 +65,12 @@ export class FaturamentoProcessamentoService {
       throw new Error(`Registro 0000 ausente ou DT_INI inválido: ${gcsUri}`);
     }
 
+    const cnpjArquivo = faturamento.cnpj.replace(/\D/g, '').padStart(14, '0');
+    const cnpjInput   = cnpj.replace(/\D/g, '').padStart(14, '0');
+    if (cnpjArquivo && cnpjArquivo !== cnpjInput) {
+      throw new Error(`CNPJ do arquivo (${cnpjArquivo}) diverge do informado (${cnpjInput}): ${gcsUri}`);
+    }
+
     const { ano, mes } = parsearCompetencia(faturamento.competencia);
 
     this.logger.log(
@@ -128,15 +134,22 @@ export class FaturamentoProcessamentoService {
       return [];
     }
 
+    const cnpjs = [...new Set(arquivos.map(a => a.cnpj))];
+    const empresaList = await this.prisma.empresa.findMany({
+      where: { tenantId, cnpj: { in: cnpjs } },
+      select: { id: true, cnpj: true },
+    });
+    const empresaMap = new Map(empresaList.map(e => [e.cnpj, e.id]));
+
     const resultados: ResultadoProcessamento[] = [];
     for (const arq of arquivos) {
-      const empresa = await this.prisma.empresa.findFirst({ where: { tenantId, cnpj: arq.cnpj }, select: { id: true } });
-      if (!empresa) {
+      const empresaId = empresaMap.get(arq.cnpj);
+      if (!empresaId) {
         this.logger.warn(`Empresa não encontrada CNPJ=${arq.cnpj} — ignorado`);
         continue;
       }
       try {
-        resultados.push(await this.processarArquivo({ tenantId, empresaId: empresa.id, cnpj: arq.cnpj, gcsUri: `gs://${arq.gcsBucket}/${arq.gcsPath}` }));
+        resultados.push(await this.processarArquivo({ tenantId, empresaId, cnpj: arq.cnpj, gcsUri: `gs://${arq.gcsBucket}/${arq.gcsPath}` }));
       } catch (err) {
         this.logger.error(`Erro ao processar ${arq.cnpj} / ${arq.nomeArquivo}: ${String(err)}`);
       }
@@ -157,6 +170,12 @@ export class FaturamentoProcessamentoService {
 
     if (!contrib.competencia) {
       throw new Error(`Registro 0000 ausente ou DT_INI inválido: ${gcsUri}`);
+    }
+
+    const cnpjArquivo = contrib.cnpj.replace(/\D/g, '').padStart(14, '0');
+    const cnpjInput   = cnpj.replace(/\D/g, '').padStart(14, '0');
+    if (cnpjArquivo && cnpjArquivo !== cnpjInput) {
+      throw new Error(`CNPJ do arquivo (${cnpjArquivo}) diverge do informado (${cnpjInput}): ${gcsUri}`);
     }
 
     const { ano, mes } = parsearCompetencia(contrib.competencia);
@@ -220,15 +239,22 @@ export class FaturamentoProcessamentoService {
       return [];
     }
 
+    const cnpjs = [...new Set(arquivos.map(a => a.cnpj))];
+    const empresaList = await this.prisma.empresa.findMany({
+      where: { tenantId, cnpj: { in: cnpjs } },
+      select: { id: true, cnpj: true },
+    });
+    const empresaMap = new Map(empresaList.map(e => [e.cnpj, e.id]));
+
     const resultados: ResultadoProcessamentoContrib[] = [];
     for (const arq of arquivos) {
-      const empresa = await this.prisma.empresa.findFirst({ where: { tenantId, cnpj: arq.cnpj }, select: { id: true } });
-      if (!empresa) {
+      const empresaId = empresaMap.get(arq.cnpj);
+      if (!empresaId) {
         this.logger.warn(`Empresa não encontrada CNPJ=${arq.cnpj} — ignorado`);
         continue;
       }
       try {
-        resultados.push(await this.processarContribArquivo({ tenantId, empresaId: empresa.id, cnpj: arq.cnpj, gcsUri: `gs://${arq.gcsBucket}/${arq.gcsPath}` }));
+        resultados.push(await this.processarContribArquivo({ tenantId, empresaId, cnpj: arq.cnpj, gcsUri: `gs://${arq.gcsBucket}/${arq.gcsPath}` }));
       } catch (err) {
         this.logger.error(`Erro ao processar contrib ${arq.cnpj} / ${arq.nomeArquivo}: ${String(err)}`);
       }
@@ -305,24 +331,24 @@ export class FaturamentoProcessamentoService {
 
     if (tipo !== 'EFD_ICMS' && tipo !== 'EFD_CONTRIBUICOES') return;
 
-    const empresa = await this.prisma.empresa.findFirst({
-      where: { tenantId, cnpj },
-      select: { id: true },
-    });
-
-    if (!empresa) {
-      this.logger.warn(`handleSpedDisponivel: empresa não encontrada CNPJ=${cnpj} tenant=${tenantId}`);
-      return;
-    }
-
     try {
+      const empresa = await this.prisma.empresa.findFirst({
+        where: { tenantId, cnpj },
+        select: { id: true },
+      });
+
+      if (!empresa) {
+        this.logger.warn(`handleSpedDisponivel: empresa não encontrada tipo=${tipo}`);
+        return;
+      }
+
       if (tipo === 'EFD_ICMS') {
         await this.processarArquivo({ tenantId, empresaId: empresa.id, cnpj, gcsUri });
       } else {
         await this.processarContribArquivo({ tenantId, empresaId: empresa.id, cnpj, gcsUri });
       }
     } catch (err) {
-      this.logger.error(`handleSpedDisponivel: erro ao processar ${tipo} cnpj=${cnpj}: ${String(err)}`);
+      this.logger.error(`handleSpedDisponivel: erro tipo=${tipo}: ${String(err)}`);
     }
   }
 }
@@ -330,9 +356,10 @@ export class FaturamentoProcessamentoService {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parsearCompetencia(competencia: string): { ano: number; mes: number } {
-  const [anoStr, mesStr] = competencia.split('-');
-  return {
-    ano: Number.parseInt(anoStr, 10),
-    mes: Number.parseInt(mesStr, 10),
-  };
+  const parts = competencia.split('-');
+  if (parts.length !== 2) throw new Error(`Competência inválida: "${competencia}"`);
+  const ano = Number.parseInt(parts[0] ?? '', 10);
+  const mes = Number.parseInt(parts[1] ?? '', 10);
+  if (Number.isNaN(ano) || Number.isNaN(mes)) throw new Error(`Competência inválida: "${competencia}"`);
+  return { ano, mes };
 }

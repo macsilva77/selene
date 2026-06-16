@@ -153,6 +153,16 @@ describe('parseEfdIcmsIpiFaturamento — C100 não-saída e cancelado', () => {
     const r = parseEfdIcmsIpiFaturamento(content);
     expect(r.vlFaturamentoBruto).toBe(0);
   });
+
+  it('acumula C100 extemporâneo válido (COD_SIT=01)', () => {
+    const content = buf([
+      linha0000('01012024', 'Empresa E2', '55666777000145'),
+      linhaC100('1', '01', '6.000,00'),
+    ]);
+    const r = parseEfdIcmsIpiFaturamento(content);
+    expect(r.vlFaturamentoBruto).toBeCloseTo(6000, 2);
+    expect(r.qtdDocumentos).toBe(1);
+  });
 });
 
 // ─── C190 — breakdown por CFOP ───────────────────────────────────────────────

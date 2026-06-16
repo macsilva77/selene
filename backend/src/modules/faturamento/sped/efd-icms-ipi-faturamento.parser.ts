@@ -7,7 +7,9 @@
  *   C190 — Analítico por CFOP/CST (filho do C100 corrente)
  *
  * Regras:
- *   IND_OPER = '1' + COD_SIT = '00' → saída válida
+ *   IND_OPER = '1' + COD_SIT em {'00','01'} → saída válida
+ *   COD_SIT '00'=normal, '01'=extemporâneo (ambos válidos para faturamento)
+ *   COD_SIT '07'=denegado — nota rejeitada pela SEFAZ, NÃO acumulada
  *   C190 acumulado apenas enquanto o C100 pai é saída válida
  *
  * Layout (pipe-delimitado, latin1) — Guia Prático EFD ICMS/IPI v3.x (2024+):
@@ -39,6 +41,9 @@ export interface FatoFaturamento {
   /** Breakdown por CFOP, ordenado por código. */
   cfops: FatoCfop[];
 }
+
+// COD_SIT válidos para saída: 00=normal, 01=extemporâneo. 07=denegado não é acumulado.
+const VALID_COD_SIT = new Set(['00', '01']);
 
 // Índices após split('|') — fields[0] vazio (antes do primeiro |), fields[1] = REG
 // |0000|COD_VER|COD_FIN|DT_INI|DT_FIN|NOME|CNPJ|CPF|...
@@ -79,7 +84,7 @@ export function parseEfdIcmsIpiFaturamento(buffer: Buffer): FatoFaturamento {
     } else if (reg === 'C100') {
       const indOper = fields[IDX_C100.IND_OPER] ?? '';
       const codSit = fields[IDX_C100.COD_SIT] ?? '';
-      inValidSaida = indOper === '1' && codSit === '00';
+      inValidSaida = indOper === '1' && VALID_COD_SIT.has(codSit);
 
       if (inValidSaida) {
         vlFaturamentoBruto += parseBr(fields[IDX_C100.VL_DOC] ?? '0');

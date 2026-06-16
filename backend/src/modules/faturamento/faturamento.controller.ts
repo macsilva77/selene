@@ -10,6 +10,7 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -170,9 +171,14 @@ export class FaturamentoController {
   ) {
     const ano = Number.parseInt(anoStr, 10);
     const mes = Number.parseInt(mesStr, 10);
-    if (!ano || !mes || mes < 1 || mes > 12) {
-      throw new BadRequestException('ano e mes inválidos');
+    if (!ano || ano < 2000 || ano > 2100 || !mes || mes < 1 || mes > 12) {
+      throw new BadRequestException('ano (2000-2100) e mes (1-12) inválidos');
     }
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { id: empresaId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!empresa) throw new NotFoundException('Empresa não encontrada');
     const mesclado = await this.processamento.mesclarCompetencias(user.tenantId, empresaId, ano, mes);
     return { mesclado };
   }
@@ -224,6 +230,9 @@ export class FaturamentoController {
     @CurrentUser() user: { tenantId: string },
   ) {
     const fonte = fonteParam ?? 'AMBOS';
+    if (!['EFD_ICMS', 'EFD_CONTRIB', 'AMBOS'].includes(fonte)) {
+      throw new BadRequestException('fonte inválida: use EFD_ICMS, EFD_CONTRIB ou AMBOS');
+    }
     if (!cnpj || !anoStr) throw new BadRequestException('cnpj e ano são obrigatórios');
     const ano = Number.parseInt(anoStr, 10);
     if (ano < 2000 || ano > 2100) throw new BadRequestException('ano inválido');
