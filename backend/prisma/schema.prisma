@@ -56,7 +56,8 @@ model Tenant {
   spedArquivos         SpedArquivo[]
   creditoEmpresas      CreditoEmpresa[]
   cfCompetencias       ClientesFornecedoresCompetencia[]
-  ecfIndicadores       EcfIndicador[]
+  ecfIndicadores          EcfIndicador[]
+  faturamentoCompetencias FaturamentoCompetencia[]
 
   @@map("tenants")
 }
@@ -1862,4 +1863,35 @@ model EcfIndicador {
   @@unique([tenantId, empresaId, anoCalendario], name: "tenantId_empresaId_anoCalendario")
   @@index([tenantId, cnpj])
   @@map("ecf_indicadores")
+}
+
+// ─── FATURAMENTO EFD ──────────────────────────────────────────────────────────
+
+model FaturamentoCompetencia {
+  id                   String   @id @default(uuid())
+  tenantId             String   @map("tenant_id")
+  empresaId            String   @map("empresa_id")
+  cnpj                 String   @db.VarChar(14)
+  ano                  Int
+  mes                  Int
+  /** 'EFD_ICMS' | 'EFD_CONTRIB' | 'AMBOS' */
+  fonte                String   @default("EFD_ICMS") @db.VarChar(20)
+  vlFaturamentoBruto   Decimal  @default(0) @map("vl_faturamento_bruto")  @db.Decimal(18, 2)
+  vlIcms               Decimal  @default(0) @map("vl_icms")               @db.Decimal(18, 2)
+  vlIpi                Decimal  @default(0) @map("vl_ipi")                @db.Decimal(18, 2)
+  vlPis                Decimal  @default(0) @map("vl_pis")                @db.Decimal(18, 2)
+  vlCofins             Decimal  @default(0) @map("vl_cofins")             @db.Decimal(18, 2)
+  qtdDocumentos        Int      @default(0) @map("qtd_documentos")
+  gcsUri               String   @map("gcs_uri")
+  hashArquivo          String   @map("hash_arquivo") @db.VarChar(64)
+  /** JSON serializado de FatoCfop[] para breakdown por CFOP. */
+  cfopsJson            String?  @map("cfops_json")   @db.Text
+  processadoEm         DateTime @default(now()) @map("processado_em")
+  atualizadoEm         DateTime @updatedAt           @map("atualizado_em")
+
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, empresaId, ano, mes, fonte], name: "tenantId_empresaId_ano_mes_fonte")
+  @@index([tenantId, cnpj])
+  @@map("faturamento_competencias")
 }
