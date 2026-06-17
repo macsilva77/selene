@@ -1886,6 +1886,8 @@ model FaturamentoCompetencia {
   vlPis                Decimal  @default(0) @map("vl_pis")                @db.Decimal(18, 2)
   vlCofins             Decimal  @default(0) @map("vl_cofins")             @db.Decimal(18, 2)
   qtdDocumentos        Int      @default(0) @map("qtd_documentos")
+  vlComprasBruto       Decimal  @default(0) @map("vl_compras_bruto")      @db.Decimal(18, 2)
+  qtdDocumentosCompras Int      @default(0) @map("qtd_documentos_compras")
   gcsUri               String   @map("gcs_uri")
   hashArquivo          String   @map("hash_arquivo") @db.VarChar(64)
   cfopsJson            String?  @map("cfops_json")   @db.Text

@@ -84,19 +84,23 @@ export class FaturamentoProcessamentoService {
       where: { tenantId_empresaId_ano_mes_fonte: { tenantId, empresaId, ano, mes, fonte: 'EFD_ICMS' } },
       create: {
         tenantId, empresaId, cnpj, ano, mes, fonte: 'EFD_ICMS',
-        vlFaturamentoBruto: faturamento.vlFaturamentoBruto,
-        vlIcms: faturamento.vlIcms,
-        vlIpi: faturamento.vlIpi,
-        qtdDocumentos: faturamento.qtdDocumentos,
+        vlFaturamentoBruto:   faturamento.vlFaturamentoBruto,
+        vlIcms:               faturamento.vlIcms,
+        vlIpi:                faturamento.vlIpi,
+        qtdDocumentos:        faturamento.qtdDocumentos,
+        vlComprasBruto:       faturamento.vlComprasBruto,
+        qtdDocumentosCompras: faturamento.qtdDocumentosCompras,
         gcsUri, hashArquivo,
         cfopsJson: JSON.stringify(faturamento.cfops),
       },
       update: {
         cnpj,
-        vlFaturamentoBruto: faturamento.vlFaturamentoBruto,
-        vlIcms: faturamento.vlIcms,
-        vlIpi: faturamento.vlIpi,
-        qtdDocumentos: faturamento.qtdDocumentos,
+        vlFaturamentoBruto:   faturamento.vlFaturamentoBruto,
+        vlIcms:               faturamento.vlIcms,
+        vlIpi:                faturamento.vlIpi,
+        qtdDocumentos:        faturamento.qtdDocumentos,
+        vlComprasBruto:       faturamento.vlComprasBruto,
+        qtdDocumentosCompras: faturamento.qtdDocumentosCompras,
         gcsUri, hashArquivo,
         cfopsJson: JSON.stringify(faturamento.cfops),
       },
@@ -290,11 +294,13 @@ export class FaturamentoProcessamentoService {
     if (!icms || !contrib) return false;
 
     const vlFaturamentoBruto = Number(icms.vlFaturamentoBruto) + Number(contrib.vlFaturamentoBruto);
-    const vlIcms         = Number(icms.vlIcms);
-    const vlIpi          = Number(icms.vlIpi);
-    const vlPis          = Number(contrib.vlPis);
-    const vlCofins       = Number(contrib.vlCofins);
-    const qtdDocumentos  = icms.qtdDocumentos + contrib.qtdDocumentos;
+    const vlIcms             = Number(icms.vlIcms);
+    const vlIpi              = Number(icms.vlIpi);
+    const vlPis              = Number(contrib.vlPis);
+    const vlCofins           = Number(contrib.vlCofins);
+    const qtdDocumentos      = icms.qtdDocumentos + contrib.qtdDocumentos;
+    const vlComprasBruto     = Number(icms.vlComprasBruto);
+    const qtdDocumentosCompras = icms.qtdDocumentosCompras;
 
     const base = icms;
 
@@ -303,6 +309,7 @@ export class FaturamentoProcessamentoService {
       create: {
         tenantId, empresaId, cnpj: base.cnpj, ano, mes, fonte: 'AMBOS',
         vlFaturamentoBruto, vlIcms, vlIpi, vlPis, vlCofins, qtdDocumentos,
+        vlComprasBruto, qtdDocumentosCompras,
         gcsUri: base.gcsUri, hashArquivo: base.hashArquivo,
         cfopsJson: icms.cfopsJson ?? null,
       },
@@ -311,6 +318,7 @@ export class FaturamentoProcessamentoService {
         gcsUri: base.gcsUri,
         hashArquivo: base.hashArquivo,
         vlFaturamentoBruto, vlIcms, vlIpi, vlPis, vlCofins, qtdDocumentos,
+        vlComprasBruto, qtdDocumentosCompras,
         cfopsJson: icms.cfopsJson ?? null,
       },
     });

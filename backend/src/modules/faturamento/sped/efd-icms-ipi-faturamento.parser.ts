@@ -3,12 +3,12 @@
  *
  * Registros utilizados:
  *   0000 — Identificação (CNPJ, razão social, competência via DT_INI)
- *   C100 — Documentos fiscais de saída (NF-e mod. 55/65)
+ *   C100 — Documentos fiscais (IND_OPER=1 → saídas, IND_OPER=0 → entradas/compras)
  *   C190 — Analítico por CFOP/CST (filho do C100 corrente)
  *
  * Regras:
- *   IND_OPER = '1' + COD_SIT em {'00','01'} → saída válida
- *   COD_SIT '00'=normal, '01'=extemporâneo (ambos válidos para faturamento)
+ *   IND_OPER = '1' + COD_SIT em {'00','01'} → saída válida (faturamento)
+ *   IND_OPER = '0' + COD_SIT em {'00','01'} → entrada válida (compras)
  *   COD_SIT '07'=denegado — nota rejeitada pela SEFAZ, NÃO acumulada
  *   C190 acumulado apenas enquanto o C100 pai é saída válida
  *
@@ -31,18 +31,21 @@ export interface FatoFaturamento {
   razaoSocial: string;
   /** Competência 'AAAA-MM' derivada de DT_INI do registro 0000. */
   competencia: string;
-  /** Soma de VL_DOC dos C100 de saída válidos (IND_OPER=1, COD_SIT=00). */
+  /** Soma de VL_DOC dos C100 de saída válidos (IND_OPER=1, COD_SIT=00/01). */
   vlFaturamentoBruto: number;
   /** Soma de VL_ICMS dos C190 de saída válidos. */
   vlIcms: number;
   /** Soma de VL_IPI dos C100 de saída válidos. */
   vlIpi: number;
   qtdDocumentos: number;
+  /** Soma de VL_DOC dos C100 de entrada válidos (IND_OPER=0, COD_SIT=00/01). */
+  vlComprasBruto: number;
+  qtdDocumentosCompras: number;
   /** Breakdown por CFOP, ordenado por código. */
   cfops: FatoCfop[];
 }
 
-// COD_SIT válidos para saída: 00=normal, 01=extemporâneo. 07=denegado não é acumulado.
+// COD_SIT válidos: 00=normal, 01=extemporâneo. 07=denegado não é acumulado.
 const VALID_COD_SIT = new Set(['00', '01']);
 
 // Índices após split('|') — fields[0] vazio (antes do primeiro |), fields[1] = REG
@@ -65,9 +68,10 @@ export function parseEfdIcmsIpiFaturamento(buffer: Buffer): FatoFaturamento {
   let vlIpi = 0;
   let vlIcms = 0;
   let qtdDocumentos = 0;
+  let vlComprasBruto = 0;
+  let qtdDocumentosCompras = 0;
   const cfopMap = new Map<string, { vlOpr: number; qtd: number }>();
 
-  // true enquanto o C100 corrente é saída válida (IND_OPER=1, COD_SIT=00)
   let inValidSaida = false;
 
   for (const raw of iterLines(buffer)) {
@@ -84,12 +88,19 @@ export function parseEfdIcmsIpiFaturamento(buffer: Buffer): FatoFaturamento {
     } else if (reg === 'C100') {
       const indOper = fields[IDX_C100.IND_OPER] ?? '';
       const codSit = fields[IDX_C100.COD_SIT] ?? '';
-      inValidSaida = indOper === '1' && VALID_COD_SIT.has(codSit);
+      const valid = VALID_COD_SIT.has(codSit);
 
-      if (inValidSaida) {
+      if (indOper === '1' && valid) {
+        inValidSaida = true;
         vlFaturamentoBruto += parseBr(fields[IDX_C100.VL_DOC] ?? '0');
         vlIpi += parseBr(fields[IDX_C100.VL_IPI] ?? '0');
         qtdDocumentos += 1;
+      } else if (indOper === '0' && valid) {
+        inValidSaida = false;
+        vlComprasBruto += parseBr(fields[IDX_C100.VL_DOC] ?? '0');
+        qtdDocumentosCompras += 1;
+      } else {
+        inValidSaida = false;
       }
 
     } else if (reg === 'C190') {
@@ -120,6 +131,8 @@ export function parseEfdIcmsIpiFaturamento(buffer: Buffer): FatoFaturamento {
     vlIcms,
     vlIpi,
     qtdDocumentos,
+    vlComprasBruto,
+    qtdDocumentosCompras,
     cfops,
   };
 }

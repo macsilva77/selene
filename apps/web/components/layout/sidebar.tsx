@@ -69,7 +69,8 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'fiscal-analytics',
     label: 'Análise Fiscal',
     items: [
-      { href: '/clientes-fornecedores',             icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
+      { href: '/faturamento',                         icon: ChartBarIcon,        label: 'Faturamento' },
+      { href: '/clientes-fornecedores',               icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
       { href: '/clientes-fornecedores/processamento', icon: ArrowsClockwiseIcon, label: 'Processamento CF' },
     ],
   },

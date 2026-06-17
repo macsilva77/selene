@@ -66,6 +66,22 @@ class ListarQueryDto {
   fonte?: string;
 }
 
+class ConsolidadoQueryDto {
+  @IsString() @IsNotEmpty()
+  empresaId: string;
+
+  @IsOptional()
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  anoInicio?: number;
+
+  @IsOptional()
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  anoFim?: number;
+
+  @IsOptional() @IsIn(['EFD_ICMS', 'EFD_CONTRIB', 'AMBOS'])
+  fonte?: string;
+}
+
 // ─── Controller ───────────────────────────────────────────────────────────────
 
 @ApiTags('faturamento')
@@ -244,6 +260,7 @@ export class FaturamentoController {
         mes: true,
         vlFaturamentoBruto: true, vlIcms: true, vlIpi: true,
         vlPis: true, vlCofins: true, qtdDocumentos: true,
+        vlComprasBruto: true, qtdDocumentosCompras: true,
       },
     });
 
@@ -255,6 +272,7 @@ export class FaturamentoController {
       ano,
       fonte,
       totalFaturamentoBruto: total('vlFaturamentoBruto'),
+      totalComprasBruto:     total('vlComprasBruto'),
       totalIcms:             total('vlIcms'),
       totalIpi:              total('vlIpi'),
       totalPis:              total('vlPis'),
@@ -264,12 +282,91 @@ export class FaturamentoController {
       mensal: competencias.map(c => ({
         mes:                  c.mes,
         vlFaturamentoBruto:   Number(c.vlFaturamentoBruto),
+        vlComprasBruto:       Number(c.vlComprasBruto),
         vlIcms:               Number(c.vlIcms),
         vlIpi:                Number(c.vlIpi),
         vlPis:                Number(c.vlPis),
         vlCofins:             Number(c.vlCofins),
         qtdDocumentos:        c.qtdDocumentos,
       })),
+    };
+  }
+
+  /**
+   * Faturamento consolidado multi-ano para uma empresa.
+   * Cada ano agrega a soma de todos os meses (fonte=AMBOS por padrão).
+   */
+  @Get('consolidado')
+  @ApiOperation({ summary: 'Faturamento consolidado por ano (multi-ano)' })
+  @RequiresPermission('faturamento:visualizar')
+  async consolidado(
+    @Query() query: ConsolidadoQueryDto,
+    @CurrentUser() user: { tenantId: string },
+  ) {
+    if (!query.empresaId) throw new BadRequestException('empresaId é obrigatório');
+    const fonte = query.fonte ?? 'AMBOS';
+    const anoInicio = query.anoInicio ?? new Date().getFullYear() - 4;
+    const anoFim    = query.anoFim    ?? new Date().getFullYear();
+
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { id: query.empresaId, tenantId: user.tenantId },
+      select: { id: true, cnpj: true, nome: true },
+    });
+    if (!empresa) throw new NotFoundException('Empresa não encontrada');
+
+    const competencias = await this.prisma.faturamentoCompetencia.findMany({
+      where: {
+        tenantId: user.tenantId,
+        empresaId: query.empresaId,
+        fonte,
+        ano: { gte: anoInicio, lte: anoFim },
+      },
+      orderBy: [{ ano: 'asc' }, { mes: 'asc' }],
+      select: {
+        ano: true, mes: true,
+        vlFaturamentoBruto: true, vlIcms: true, vlIpi: true,
+        vlPis: true, vlCofins: true, qtdDocumentos: true,
+        vlComprasBruto: true, qtdDocumentosCompras: true,
+      },
+    });
+
+    // Agrupa por ano
+    const anoMap = new Map<number, {
+      vlFaturamentoBruto: number; vlComprasBruto: number;
+      vlIcms: number; vlIpi: number; vlPis: number; vlCofins: number;
+      qtdDocumentos: number; qtdDocumentosCompras: number; mesesProcessados: number;
+    }>();
+
+    for (const c of competencias) {
+      const entry = anoMap.get(c.ano) ?? {
+        vlFaturamentoBruto: 0, vlComprasBruto: 0,
+        vlIcms: 0, vlIpi: 0, vlPis: 0, vlCofins: 0,
+        qtdDocumentos: 0, qtdDocumentosCompras: 0, mesesProcessados: 0,
+      };
+      entry.vlFaturamentoBruto   += Number(c.vlFaturamentoBruto);
+      entry.vlComprasBruto       += Number(c.vlComprasBruto);
+      entry.vlIcms               += Number(c.vlIcms);
+      entry.vlIpi                += Number(c.vlIpi);
+      entry.vlPis                += Number(c.vlPis);
+      entry.vlCofins             += Number(c.vlCofins);
+      entry.qtdDocumentos        += c.qtdDocumentos;
+      entry.qtdDocumentosCompras += c.qtdDocumentosCompras;
+      entry.mesesProcessados     += 1;
+      anoMap.set(c.ano, entry);
+    }
+
+    const anos = Array.from(anoMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([ano, d]) => ({ ano, ...d }));
+
+    return {
+      empresaId: empresa.id,
+      cnpj: empresa.cnpj,
+      nome: empresa.nome,
+      fonte,
+      anoInicio,
+      anoFim,
+      anos,
     };
   }
 }
