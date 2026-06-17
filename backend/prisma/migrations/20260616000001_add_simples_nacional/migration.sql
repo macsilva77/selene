@@ -1,6 +1,5 @@
 -- Migration: Simples Nacional + PGDAS
--- Aplicar com: prisma migrate dev --name add_simples_nacional
--- Ou em prod:  prisma db push
+-- Tabelas para situação Simples Nacional (via BrasilAPI) e declarações PGDAS-D (via portal mTLS)
 
 CREATE TABLE simples_nacional_situacoes (
   id            TEXT        NOT NULL PRIMARY KEY,
@@ -26,7 +25,7 @@ CREATE TABLE pgdas_declaracoes (
   tenant_id            TEXT         NOT NULL,
   empresa_id           TEXT         NOT NULL,
   cnpj                 VARCHAR(14)  NOT NULL,
-  periodo              VARCHAR(7)   NOT NULL,            -- AAAA-MM
+  periodo              VARCHAR(7)   NOT NULL,
   vl_receita_bruta     DECIMAL(18,2) NOT NULL DEFAULT 0,
   vl_receita_comercio  DECIMAL(18,2) NOT NULL DEFAULT 0,
   vl_receita_industria DECIMAL(18,2) NOT NULL DEFAULT 0,

@@ -52,9 +52,9 @@ export interface FaturamentoConsolidado {
 }
 
 export interface EmpresaFaturamento {
-  id:          string;
-  cnpj:        string;
-  nome:        string;
+  id:           string;
+  cnpj:         string;
+  nome:         string;
   nomeFantasia: string | null;
 }
 
@@ -62,12 +62,9 @@ export interface EmpresaFaturamento {
 
 export const faturamentoApi = {
   anual(params: { cnpj: string; ano: number; fonte?: string }): Promise<FaturamentoAnual> {
-    const qs = new URLSearchParams({
-      cnpj:  params.cnpj,
-      ano:   String(params.ano),
-      fonte: params.fonte ?? 'AMBOS',
-    });
-    return api.get<FaturamentoAnual>(`/faturamento/anual?${qs}`);
+    return api.get('/faturamento/anual', {
+      params: { cnpj: params.cnpj, ano: params.ano, fonte: params.fonte ?? 'AMBOS' },
+    }).then(r => r.data);
   },
 
   consolidado(params: {
@@ -76,15 +73,11 @@ export const faturamentoApi = {
     anoFim?:    number;
     fonte?:     string;
   }): Promise<FaturamentoConsolidado> {
-    const qs = new URLSearchParams({ empresaId: params.empresaId });
-    if (params.anoInicio) qs.set('anoInicio', String(params.anoInicio));
-    if (params.anoFim)    qs.set('anoFim',    String(params.anoFim));
-    if (params.fonte)     qs.set('fonte',     params.fonte);
-    return api.get<FaturamentoConsolidado>(`/faturamento/consolidado?${qs}`);
+    return api.get('/faturamento/consolidado', { params }).then(r => r.data);
   },
 
-  async listarEmpresas(): Promise<EmpresaFaturamento[]> {
-    const resp = await api.get<{ data: EmpresaFaturamento[] }>('/empresas?limit=500&ativo=true');
-    return resp.data ?? [];
+  listarEmpresas(): Promise<EmpresaFaturamento[]> {
+    return api.get('/empresas', { params: { limit: 500, ativo: true } })
+      .then(r => (r.data?.data ?? r.data) as EmpresaFaturamento[]);
   },
 };
