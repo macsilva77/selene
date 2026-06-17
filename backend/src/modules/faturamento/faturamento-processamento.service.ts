@@ -292,6 +292,9 @@ export class FaturamentoProcessamentoService {
       }),
     ]);
 
+    // Invalida cache independentemente de haver mesclagem — qualquer escrita torna o cache obsoleto
+    await this.queryService.invalidarEmpresa(tenantId, empresaId);
+
     // Mesclagem só executa quando AMBAS as fontes estiverem presentes
     if (!icms || !contrib) return false;
 
@@ -328,9 +331,6 @@ export class FaturamentoProcessamentoService {
     this.logger.log(
       `AMBOS mesclado: empresaId=${empresaId} ${ano}-${String(mes).padStart(2, '0')} bruto=${vlFaturamentoBruto}`,
     );
-
-    // Invalida cache de leitura para que o próximo acesso reflita os novos dados
-    await this.queryService.invalidarEmpresa(tenantId, empresaId);
 
     return true;
   }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  ComposedChart, BarChart,
+  ComposedChart, BarChart, LineChart,
   Bar, Line, XAxis, YAxis, CartesianGrid, Legend,
   ResponsiveContainer,
 } from 'recharts';
@@ -213,8 +213,6 @@ function PainelValores({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
 
 /* ─── Painel 3: Índices ──────────────────────────────────────────────────── */
 
-import { LineChart, Line as ReLine } from 'recharts';
-
 function PainelIndices({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
   type D = {
     ano: string;
@@ -242,10 +240,10 @@ function PainelIndices({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
         <YAxis tickFormatter={yTickPct} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} width={55} domain={[0, 1]} />
         <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtPct(Number(v))} labelFormatter={String} />} />
         <Legend wrapperStyle={{ fontSize: 10 }} formatter={(k) => CFG_INDICES[k]?.label ?? k} />
-        <ReLine type="monotone" dataKey="idxEstadual"      name="idxEstadual"      stroke="#3B5BDB" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        <ReLine type="monotone" dataKey="idxInterestadual" name="idxInterestadual" stroke="#37B24D" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        <ReLine type="monotone" dataKey="idxExportacao"    name="idxExportacao"    stroke="#F59F00" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        <ReLine type="monotone" dataKey="idxDevolucao"     name="idxDevolucao"     stroke="#E03131" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="idxEstadual"      name="idxEstadual"      stroke="#3B5BDB" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="idxInterestadual" name="idxInterestadual" stroke="#37B24D" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="idxExportacao"    name="idxExportacao"    stroke="#F59F00" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="idxDevolucao"     name="idxDevolucao"     stroke="#E03131" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
       </LineChart>
     </ChartContainer>
   );
