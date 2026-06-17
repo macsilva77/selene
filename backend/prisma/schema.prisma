@@ -1888,6 +1888,13 @@ model FaturamentoCompetencia {
   qtdDocumentos        Int      @default(0) @map("qtd_documentos")
   vlComprasBruto       Decimal  @default(0) @map("vl_compras_bruto")      @db.Decimal(18, 2)
   qtdDocumentosCompras Int      @default(0) @map("qtd_documentos_compras")
+  // CFOPs pré-categorizados na escrita (evita string_agg + JSON parse na leitura)
+  vlEstaduais          Decimal  @default(0) @map("vl_estaduais")          @db.Decimal(18, 2)
+  vlInterestaduais     Decimal  @default(0) @map("vl_interestaduais")     @db.Decimal(18, 2)
+  vlExportacoes        Decimal  @default(0) @map("vl_exportacoes")        @db.Decimal(18, 2)
+  vlDevolucoes         Decimal  @default(0) @map("vl_devolucoes")         @db.Decimal(18, 2)
+  vlTransferencias     Decimal  @default(0) @map("vl_transferencias")     @db.Decimal(18, 2)
+  vlRemessas           Decimal  @default(0) @map("vl_remessas")           @db.Decimal(18, 2)
   gcsUri               String   @map("gcs_uri")
   hashArquivo          String   @map("hash_arquivo") @db.VarChar(64)
   cfopsJson            String?  @map("cfops_json")   @db.Text

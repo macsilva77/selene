@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { FaturamentoGcsService } from './faturamento-gcs.service';
 import { FaturamentoQueryService } from './faturamento-query.service';
+import { categorizarCfopsArray } from './cfop-util';
 import { parseEfdIcmsIpiFaturamento } from './sped/efd-icms-ipi-faturamento.parser';
 import { parseEfdContribuicoesFaturamento } from './sped/efd-contribuicoes-faturamento.parser';
 import type { SpedArquivoDisponivelEvent } from '../sped/sped.service';
@@ -82,6 +83,8 @@ export class FaturamentoProcessamentoService {
       `cfops=${faturamento.cfops.length}`,
     );
 
+    const cfopCats = categorizarCfopsArray(faturamento.cfops);
+
     await this.prisma.faturamentoCompetencia.upsert({
       where: { tenantId_empresaId_ano_mes_fonte: { tenantId, empresaId, ano, mes, fonte: 'EFD_ICMS' } },
       create: {
@@ -92,6 +95,7 @@ export class FaturamentoProcessamentoService {
         qtdDocumentos:        faturamento.qtdDocumentos,
         vlComprasBruto:       faturamento.vlComprasBruto,
         qtdDocumentosCompras: faturamento.qtdDocumentosCompras,
+        ...cfopCats,
         gcsUri, hashArquivo,
         cfopsJson: JSON.stringify(faturamento.cfops),
       },
@@ -103,6 +107,7 @@ export class FaturamentoProcessamentoService {
         qtdDocumentos:        faturamento.qtdDocumentos,
         vlComprasBruto:       faturamento.vlComprasBruto,
         qtdDocumentosCompras: faturamento.qtdDocumentosCompras,
+        ...cfopCats,
         gcsUri, hashArquivo,
         cfopsJson: JSON.stringify(faturamento.cfops),
       },
@@ -307,23 +312,33 @@ export class FaturamentoProcessamentoService {
     const vlComprasBruto     = Number(icms.vlComprasBruto);
     const qtdDocumentosCompras = icms.qtdDocumentosCompras;
 
-    const base = icms;
+    // CFOPs vêm do EFD_ICMS — EFD_CONTRIB não tem C100/C190
+    const cfopCats = {
+      vlEstaduais:      Number(icms.vlEstaduais),
+      vlInterestaduais: Number(icms.vlInterestaduais),
+      vlExportacoes:    Number(icms.vlExportacoes),
+      vlDevolucoes:     Number(icms.vlDevolucoes),
+      vlTransferencias: Number(icms.vlTransferencias),
+      vlRemessas:       Number(icms.vlRemessas),
+    };
 
     await this.prisma.faturamentoCompetencia.upsert({
       where: { tenantId_empresaId_ano_mes_fonte: { tenantId, empresaId, ano, mes, fonte: 'AMBOS' } },
       create: {
-        tenantId, empresaId, cnpj: base.cnpj, ano, mes, fonte: 'AMBOS',
+        tenantId, empresaId, cnpj: icms.cnpj, ano, mes, fonte: 'AMBOS',
         vlFaturamentoBruto, vlIcms, vlIpi, vlPis, vlCofins, qtdDocumentos,
         vlComprasBruto, qtdDocumentosCompras,
-        gcsUri: base.gcsUri, hashArquivo: base.hashArquivo,
+        ...cfopCats,
+        gcsUri: icms.gcsUri, hashArquivo: icms.hashArquivo,
         cfopsJson: icms.cfopsJson ?? null,
       },
       update: {
-        cnpj: base.cnpj,
-        gcsUri: base.gcsUri,
-        hashArquivo: base.hashArquivo,
+        cnpj: icms.cnpj,
+        gcsUri: icms.gcsUri,
+        hashArquivo: icms.hashArquivo,
         vlFaturamentoBruto, vlIcms, vlIpi, vlPis, vlCofins, qtdDocumentos,
         vlComprasBruto, qtdDocumentosCompras,
+        ...cfopCats,
         cfopsJson: icms.cfopsJson ?? null,
       },
     });
