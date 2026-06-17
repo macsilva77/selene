@@ -369,4 +369,171 @@ export class FaturamentoController {
       anos,
     };
   }
+
+  /**
+   * Consolidado multi-ano com breakdown por categoria de CFOP.
+   * Extrai do cfopsJson armazenado — sem re-processar arquivo.
+   * Retorna por ano: estaduais, interestaduais, exportações, devoluções,
+   * transferências, remessas e os índices percentuais derivados.
+   */
+  @Get('cfops-consolidado')
+  @ApiOperation({ summary: 'Faturamento consolidado com breakdown de CFOPs por ano' })
+  @RequiresPermission('faturamento:visualizar')
+  async cfopsConsolidado(
+    @Query() query: ConsolidadoQueryDto,
+    @CurrentUser() user: { tenantId: string },
+  ) {
+    if (!query.empresaId) throw new BadRequestException('empresaId é obrigatório');
+    const fonte     = query.fonte    ?? 'AMBOS';
+    const anoInicio = query.anoInicio ?? new Date().getFullYear() - 4;
+    const anoFim    = query.anoFim    ?? new Date().getFullYear();
+
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { id: query.empresaId, tenantId: user.tenantId },
+      select: { id: true, cnpj: true, nome: true },
+    });
+    if (!empresa) throw new NotFoundException('Empresa não encontrada');
+
+    const competencias = await this.prisma.faturamentoCompetencia.findMany({
+      where: {
+        tenantId: user.tenantId,
+        empresaId: query.empresaId,
+        fonte,
+        ano: { gte: anoInicio, lte: anoFim },
+      },
+      orderBy: [{ ano: 'asc' }, { mes: 'asc' }],
+      select: {
+        ano: true, mes: true,
+        vlFaturamentoBruto: true, vlComprasBruto: true,
+        vlIcms: true, vlIpi: true, vlPis: true, vlCofins: true,
+        qtdDocumentos: true, qtdDocumentosCompras: true,
+        cfopsJson: true,
+      },
+    });
+
+    // Agrupa por ano somando valores e CFOPs
+    type AnoAcc = {
+      vlFaturamentoBruto: number; vlComprasBruto: number;
+      vlIcms: number; vlIpi: number; vlPis: number; vlCofins: number;
+      qtdDocumentos: number; qtdDocumentosCompras: number;
+      vlEstaduais: number; vlInterestaduais: number; vlExportacoes: number;
+      vlDevolucoes: number; vlTransferencias: number; vlRemessas: number;
+      mesesProcessados: number;
+    };
+    const anoMap = new Map<number, AnoAcc>();
+
+    for (const c of competencias) {
+      const cfops = categorizarCfops(c.cfopsJson);
+      const entry = anoMap.get(c.ano) ?? {
+        vlFaturamentoBruto: 0, vlComprasBruto: 0,
+        vlIcms: 0, vlIpi: 0, vlPis: 0, vlCofins: 0,
+        qtdDocumentos: 0, qtdDocumentosCompras: 0,
+        vlEstaduais: 0, vlInterestaduais: 0, vlExportacoes: 0,
+        vlDevolucoes: 0, vlTransferencias: 0, vlRemessas: 0,
+        mesesProcessados: 0,
+      };
+      entry.vlFaturamentoBruto   += Number(c.vlFaturamentoBruto);
+      entry.vlComprasBruto       += Number(c.vlComprasBruto);
+      entry.vlIcms               += Number(c.vlIcms);
+      entry.vlIpi                += Number(c.vlIpi);
+      entry.vlPis                += Number(c.vlPis);
+      entry.vlCofins             += Number(c.vlCofins);
+      entry.qtdDocumentos        += c.qtdDocumentos;
+      entry.qtdDocumentosCompras += c.qtdDocumentosCompras;
+      entry.vlEstaduais          += cfops.vlEstaduais;
+      entry.vlInterestaduais     += cfops.vlInterestaduais;
+      entry.vlExportacoes        += cfops.vlExportacoes;
+      entry.vlDevolucoes         += cfops.vlDevolucoes;
+      entry.vlTransferencias     += cfops.vlTransferencias;
+      entry.vlRemessas           += cfops.vlRemessas;
+      entry.mesesProcessados     += 1;
+      anoMap.set(c.ano, entry);
+    }
+
+    const anos = Array.from(anoMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([ano, d]) => {
+        const fat = d.vlFaturamentoBruto;
+        // vlMercadorias = faturamento excluindo devoluções, transferências e remessas
+        const vlMercadorias  = fat - d.vlDevolucoes - d.vlTransferencias - d.vlRemessas;
+        const vlFatLiquido   = fat - d.vlDevolucoes;
+        return {
+          ano,
+          ...d,
+          vlMercadorias,
+          vlFatLiquido,
+          idxEstadual:      fat > 0 ? d.vlEstaduais      / fat : 0,
+          idxInterestadual: fat > 0 ? d.vlInterestaduais / fat : 0,
+          idxExportacao:    fat > 0 ? d.vlExportacoes    / fat : 0,
+          idxDevolucao:     fat > 0 ? d.vlDevolucoes     / fat : 0,
+        };
+      });
+
+    return {
+      empresaId: empresa.id,
+      cnpj: empresa.cnpj,
+      nome: empresa.nome,
+      fonte,
+      anoInicio,
+      anoFim,
+      anos,
+    };
+  }
+}
+
+// ─── Helpers CFOP ────────────────────────────────────────────────────────────
+
+interface CfopEntry { cfop: string; vlOpr: number; qtd: number }
+
+interface CfopBreakdown {
+  vlEstaduais:      number;
+  vlInterestaduais: number;
+  vlExportacoes:    number;
+  vlDevolucoes:     number;
+  vlTransferencias: number;
+  vlRemessas:       number;
+}
+
+// CFOPs de devolução de compra (saída para devolver ao fornecedor)
+const CFOP_DEVOLUCAO = new Set([
+  '5201', '5202', '5210', '5410', '5411', '5412', '5413', '5414', '5415',
+  '6201', '6202', '6210', '6410', '6411', '6412', '6413', '6414', '6415',
+  '7201', '7202',
+]);
+
+// CFOPs de transferência entre estabelecimentos da mesma empresa
+const CFOP_TRANSFERENCIA = new Set([
+  '5151', '5152', '5153', '5155', '5156',
+  '6151', '6152', '6153', '6155', '6156',
+  '7151', '7152',
+]);
+
+function categorizarCfops(cfopsJson: string | null): CfopBreakdown {
+  if (!cfopsJson) {
+    return { vlEstaduais: 0, vlInterestaduais: 0, vlExportacoes: 0, vlDevolucoes: 0, vlTransferencias: 0, vlRemessas: 0 };
+  }
+
+  let vlEstaduais = 0, vlInterestaduais = 0, vlExportacoes = 0;
+  let vlDevolucoes = 0, vlTransferencias = 0, vlRemessas = 0;
+
+  let entries: CfopEntry[];
+  try { entries = JSON.parse(cfopsJson) as CfopEntry[]; }
+  catch { return { vlEstaduais, vlInterestaduais, vlExportacoes, vlDevolucoes, vlTransferencias, vlRemessas }; }
+
+  for (const { cfop, vlOpr } of entries) {
+    if (!cfop || vlOpr == null) continue;
+    const v = Number(vlOpr);
+    const prefix = cfop[0];
+
+    if (CFOP_DEVOLUCAO.has(cfop)) { vlDevolucoes += v; }
+    else if (CFOP_TRANSFERENCIA.has(cfop)) { vlTransferencias += v; }
+    else if (prefix === '5' && cfop >= '5900') { vlRemessas += v; }
+    else if (prefix === '6' && cfop >= '6900') { vlRemessas += v; }
+    else if (prefix === '7' && cfop >= '7900') { vlRemessas += v; }
+    else if (prefix === '5') { vlEstaduais += v; }
+    else if (prefix === '6') { vlInterestaduais += v; }
+    else if (prefix === '7') { vlExportacoes += v; }
+  }
+
+  return { vlEstaduais, vlInterestaduais, vlExportacoes, vlDevolucoes, vlTransferencias, vlRemessas };
 }

@@ -1,6 +1,6 @@
 import { api } from './api';
 
-/* ─── Tipos ──────────────────────────────────────────────────────────────── */
+/* ─── Tipos base ─────────────────────────────────────────────────────────── */
 
 export interface FaturamentoMensal {
   mes:                  number;
@@ -28,6 +28,8 @@ export interface FaturamentoAnual {
   mensal:                FaturamentoMensal[];
 }
 
+/* ─── Consolidado simples (sem CFOP) ─────────────────────────────────────── */
+
 export interface FaturamentoConsolidadoAno {
   ano:                  number;
   vlFaturamentoBruto:   number;
@@ -50,6 +52,45 @@ export interface FaturamentoConsolidado {
   anoFim:    number;
   anos:      FaturamentoConsolidadoAno[];
 }
+
+/* ─── Consolidado com breakdown CFOP ─────────────────────────────────────── */
+
+export interface FaturamentoCfopsAno {
+  ano:                  number;
+  vlFaturamentoBruto:   number;
+  vlComprasBruto:       number;
+  vlIcms:               number;
+  qtdDocumentos:        number;
+  qtdDocumentosCompras: number;
+  mesesProcessados:     number;
+  // Categorias CFOP
+  vlEstaduais:          number;
+  vlInterestaduais:     number;
+  vlExportacoes:        number;
+  vlDevolucoes:         number;
+  vlTransferencias:     number;
+  vlRemessas:           number;
+  // Calculados
+  vlMercadorias:        number;
+  vlFatLiquido:         number;
+  // Índices (0–1)
+  idxEstadual:          number;
+  idxInterestadual:     number;
+  idxExportacao:        number;
+  idxDevolucao:         number;
+}
+
+export interface FaturamentoCfopsConsolidado {
+  empresaId: string;
+  cnpj:      string;
+  nome:      string;
+  fonte:     string;
+  anoInicio: number;
+  anoFim:    number;
+  anos:      FaturamentoCfopsAno[];
+}
+
+/* ─── Empresa ────────────────────────────────────────────────────────────── */
 
 export interface EmpresaFaturamento {
   id:           string;
@@ -74,6 +115,15 @@ export const faturamentoApi = {
     fonte?:     string;
   }): Promise<FaturamentoConsolidado> {
     return api.get('/faturamento/consolidado', { params }).then(r => r.data);
+  },
+
+  cfopsConsolidado(params: {
+    empresaId:  string;
+    anoInicio?: number;
+    anoFim?:    number;
+    fonte?:     string;
+  }): Promise<FaturamentoCfopsConsolidado> {
+    return api.get('/faturamento/cfops-consolidado', { params }).then(r => r.data);
   },
 
   listarEmpresas(): Promise<EmpresaFaturamento[]> {
