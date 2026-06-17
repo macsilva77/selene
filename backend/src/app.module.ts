@@ -36,6 +36,7 @@ import { AnaliseCreditoModule } from './modules/analise-credito/analise-credito.
 import { ClientesFornecedoresModule } from './modules/clientes-fornecedores/clientes-fornecedores.module';
 import { IndicadoresEcfModule } from './modules/indicadores-ecf/indicadores-ecf.module';
 import { FaturamentoModule } from './modules/faturamento/faturamento.module';
+import { SimplesNacionalModule } from './modules/simples-nacional/simples-nacional.module';
 
 
 @Module({
@@ -125,6 +126,7 @@ import { FaturamentoModule } from './modules/faturamento/faturamento.module';
     ClientesFornecedoresModule,
     IndicadoresEcfModule,
     FaturamentoModule,
+    SimplesNacionalModule,
   ],
   providers: [
     // Global exception filter

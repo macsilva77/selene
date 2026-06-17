@@ -23,6 +23,7 @@ import {
   SlidersIcon,
   UsersThreeIcon,
   ArrowsClockwiseIcon,
+  StorefrontIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -42,6 +43,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/etiquetas',    icon: TagIcon,             label: 'Etiquetas' },
       { href: '/fornecedores', icon: TruckIcon,           label: 'Fornecedores' },
       { href: '/perfis',       icon: UserCircleGearIcon,  label: 'Perfis' },
+      { href: '/tenants',      icon: StorefrontIcon,      label: 'Tenants' },
       { href: '/unidades',     icon: FingerprintIcon,     label: 'Unid. Administrativas' },
       { href: '/usuarios',     icon: UsersIcon,           label: 'Usuários' },
     ],

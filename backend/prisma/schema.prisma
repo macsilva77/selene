@@ -58,6 +58,8 @@ model Tenant {
   cfCompetencias       ClientesFornecedoresCompetencia[]
   ecfIndicadores          EcfIndicador[]
   faturamentoCompetencias FaturamentoCompetencia[]
+  snSituacoes             SimplesNacionalSituacao[]
+  pgdasDeclaracoes        PgdasDeclaracao[]
 
   @@map("tenants")
 }
@@ -159,6 +161,8 @@ model Empresa {
   atualizadoEm        DateTime @updatedAt @map("atualizado_em")
   tenant              Tenant               @relation(fields: [tenantId], references: [id])
   certificados        CertificadoEmpresa[]
+  snSituacao          SimplesNacionalSituacao?
+  pgdasDeclaracoes    PgdasDeclaracao[]
 
   @@unique([tenantId, cnpj])
   @@map("empresas")
@@ -1893,4 +1897,51 @@ model FaturamentoCompetencia {
   @@unique([tenantId, empresaId, ano, mes, fonte], name: "tenantId_empresaId_ano_mes_fonte")
   @@index([tenantId, cnpj])
   @@map("faturamento_competencias")
+}
+
+// ─── SIMPLES NACIONAL / PGDAS ─────────────────────────────────────────────────
+
+/// Situação Simples Nacional consultada via BrasilAPI — um registro por empresa.
+model SimplesNacionalSituacao {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  empresaId    String    @unique @map("empresa_id")
+  cnpj         String    @db.VarChar(14)
+  optante      Boolean   // true = empresa é optante do Simples Nacional
+  // ATIVO | EXCLUIDO | SUSPENSO | MEI | NAO_OPTANTE
+  situacao     String    @db.VarChar(20)
+  dataOpcao    DateTime? @map("data_opcao")    @db.Date
+  dataExclusao DateTime? @map("data_exclusao") @db.Date
+  consultadoEm DateTime  @default(now()) @map("consultado_em")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@index([tenantId, optante])
+  @@map("simples_nacional_situacoes")
+}
+
+/// Declaração mensal extraída do PGDAS-D — uma linha por competência (AAAA-MM).
+model PgdasDeclaracao {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  empresaId          String   @map("empresa_id")
+  cnpj               String   @db.VarChar(14)
+  periodo            String   @db.VarChar(7)   // AAAA-MM
+  vlReceitaBruta     Decimal  @default(0) @map("vl_receita_bruta")     @db.Decimal(18, 2)
+  vlReceitaComercio  Decimal  @default(0) @map("vl_receita_comercio")  @db.Decimal(18, 2)
+  vlReceitaIndustria Decimal  @default(0) @map("vl_receita_industria") @db.Decimal(18, 2)
+  vlReceitaServicos  Decimal  @default(0) @map("vl_receita_servicos")  @db.Decimal(18, 2)
+  vlDas              Decimal? @map("vl_das")                           @db.Decimal(18, 2)
+  // TRANSMITIDA | RETIFICADA | NAO_ENTREGUE
+  situacaoDeclaracao String   @default("TRANSMITIDA") @map("situacao_declaracao") @db.VarChar(30)
+  coletadoEm         DateTime @default(now()) @map("coletado_em")
+  atualizadoEm       DateTime @updatedAt       @map("atualizado_em")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([tenantId, empresaId, periodo])
+  @@index([tenantId, empresaId])
+  @@map("pgdas_declaracoes")
 }
