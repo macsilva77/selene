@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ComposedChart, BarChart, LineChart,
   Bar, Line, XAxis, YAxis, CartesianGrid, Legend,
-  ResponsiveContainer,
 } from 'recharts';
 import {
   ChartContainer,

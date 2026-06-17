@@ -1,3 +1,4 @@
+-- Prisma migrate no-transaction
 -- Migration: índices otimizados para queries de consolidado de faturamento
 --
 -- Problema: o índice UNIQUE (tenant_id, empresa_id, ano, mes, fonte) coloca
