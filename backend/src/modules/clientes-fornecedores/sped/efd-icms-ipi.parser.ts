@@ -91,6 +91,28 @@ export function* iterLines(buf: Buffer): Generator<string> {
   if (start < buf.length) yield buf.toString('latin1', start);
 }
 
+/**
+ * Versão streaming de iterLines — recebe um Readable do GCS e processa em chunks.
+ * Mantém exatamente o mesmo encoding latin1 e tratamento \r\n, mas nunca carrega
+ * o arquivo inteiro em memória: apenas o chunk atual (~64KB) + uma linha parcial.
+ */
+export async function* iterLinesStream(
+  stream: import('node:stream').Readable,
+): AsyncGenerator<string> {
+  let remainder = '';
+  for await (const raw of stream) {
+    const text = Buffer.isBuffer(raw) ? raw.toString('latin1') : String(raw);
+    const lines = (remainder + text).split('\n');
+    remainder = lines.pop() ?? '';
+    for (const line of lines) {
+      const s = line.endsWith('\r') ? line.slice(0, -1) : line;
+      if (s) yield s;
+    }
+  }
+  const s = remainder.endsWith('\r') ? remainder.slice(0, -1) : remainder;
+  if (s) yield s;
+}
+
 function acumular(
   fields: string[],
   idxOper: number,

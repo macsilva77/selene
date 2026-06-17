@@ -1,13 +1,14 @@
 /**
  * Testes unitários de efd-contribuicoes-faturamento.parser.ts
  *
- * Funções puras — sem mocks. Buffer Latin-1.
+ * Funções puras — sem mocks. Buffer Latin-1 via Readable.from().
  *
  * Registros testados:
  *   0000 — identificação (CNPJ, razão social, competência)
  *   A100 — NFS-e de serviços sujeitos ao ISS
  */
 
+import { Readable } from 'node:stream';
 import {
   parseEfdContribuicoesFaturamento,
   FatoFaturamentoContrib,
@@ -15,8 +16,8 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buf(lines: string[]): Buffer {
-  return Buffer.from(lines.join('\n'), 'latin1');
+function stream(lines: string[]): Readable {
+  return Readable.from([Buffer.from(lines.join('\n'), 'latin1')]);
 }
 
 /**
@@ -49,12 +50,12 @@ function linhaA100(
 // ─── 0000 — identificação ─────────────────────────────────────────────────────
 
 describe('parseEfdContribuicoesFaturamento — 0000', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01032024', 'Consultoria Silva Ltda', '55666777000145'),
   ]);
 
   let resultado: FatoFaturamentoContrib;
-  beforeAll(() => { resultado = parseEfdContribuicoesFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdContribuicoesFaturamento(content); });
 
   it('extrai competência do DT_INI', () => {
     expect(resultado.competencia).toBe('2024-03');
@@ -72,13 +73,13 @@ describe('parseEfdContribuicoesFaturamento — 0000', () => {
 // ─── A100 — saída válida ──────────────────────────────────────────────────────
 
 describe('parseEfdContribuicoesFaturamento — A100 saída válida', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01042024', 'Serviços Alpha S.A.', '11222333000181'),
     linhaA100('1', '00', '15.000,00', '225,00', '690,00'),
   ]);
 
   let resultado: FatoFaturamentoContrib;
-  beforeAll(() => { resultado = parseEfdContribuicoesFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdContribuicoesFaturamento(content); });
 
   it('acumula vlServicos', () => {
     expect(resultado.vlServicos).toBeCloseTo(15000, 2);
@@ -100,33 +101,30 @@ describe('parseEfdContribuicoesFaturamento — A100 saída válida', () => {
 // ─── A100 — entrada e cancelado ignorados ─────────────────────────────────────
 
 describe('parseEfdContribuicoesFaturamento — A100 não-saída e cancelado', () => {
-  it('ignora A100 de entrada (IND_OPER=0)', () => {
-    const content = buf([
+  it('ignora A100 de entrada (IND_OPER=0)', async () => {
+    const r = await parseEfdContribuicoesFaturamento(stream([
       linha0000('01012024', 'Empresa B', '22333444000172'),
       linhaA100('0', '00', '8.000,00', '120,00', '368,00'),
-    ]);
-    const r = parseEfdContribuicoesFaturamento(content);
+    ]));
     expect(r.vlServicos).toBe(0);
     expect(r.qtdDocumentosServicos).toBe(0);
   });
 
-  it('ignora A100 cancelado (COD_SIT=02)', () => {
-    const content = buf([
+  it('ignora A100 cancelado (COD_SIT=02)', async () => {
+    const r = await parseEfdContribuicoesFaturamento(stream([
       linha0000('01012024', 'Empresa C', '33444555000163'),
       linhaA100('1', '02', '5.000,00', '75,00', '230,00'),
-    ]);
-    const r = parseEfdContribuicoesFaturamento(content);
+    ]));
     expect(r.vlServicos).toBe(0);
     expect(r.vlPis).toBe(0);
     expect(r.vlCofins).toBe(0);
   });
 
-  it('ignora A100 extemporâneo cancelado (COD_SIT=03)', () => {
-    const content = buf([
+  it('ignora A100 extemporâneo cancelado (COD_SIT=03)', async () => {
+    const r = await parseEfdContribuicoesFaturamento(stream([
       linha0000('01012024', 'Empresa D', '44555666000154'),
       linhaA100('1', '03', '3.000,00', '45,00', '138,00'),
-    ]);
-    const r = parseEfdContribuicoesFaturamento(content);
+    ]));
     expect(r.vlServicos).toBe(0);
   });
 });
@@ -134,7 +132,7 @@ describe('parseEfdContribuicoesFaturamento — A100 não-saída e cancelado', ()
 // ─── Múltiplos documentos A100 ───────────────────────────────────────────────
 
 describe('parseEfdContribuicoesFaturamento — múltiplos A100', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01052024', 'Tech Services Ltda', '66777888000136'),
     linhaA100('1', '00', '10.000,00', '150,00', '460,00'),
     linhaA100('1', '00', '5.000,00', '75,00', '230,00'),
@@ -142,7 +140,7 @@ describe('parseEfdContribuicoesFaturamento — múltiplos A100', () => {
   ]);
 
   let resultado: FatoFaturamentoContrib;
-  beforeAll(() => { resultado = parseEfdContribuicoesFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdContribuicoesFaturamento(content); });
 
   it('soma vlServicos de todos os A100', () => {
     expect(resultado.vlServicos).toBeCloseTo(18000, 2);
@@ -164,7 +162,7 @@ describe('parseEfdContribuicoesFaturamento — múltiplos A100', () => {
 // ─── Mix válido e inválido ────────────────────────────────────────────────────
 
 describe('parseEfdContribuicoesFaturamento — mix de A100 válidos e inválidos', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01062024', 'Mix Ltda', '77888999000127'),
     linhaA100('1', '00', '20.000,00', '300,00', '920,00'),  // válida
     linhaA100('0', '00', '5.000,00', '75,00', '230,00'),    // entrada — ignorada
@@ -173,7 +171,7 @@ describe('parseEfdContribuicoesFaturamento — mix de A100 válidos e inválidos
   ]);
 
   let resultado: FatoFaturamentoContrib;
-  beforeAll(() => { resultado = parseEfdContribuicoesFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdContribuicoesFaturamento(content); });
 
   it('acumula apenas A100 de saída válidos', () => {
     expect(resultado.vlServicos).toBeCloseTo(32000, 2);
@@ -195,11 +193,10 @@ describe('parseEfdContribuicoesFaturamento — mix de A100 válidos e inválidos
 // ─── Arquivo sem A100 ────────────────────────────────────────────────────────
 
 describe('parseEfdContribuicoesFaturamento — arquivo sem serviços', () => {
-  it('retorna zeros quando não há A100', () => {
-    const content = buf([
+  it('retorna zeros quando não há A100', async () => {
+    const r = await parseEfdContribuicoesFaturamento(stream([
       linha0000('01072024', 'Sem Serviços Ltda', '88999000000118'),
-    ]);
-    const r = parseEfdContribuicoesFaturamento(content);
+    ]));
     expect(r.vlServicos).toBe(0);
     expect(r.vlPis).toBe(0);
     expect(r.vlCofins).toBe(0);
@@ -214,9 +211,8 @@ describe('parseEfdContribuicoesFaturamento — competência', () => {
     ['01012024', '2024-01'],
     ['01122023', '2023-12'],
     ['01062025', '2025-06'],
-  ])('DT_INI %s → competência %s', (dtIni, esperado) => {
-    const content = buf([linha0000(dtIni, 'Empresa X', '12345678000195')]);
-    const r = parseEfdContribuicoesFaturamento(content);
+  ])('DT_INI %s → competência %s', async (dtIni, esperado) => {
+    const r = await parseEfdContribuicoesFaturamento(stream([linha0000(dtIni, 'Empresa X', '12345678000195')]));
     expect(r.competencia).toBe(esperado);
   });
 });

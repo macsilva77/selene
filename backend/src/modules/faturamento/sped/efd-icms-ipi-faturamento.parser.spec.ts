@@ -1,7 +1,7 @@
 /**
  * Testes unitários de efd-icms-ipi-faturamento.parser.ts
  *
- * Funções puras — sem mocks. O parser aceita um Buffer Latin-1.
+ * Funções puras — sem mocks. Buffer Latin-1 via Readable.from().
  *
  * Registros testados:
  *   0000 — identificação (CNPJ, razão social, competência)
@@ -9,6 +9,7 @@
  *   C190 — analítico por CFOP (filho do C100)
  */
 
+import { Readable } from 'node:stream';
 import {
   parseEfdIcmsIpiFaturamento,
   extrairCompetencia,
@@ -17,8 +18,8 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buf(lines: string[]): Buffer {
-  return Buffer.from(lines.join('\n'), 'latin1');
+function stream(lines: string[]): Readable {
+  return Readable.from([Buffer.from(lines.join('\n'), 'latin1')]);
 }
 
 /**
@@ -78,12 +79,12 @@ describe('extrairCompetencia', () => {
 // ─── 0000 — identificação ─────────────────────────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — 0000', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01012024', 'Empresa Teste Ltda', '12345678000195'),
   ]);
 
   let resultado: FatoFaturamento;
-  beforeAll(() => { resultado = parseEfdIcmsIpiFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdIcmsIpiFaturamento(content); });
 
   it('extrai competência do DT_INI', () => {
     expect(resultado.competencia).toBe('2024-01');
@@ -101,13 +102,13 @@ describe('parseEfdIcmsIpiFaturamento — 0000', () => {
 // ─── C100 — saída válida ──────────────────────────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — C100 saída válida', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01012024', 'Empresa A', '11222333000181'),
     linhaC100('1', '00', '10.000,00', '500,00'),
   ]);
 
   let resultado: FatoFaturamento;
-  beforeAll(() => { resultado = parseEfdIcmsIpiFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdIcmsIpiFaturamento(content); });
 
   it('acumula vlFaturamentoBruto', () => {
     expect(resultado.vlFaturamentoBruto).toBeCloseTo(10000, 2);
@@ -125,41 +126,37 @@ describe('parseEfdIcmsIpiFaturamento — C100 saída válida', () => {
 // ─── C100 — entradas e cancelados ignorados ───────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — C100 não-saída e cancelado', () => {
-  it('ignora C100 de entrada (IND_OPER=0)', () => {
-    const content = buf([
+  it('ignora C100 de entrada (IND_OPER=0)', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
       linha0000('01012024', 'Empresa B', '22333444000172'),
       linhaC100('0', '00', '5.000,00'),
-    ]);
-    const r = parseEfdIcmsIpiFaturamento(content);
+    ]));
     expect(r.vlFaturamentoBruto).toBe(0);
     expect(r.qtdDocumentos).toBe(0);
   });
 
-  it('ignora C100 cancelado (COD_SIT=02)', () => {
-    const content = buf([
+  it('ignora C100 cancelado (COD_SIT=02)', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
       linha0000('01012024', 'Empresa C', '33444555000163'),
       linhaC100('1', '02', '9.000,00'),
-    ]);
-    const r = parseEfdIcmsIpiFaturamento(content);
+    ]));
     expect(r.vlFaturamentoBruto).toBe(0);
     expect(r.qtdDocumentos).toBe(0);
   });
 
-  it('ignora C100 denegado (COD_SIT=07)', () => {
-    const content = buf([
+  it('ignora C100 denegado (COD_SIT=07)', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
       linha0000('01012024', 'Empresa D', '44555666000154'),
       linhaC100('1', '07', '7.000,00'),
-    ]);
-    const r = parseEfdIcmsIpiFaturamento(content);
+    ]));
     expect(r.vlFaturamentoBruto).toBe(0);
   });
 
-  it('acumula C100 extemporâneo válido (COD_SIT=01)', () => {
-    const content = buf([
+  it('acumula C100 extemporâneo válido (COD_SIT=01)', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
       linha0000('01012024', 'Empresa E2', '55666777000145'),
       linhaC100('1', '01', '6.000,00'),
-    ]);
-    const r = parseEfdIcmsIpiFaturamento(content);
+    ]));
     expect(r.vlFaturamentoBruto).toBeCloseTo(6000, 2);
     expect(r.qtdDocumentos).toBe(1);
   });
@@ -168,14 +165,14 @@ describe('parseEfdIcmsIpiFaturamento — C100 não-saída e cancelado', () => {
 // ─── C190 — breakdown por CFOP ───────────────────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — C190 após C100 válido', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01012024', 'Empresa E', '55666777000145'),
     linhaC100('1', '00', '8.000,00'),
     linhaC190('5102', '8.000,00', '960,00'),
   ]);
 
   let resultado: FatoFaturamento;
-  beforeAll(() => { resultado = parseEfdIcmsIpiFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdIcmsIpiFaturamento(content); });
 
   it('acumula vlIcms do C190', () => {
     expect(resultado.vlIcms).toBeCloseTo(960, 2);
@@ -196,24 +193,22 @@ describe('parseEfdIcmsIpiFaturamento — C190 após C100 válido', () => {
 });
 
 describe('parseEfdIcmsIpiFaturamento — C190 após C100 inválido', () => {
-  it('não acumula C190 após C100 de entrada', () => {
-    const content = buf([
+  it('não acumula C190 após C100 de entrada', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
       linha0000('01012024', 'Empresa F', '66777888000136'),
       linhaC100('0', '00', '5.000,00'),
       linhaC190('1102', '5.000,00', '600,00'),
-    ]);
-    const r = parseEfdIcmsIpiFaturamento(content);
+    ]));
     expect(r.vlIcms).toBe(0);
     expect(r.cfops).toHaveLength(0);
   });
 
-  it('não acumula C190 após C100 cancelado', () => {
-    const content = buf([
+  it('não acumula C190 após C100 cancelado', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
       linha0000('01012024', 'Empresa G', '77888999000127'),
       linhaC100('1', '02', '5.000,00'),
       linhaC190('5102', '5.000,00', '600,00'),
-    ]);
-    const r = parseEfdIcmsIpiFaturamento(content);
+    ]));
     expect(r.vlIcms).toBe(0);
     expect(r.cfops).toHaveLength(0);
   });
@@ -223,7 +218,7 @@ describe('parseEfdIcmsIpiFaturamento — C190 após C100 inválido', () => {
 
 describe('parseEfdIcmsIpiFaturamento — múltiplos C100 e C190', () => {
   // Dois documentos de saída, mesmo CFOP → deve consolidar
-  const content = buf([
+  const content = stream([
     linha0000('01022024', 'Empresa H', '88999000000118'),
     linhaC100('1', '00', '3.000,00'),
     linhaC190('5102', '3.000,00', '360,00'),
@@ -232,7 +227,7 @@ describe('parseEfdIcmsIpiFaturamento — múltiplos C100 e C190', () => {
   ]);
 
   let resultado: FatoFaturamento;
-  beforeAll(() => { resultado = parseEfdIcmsIpiFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdIcmsIpiFaturamento(content); });
 
   it('soma os vlFaturamentoBruto dos dois C100', () => {
     expect(resultado.vlFaturamentoBruto).toBeCloseTo(5000, 2);
@@ -264,7 +259,7 @@ describe('parseEfdIcmsIpiFaturamento — múltiplos C100 e C190', () => {
 
 describe('parseEfdIcmsIpiFaturamento — múltiplos C190 por C100', () => {
   // Um C100 com dois C190 de CFOPs distintos
-  const content = buf([
+  const content = stream([
     linha0000('01032024', 'Empresa I', '99000111000109'),
     linhaC100('1', '00', '10.000,00'),
     linhaC190('5102', '7.000,00', '840,00'),
@@ -272,7 +267,7 @@ describe('parseEfdIcmsIpiFaturamento — múltiplos C190 por C100', () => {
   ]);
 
   let resultado: FatoFaturamento;
-  beforeAll(() => { resultado = parseEfdIcmsIpiFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdIcmsIpiFaturamento(content); });
 
   it('gera 2 entradas no breakdown de CFOPs', () => {
     expect(resultado.cfops).toHaveLength(2);
@@ -291,29 +286,29 @@ describe('parseEfdIcmsIpiFaturamento — múltiplos C190 por C100', () => {
 // ─── CFOPs fora de ordem retornam ordenados ───────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — ordenação de CFOPs', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01042024', 'Empresa J', '00111222000190'),
     linhaC100('1', '00', '9.000,00'),
     linhaC190('6102', '4.000,00', '0,00'),
     linhaC190('5102', '5.000,00', '600,00'),
   ]);
 
-  it('retorna CFOPs em ordem ascendente', () => {
-    const r = parseEfdIcmsIpiFaturamento(content);
+  it('retorna CFOPs em ordem ascendente', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(content);
     const codigos = r.cfops.map(c => c.cfop);
-    expect(codigos).toEqual([...codigos].sort());
+    expect(codigos).toEqual([...codigos].sort((a, b) => a.localeCompare(b)));
   });
 });
 
 // ─── Arquivo sem C100 ────────────────────────────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — arquivo sem documentos', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01012024', 'Empresa Vazia', '12121212000100'),
   ]);
 
-  it('retorna zeros e cfops vazio', () => {
-    const r = parseEfdIcmsIpiFaturamento(content);
+  it('retorna zeros e cfops vazio', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(content);
     expect(r.vlFaturamentoBruto).toBe(0);
     expect(r.vlIcms).toBe(0);
     expect(r.vlIpi).toBe(0);
@@ -325,7 +320,7 @@ describe('parseEfdIcmsIpiFaturamento — arquivo sem documentos', () => {
 // ─── Mix saída válida e inválida ─────────────────────────────────────────────
 
 describe('parseEfdIcmsIpiFaturamento — mix de documentos válidos e inválidos', () => {
-  const content = buf([
+  const content = stream([
     linha0000('01012024', 'Empresa Mix', '33333333000100'),
     linhaC100('1', '00', '5.000,00'),  // saída válida
     linhaC190('5102', '5.000,00', '600,00'),
@@ -338,7 +333,7 @@ describe('parseEfdIcmsIpiFaturamento — mix de documentos válidos e inválidos
   ]);
 
   let resultado: FatoFaturamento;
-  beforeAll(() => { resultado = parseEfdIcmsIpiFaturamento(content); });
+  beforeAll(async () => { resultado = await parseEfdIcmsIpiFaturamento(content); });
 
   it('acumula apenas saídas válidas no vlFaturamentoBruto', () => {
     expect(resultado.vlFaturamentoBruto).toBeCloseTo(6000, 2);

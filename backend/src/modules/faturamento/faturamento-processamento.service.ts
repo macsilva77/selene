@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { createHash } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { FaturamentoGcsService } from './faturamento-gcs.service';
 import { FaturamentoQueryService } from './faturamento-query.service';
@@ -61,9 +60,8 @@ export class FaturamentoProcessamentoService {
     this.logger.log(`Iniciando faturamento EFD ICMS: empresaId=${empresaId}`);
     this.logger.debug(`uri=${gcsUri}`);
 
-    const buffer = await this.gcs.downloadFromUri(gcsUri);
-    const hashArquivo = createHash('sha256').update(buffer).digest('hex');
-    const faturamento = parseEfdIcmsIpiFaturamento(buffer);
+    const { stream, hashArquivo } = await this.gcs.openStream(gcsUri);
+    const faturamento = await parseEfdIcmsIpiFaturamento(stream);
 
     if (!faturamento.competencia) {
       throw new Error(`Registro 0000 ausente ou DT_INI inválido: ${gcsUri}`);
@@ -177,9 +175,8 @@ export class FaturamentoProcessamentoService {
     this.logger.log(`Iniciando faturamento EFD Contrib: empresaId=${empresaId}`);
     this.logger.debug(`uri=${gcsUri}`);
 
-    const buffer = await this.gcs.downloadFromUri(gcsUri);
-    const hashArquivo = createHash('sha256').update(buffer).digest('hex');
-    const contrib = parseEfdContribuicoesFaturamento(buffer);
+    const { stream, hashArquivo } = await this.gcs.openStream(gcsUri);
+    const contrib = await parseEfdContribuicoesFaturamento(stream);
 
     if (!contrib.competencia) {
       throw new Error(`Registro 0000 ausente ou DT_INI inválido: ${gcsUri}`);
