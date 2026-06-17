@@ -1898,6 +1898,8 @@ model FaturamentoCompetencia {
 
   @@unique([tenantId, empresaId, ano, mes, fonte], name: "tenantId_empresaId_ano_mes_fonte")
   @@index([tenantId, cnpj])
+  @@index([tenantId, empresaId, fonte, ano], name: "idx_fat_comp_tenant_empresa_fonte_ano")
+  @@index([tenantId, cnpj, ano, fonte],      name: "idx_fat_comp_tenant_cnpj_ano_fonte")
   @@map("faturamento_competencias")
 }
 

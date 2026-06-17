@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { FaturamentoGcsService } from './faturamento-gcs.service';
+import { FaturamentoQueryService } from './faturamento-query.service';
 import { parseEfdIcmsIpiFaturamento } from './sped/efd-icms-ipi-faturamento.parser';
 import { parseEfdContribuicoesFaturamento } from './sped/efd-contribuicoes-faturamento.parser';
 import type { SpedArquivoDisponivelEvent } from '../sped/sped.service';
@@ -48,6 +49,7 @@ export class FaturamentoProcessamentoService {
   constructor(
     private readonly gcs: FaturamentoGcsService,
     private readonly prisma: PrismaService,
+    private readonly queryService: FaturamentoQueryService,
   ) {}
 
   // ── EFD ICMS/IPI ────────────────────────────────────────────────────────────
@@ -326,6 +328,9 @@ export class FaturamentoProcessamentoService {
     this.logger.log(
       `AMBOS mesclado: empresaId=${empresaId} ${ano}-${String(mes).padStart(2, '0')} bruto=${vlFaturamentoBruto}`,
     );
+
+    // Invalida cache de leitura para que o próximo acesso reflita os novos dados
+    await this.queryService.invalidarEmpresa(tenantId, empresaId);
 
     return true;
   }
