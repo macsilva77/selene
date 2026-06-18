@@ -55,11 +55,16 @@ const FONTES = [
 
 /* ─── Chart configs ──────────────────────────────────────────────────────── */
 
+const CFG_FATURAMENTO: ChartConfig = {
+  vlFaturamentoBruto: { label: 'Faturamento Bruto',   color: '#37B24D' },
+  vlFatLiquido:       { label: 'Faturamento Líquido', color: '#3B5BDB' },
+  vlDevolucoes:       { label: 'Devoluções',           color: '#E03131' },
+};
+
 const CFG_PRINCIPAL: ChartConfig = {
-  vlComprasBruto:    { label: 'Total de compras',        color: '#3B5BDB' },
-  vlFaturamentoBruto:{ label: 'Total de vendas',          color: '#37B24D' },
-  vlDevolucoes:      { label: 'Devoluções de compras',   color: '#F59F00' },
-  vlFatLiquido:      { label: 'Devoluções de vendas',    color: '#E03131' },
+  vlComprasBruto:     { label: 'Total de compras', color: '#3B5BDB' },
+  vlFaturamentoBruto: { label: 'Total de vendas',  color: '#37B24D' },
+  vlDevolucoes:       { label: 'Devoluções',        color: '#E03131' },
 };
 
 const CFG_VALORES: ChartConfig = {
@@ -93,29 +98,70 @@ function PanelSkeleton() {
 function yTickMilhoes(v: number): string { return fmtMilhoes(v); }
 function yTickPct(v: number): string { return `${(v * 100).toFixed(0)}%`; }
 
+/* ─── Painel 0: Faturamento anual ────────────────────────────────────────── */
+
+function PainelFaturamento({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
+  type D = { ano: string; vlFaturamentoBruto: number; vlFatLiquido: number; vlDevolucoes: number };
+
+  const data: D[] = anos.map(a => ({
+    ano:                String(a.ano),
+    vlFaturamentoBruto: a.vlFaturamentoBruto,
+    vlFatLiquido:       a.vlFatLiquido,
+    vlDevolucoes:       a.vlDevolucoes,
+  }));
+
+  if (data.length === 0) return <EmptyChart />;
+
+  const maxBar  = Math.max(...data.map(d => d.vlFaturamentoBruto));
+  const maxDev  = Math.max(...data.map(d => d.vlDevolucoes), 1);
+
+  return (
+    <ChartContainer config={CFG_FATURAMENTO} className="h-72 w-full">
+      <ComposedChart data={data} margin={{ top: 8, right: 60, left: 0, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis dataKey="ano" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+        <YAxis
+          yAxisId="left"
+          tickFormatter={yTickMilhoes}
+          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          axisLine={false} tickLine={false} width={90}
+          domain={[0, maxBar * 1.15]}
+        />
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tickFormatter={yTickMilhoes}
+          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          axisLine={false} tickLine={false} width={80}
+          domain={[0, maxDev * 2]}
+          label={{ value: 'Devoluções', angle: 90, position: 'insideRight', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+        />
+        <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => CFG_FATURAMENTO[k]?.label ?? k} />
+        <Bar yAxisId="left" dataKey="vlFaturamentoBruto" name="vlFaturamentoBruto" fill="#37B24D" radius={[3,3,0,0]} maxBarSize={55} />
+        <Bar yAxisId="left" dataKey="vlFatLiquido"       name="vlFatLiquido"       fill="#3B5BDB" radius={[3,3,0,0]} maxBarSize={55} />
+        <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
+      </ComposedChart>
+    </ChartContainer>
+  );
+}
+
 /* ─── Painel 1: Vendas Brutas × Compras Brutas ───────────────────────────── */
 
 function PainelVendasCompras({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
-  type D = {
-    ano: string;
-    vlComprasBruto: number;
-    vlFaturamentoBruto: number;
-    vlDevolucoes: number;
-    vlFatLiquido: number;
-  };
+  type D = { ano: string; vlComprasBruto: number; vlFaturamentoBruto: number; vlDevolucoes: number };
 
   const data: D[] = anos.map(a => ({
     ano:                String(a.ano),
     vlComprasBruto:     a.vlComprasBruto,
     vlFaturamentoBruto: a.vlFaturamentoBruto,
     vlDevolucoes:       a.vlDevolucoes,
-    vlFatLiquido:       a.vlFatLiquido,
   }));
 
   if (data.length === 0) return <EmptyChart />;
 
   const maxBar = Math.max(...data.map(d => Math.max(d.vlComprasBruto, d.vlFaturamentoBruto)));
-  const maxLine = Math.max(...data.map(d => Math.max(d.vlDevolucoes, d.vlFatLiquido)));
+  const maxDev = Math.max(...data.map(d => d.vlDevolucoes), 1);
 
   return (
     <ChartContainer config={CFG_PRINCIPAL} className="h-72 w-full">
@@ -125,43 +171,30 @@ function PainelVendasCompras({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>
           dataKey="ano"
           tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
           axisLine={false} tickLine={false}
-          label={{ value: 'Mês/Ano:', position: 'insideBottomLeft', offset: -4, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+          label={{ value: 'Ano:', position: 'insideBottomLeft', offset: -4, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
         />
-        {/* Eixo esquerdo: barras */}
         <YAxis
           yAxisId="left"
           tickFormatter={yTickMilhoes}
           tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
           axisLine={false} tickLine={false} width={90}
           domain={[0, maxBar * 1.15]}
-          label={{ value: 'Total de compras e vendas', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+          label={{ value: 'Compras e vendas', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
         />
-        {/* Eixo direito: linhas de devoluções */}
         <YAxis
           yAxisId="right"
           orientation="right"
           tickFormatter={yTickMilhoes}
           tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
           axisLine={false} tickLine={false} width={80}
-          domain={[0, maxLine * 1.3 || 1]}
-          label={{ value: 'Devoluções e cancelamentos', angle: 90, position: 'insideRight', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+          domain={[0, maxDev * 2]}
+          label={{ value: 'Devoluções', angle: 90, position: 'insideRight', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
         />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              formatter={(value) => fmtBrl(Number(value))}
-              labelFormatter={String}
-            />
-          }
-        />
-        <Legend
-          wrapperStyle={{ fontSize: 11 }}
-          formatter={(key) => CFG_PRINCIPAL[key]?.label ?? key}
-        />
+        <ChartTooltip content={<ChartTooltipContent formatter={(value) => fmtBrl(Number(value))} labelFormatter={String} />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(key) => CFG_PRINCIPAL[key]?.label ?? key} />
         <Bar yAxisId="left" dataKey="vlComprasBruto"     name="vlComprasBruto"     fill="#3B5BDB" radius={[3,3,0,0]} maxBarSize={55} />
         <Bar yAxisId="left" dataKey="vlFaturamentoBruto" name="vlFaturamentoBruto" fill="#37B24D" radius={[3,3,0,0]} maxBarSize={55} />
-        <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes"  name="vlDevolucoes"  stroke="#F59F00" strokeWidth={2} dot={{ r: 4, fill:'#F59F00' }} activeDot={{ r:5 }} />
-        <Line yAxisId="right" type="monotone" dataKey="vlFatLiquido"  name="vlFatLiquido"  stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill:'#E03131' }} activeDot={{ r:5 }} />
+        <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
       </ComposedChart>
     </ChartContainer>
   );
@@ -449,6 +482,23 @@ export default function FaturamentoDashboardPage() {
           <KpiCard label="Devoluções"            value={fmtMilhoes(totais.dev)}    sub={`${((totais.dev / (totais.fat || 1)) * 100).toFixed(1)}% do fat.`} />
           <KpiCard label="Faturamento líquido"   value={fmtMilhoes(totais.liquido)} sub={fmtBrl(totais.liquido)} />
         </div>
+      )}
+
+      {/* Painel 0 — Faturamento anual */}
+      {carregando ? <PanelSkeleton /> : (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Faturamento</CardTitle>
+            {dados && (
+              <p className="text-xs text-muted-foreground">
+                {dados.nome} — {maskCnpj(dados.cnpj.padStart(14, '0'))} · {fonte}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="pt-0">
+            {dados ? <PainelFaturamento anos={dados.anos} /> : <EmptyChart />}
+          </CardContent>
+        </Card>
       )}
 
       {/* Painel 1 — Vendas Brutas x Compras Brutas */}
