@@ -2,12 +2,30 @@
  * Parser ECF para extração de indicadores econômico-fiscais:
  * faturamento declarado, prejuízo fiscal acumulado e base negativa de CSLL.
  * Encoding esperado: Latin-1 (ISO-8859-1).
+ *
+ * Leiaute validado para COD_VER 0006 (2019) → 0012 (2025).
+ *
+ * 0000: |0000|LECF|COD_VER|CNPJ|NOME|...|...|...|...|DT_INI|DT_FIN|...|
+ *          [0]  [1]   [2]   [3]  [4]  [5] [6] [7] [8]  [9]   [10]
+ *
+ * L300: |L300|COD_CTA|DS_CTA|IND_CTA|NIVEL|COD_CTA_REF|COD_CTA_SUP|VL_CTA|IND_DC|
+ *          [0]  [1]    [2]     [3]    [4]      [5]         [6]       [7]    [8]
+ *
+ * P200: |P200|PER_APU|VL_REC_BRUTA|VL_BASE_CAL|...| (Lucro Presumido)
+ *          [0]  [1]      [2]           [3]
+ *
+ * M010: |M010|COD_CONTA|DESC_CONTA|TIPO_CONTA|SLD_INI|IND_DC_SLD_INI|...|
+ *          [0]   [1]       [2]       [3]         [4]        [5]
+ *
+ * M500: |M500|COD_CONTA|VL_SLD_FIN|IND_DC_SLD_FIN|...|
+ *          [0]   [1]       [2]          [3]
  */
 
 export interface EcfIndicadoresResult {
   razaoSocial: string;
   cnpj: string;
   anoCalendario: number;
+  codVer: string;
   formaTributacao: string;
   faturamentoDeclarado: number;
   prejuizoFiscalAcumulado: number;
@@ -44,7 +62,6 @@ function parseLinha(linha: string): string[] | null {
  * Suporta DDMMAAAA e YYYYMMDD.
  */
 function extrairAnoCalendario(dtIni: string, dtFin: string): number {
-  // Tenta DT_INI primeiro
   for (const dt of [dtIni, dtFin]) {
     const s = dt?.trim();
     if (!s || s.length < 8) continue;
@@ -66,13 +83,15 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
 
   let razaoSocial = '';
   let cnpj = '';
+  let codVer = '';
   let formaTributacao = 'nao_identificado';
   let dtIni = '';
   let dtFin = '';
 
   // Faturamento Lucro Real: maior valor de crédito da DRE (L300)
+  // NOTA: lógica max mantida intencionalmente — Correção 3 (soma por trimestre) é etapa futura.
   let maxCreditoL300 = 0;
-  // Faturamento Lucro Presumido/Arbitrado: soma de VL_RECITA_BRUTA (P200)
+  // Faturamento Lucro Presumido/Arbitrado: soma de VL_REC_BRUTA (P200)
   let somaP200 = 0;
   let isLucroReal = false;
 
@@ -86,41 +105,62 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
     if (!campos?.length) continue;
     const rec = campos[0];
 
-    if (rec === '0000' && campos.length >= 9) {
-      razaoSocial = (campos[7] ?? '').trim();
-      const cnpjRaw = (campos[8] ?? '').trim().replace(/\D/g, '');
-      cnpj = cnpjRaw.padStart(14, '0');
-      dtIni = (campos[5] ?? '').trim();
-      dtFin = (campos[6] ?? '').trim();
+    // ── 0000: identificação e versão do leiaute ──────────────────────────────
+    // Leiaute validado para COD_VER 0006→0012 (exercícios 2019→2025).
+    // campos: [0]=0000 [1]=LECF [2]=COD_VER [3]=CNPJ [4]=NOME [5..8]=aux
+    //         [9]=DT_INI [10]=DT_FIN
+    if (rec === '0000' && campos.length >= 11) {
+      codVer      = (campos[2] ?? '').trim();
+      razaoSocial = (campos[4] ?? '').trim();
+      // CNPJ não é lido aqui — o service usa o CNPJ do input externo
+      dtIni = (campos[9]  ?? '').trim();
+      dtFin = (campos[10] ?? '').trim();
+
+    // ── 0010: forma de tributação ────────────────────────────────────────────
     } else if (rec === '0010' && campos.length >= 5) {
       const indFormaTrib = (campos[4] ?? '').trim();
       formaTributacao = IND_FORMA_TRIB_MAP[indFormaTrib] ?? 'nao_identificado';
       isLucroReal = formaTributacao === 'lucro_real';
-    } else if (rec === 'L300' && campos.length >= 6) {
-      // L300: |REG|NUM_ORD|COD_AGL|DESC_AGL|IND_DC|VL_CTA|
-      // campos[0]=REG  [1]=NUM_ORD  [2]=COD_AGL  [3]=DESC_AGL  [4]=IND_DC  [5]=VL_CTA
-      const indDc = (campos[4] ?? '').trim();
-      const vlCta = parseValorBr(campos[5] ?? '');
+
+    // ── L300: DRE — Lucro Real ───────────────────────────────────────────────
+    // Leiaute (COD_VER 0006→0012 idêntico):
+    // [0]=L300 [1]=COD_CTA [2]=DS_CTA [3]=IND_CTA [4]=NIVEL
+    // [5]=COD_CTA_REF [6]=COD_CTA_SUP [7]=VL_CTA [8]=IND_DC
+    } else if (rec === 'L300' && campos.length >= 9) {
+      const indDc = (campos[8] ?? '').trim();
+
+      // Guarda: coluna errada para esta versão → falha alto em vez de engolir como 0
+      if (indDc !== 'D' && indDc !== 'C') {
+        throw new Error(
+          `L300 IND_DC inesperado '${indDc}' (COD_VER=${codVer}, COD_CTA=${campos[1]}) — ` +
+          `verifique se o leiaute mudou além de COD_VER 0012`,
+        );
+      }
+
+      const vlCta = parseValorBr(campos[7] ?? '');
       if (indDc === 'C' && vlCta > maxCreditoL300) {
         maxCreditoL300 = vlCta;
       }
-    } else if (rec === 'P200' && campos.length >= 4) {
-      // P200: |REG|PER_APU|VL_RECITA_BRUTA|VL_BASE_CALC|...
-      // campos[0]=REG  [1]=PER_APU  [2]=VL_RECITA_BRUTA  [3]=VL_BASE_CALC
+
+    // ── P200: apuração — Lucro Presumido ─────────────────────────────────────
+    // Leiaute: [0]=P200 [1]=PER_APU [2]=VL_REC_BRUTA [3]=VL_BASE_CAL ...
+    // Nota: sem arquivo Presumido no bucket para validação empírica (todos os
+    // CNPJs ingeridos são Lucro Real). Layout conferido contra spec ECF RFB.
+    } else if (rec === 'P200' && campos.length >= 3) {
       somaP200 += parseValorBr(campos[2] ?? '');
-    } else if (rec === 'M010' && campos.length >= 5) {
-      // M010: |REG|COD_CONTA|DESC_CONTA|TIPO_CONTA|SLD_INI|IND_DC_SLD_INI|...
-      // campos[0]=REG  [1]=COD_CONTA  [2]=DESC_CONTA  [3]=TIPO_CONTA
+
+    // ── M010: mapa de contas LALUR/LACS ─────────────────────────────────────
+    } else if (rec === 'M010' && campos.length >= 4) {
       const codConta = (campos[1] ?? '').trim();
       const tipoConta = (campos[3] ?? '').trim();
       if (codConta) {
         m010Map.set(codConta, tipoConta);
       }
-    } else if (rec === 'M500' && campos.length >= 5) {
-      // M500: |REG|COD_CONTA|VL_SLD_FIN|IND_DC_SLD_FIN|...
-      // campos[0]=REG  [1]=COD_CONTA  [2]=VL_SLD_FIN  [3]=IND_DC_SLD_FIN
-      const codConta = (campos[1] ?? '').trim();
-      const vlSldFin = parseValorBr(campos[2] ?? '');
+
+    // ── M500: saldo final LALUR/LACS ─────────────────────────────────────────
+    } else if (rec === 'M500' && campos.length >= 4) {
+      const codConta    = (campos[1] ?? '').trim();
+      const vlSldFin    = parseValorBr(campos[2] ?? '');
       const indDcSldFin = (campos[3] ?? '').trim();
 
       if (indDcSldFin === 'D' && vlSldFin > 0) {
@@ -135,13 +175,13 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
   }
 
   const anoCalendario = extrairAnoCalendario(dtIni, dtFin);
-
   const faturamentoDeclarado = isLucroReal ? maxCreditoL300 : somaP200;
 
   return {
     razaoSocial,
     cnpj,
     anoCalendario,
+    codVer,
     formaTributacao,
     faturamentoDeclarado,
     prejuizoFiscalAcumulado: prejuizoFiscal,
