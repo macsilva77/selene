@@ -99,9 +99,49 @@ export interface EmpresaFaturamento {
   nomeFantasia: string | null;
 }
 
+/* ─── Processamento ──────────────────────────────────────────────────────── */
+
+export interface ResultadoProcessamento {
+  cnpj:               string;
+  competencia:        string;
+  vlFaturamentoBruto: number;
+  vlIcms:             number;
+  vlIpi:              number;
+  qtdDocumentos:      number;
+  qtdCfops:           number;
+}
+
+export interface ResultadoProcessamentoContrib {
+  cnpj:                  string;
+  competencia:           string;
+  vlServicos:            number;
+  vlPis:                 number;
+  vlCofins:              number;
+  qtdDocumentosServicos: number;
+  mesclado:              boolean;
+}
+
+export interface RespostaProcessarLote {
+  processados: number;
+  resultados:  ResultadoProcessamento[];
+}
+
+export interface RespostaProcessarContribLote {
+  processados: number;
+  resultados:  ResultadoProcessamentoContrib[];
+}
+
 /* ─── API ────────────────────────────────────────────────────────────────── */
 
 export const faturamentoApi = {
+  processar(params?: { ano?: number }): Promise<RespostaProcessarLote> {
+    return api.post('/faturamento/processar', params ?? {}).then(r => r.data);
+  },
+
+  processarContrib(params?: { ano?: number }): Promise<RespostaProcessarContribLote> {
+    return api.post('/faturamento/processar-contrib', params ?? {}).then(r => r.data);
+  },
+
   anual(params: { cnpj: string; ano: number; fonte?: string }): Promise<FaturamentoAnual> {
     return api.get('/faturamento/anual', {
       params: { cnpj: params.cnpj, ano: params.ano, fonte: params.fonte ?? 'AMBOS' },

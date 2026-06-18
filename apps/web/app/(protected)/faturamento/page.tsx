@@ -12,6 +12,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useToast, ToastContainer } from '@/components/ui/toast';
 import {
   faturamentoApi,
@@ -275,7 +276,7 @@ function KpiCard({ label, value, sub }: Readonly<{ label: string; value: string;
 /* ─── Página principal ───────────────────────────────────────────────────── */
 
 export default function FaturamentoDashboardPage() {
-  const { toasts, error: toastError, dismiss } = useToast();
+  const { toasts, success: toastSuccess, error: toastError, dismiss } = useToast();
 
   const [empresas, setEmpresas]             = useState<EmpresaFaturamento[]>([]);
   const [empresaId, setEmpresaId]           = useState('');
@@ -285,6 +286,7 @@ export default function FaturamentoDashboardPage() {
   const [dados, setDados]                   = useState<FaturamentoCfopsConsolidado | null>(null);
   const [carregando, setCarregando]         = useState(false);
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
+  const [loadingProcessar, setLoadingProcessar] = useState(false);
 
   useEffect(() => {
     faturamentoApi.listarEmpresas()
@@ -310,6 +312,28 @@ export default function FaturamentoDashboardPage() {
 
   useEffect(() => { if (empresaId) buscar(); }, [empresaId, buscar]);
 
+  const processarSped = useCallback(async () => {
+    setLoadingProcessar(true);
+    try {
+      const [icms, contrib] = await Promise.all([
+        faturamentoApi.processar(),
+        faturamentoApi.processarContrib(),
+      ]);
+      const total = icms.processados + contrib.processados;
+      if (total === 0) {
+        toastError('Nenhum arquivo EFD encontrado para processar. Verifique se os arquivos estão disponíveis nas Obrigações Acessórias.');
+      } else {
+        toastSuccess(`Processamento concluído: ${icms.processados} EFD ICMS + ${contrib.processados} EFD Contrib.`);
+      }
+      if (empresaId) buscar();
+    } catch {
+      toastError('Erro ao processar arquivos SPED. Verifique os logs do servidor.');
+    } finally {
+      setLoadingProcessar(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaId, buscar]);
+
   const totais = dados?.anos.reduce(
     (acc, a) => ({
       fat:      acc.fat      + a.vlFaturamentoBruto,
@@ -326,11 +350,22 @@ export default function FaturamentoDashboardPage() {
     <div className="flex flex-col gap-5 p-6 max-w-[1440px] mx-auto">
 
       {/* Cabeçalho */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Análise de Faturamento</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Vendas, compras e índices fiscais extraídos do SPED EFD ICMS/IPI por ano.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Análise de Faturamento</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Vendas, compras e índices fiscais extraídos do SPED EFD ICMS/IPI por ano.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={loadingProcessar}
+          onClick={processarSped}
+          className="shrink-0"
+        >
+          {loadingProcessar ? 'Processando…' : 'Processar SPED'}
+        </Button>
       </div>
 
       {/* Filtros */}
