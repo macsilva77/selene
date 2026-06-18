@@ -64,8 +64,13 @@ export class FaturamentoGcsService implements OnModuleInit {
   }
 }
 
+/**
+ * Aceita tanto "gs://bucket/path" quanto "bucket/path" (formato gravado por
+ * obrigacoes-acessorias ao receber via Pub/Sub ou upload manual).
+ */
 function parseGcsUri(uri: string): { bucket: string; filePath: string } {
-  const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(uri);
-  if (!match) throw new Error(`URI GCS inválido: ${uri}`);
-  return { bucket: match[1]!, filePath: match[2]! };
+  const normalized = uri.startsWith('gs://') ? uri.slice(5) : uri;
+  const slash = normalized.indexOf('/');
+  if (slash === -1) throw new Error(`URI GCS inválido (sem path): ${uri}`);
+  return { bucket: normalized.slice(0, slash), filePath: normalized.slice(slash + 1) };
 }
