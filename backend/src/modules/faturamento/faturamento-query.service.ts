@@ -63,7 +63,7 @@ export class FaturamentoQueryService {
     keys.add(cacheKey);
   }
 
-  /** Invalida todo o cache de uma empresa (chamado após processamento de SPED). */
+  /** Remove entradas de cache da empresa (chamado após processamento de SPED). */
   async invalidarEmpresa(tenantId: string, empresaId: string): Promise<void> {
     const scope = `${tenantId}:${empresaId}`;
     const keys = this.keysByEmpresa.get(scope);
@@ -175,7 +175,7 @@ export class FaturamentoQueryService {
       return {
         ...row,
         vlMercadorias:    Math.max(0, fat - row.vlDevolucoes - row.vlTransferencias - row.vlRemessas),
-        vlFatLiquido:     Math.max(0, fat - row.vlIcms - row.vlIpi - row.vlDevolucoes),
+        vlFatLiquido:     Math.max(0, fat - row.vlIcms - row.vlIpi - row.vlPis - row.vlCofins - row.vlDevolucoes),
         idxEstadual:      fat > 0 ? row.vlEstaduais      / fat : 0,
         idxInterestadual: fat > 0 ? row.vlInterestaduais / fat : 0,
         idxExportacao:    fat > 0 ? row.vlExportacoes    / fat : 0,
