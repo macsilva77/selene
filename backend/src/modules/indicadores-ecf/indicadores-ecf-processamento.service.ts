@@ -38,11 +38,20 @@ export class IndicadoresEcfProcessamentoService {
     const parsed = parseEcfIndicadores(buffer);
 
     this.logger.log(
-      `ECF parseado: razaoSocial="${parsed.razaoSocial}" ` +
+      `ECF parseado: razaoSocial="${parsed.razaoSocial}" codVer=${parsed.codVer} ` +
         `ano=${parsed.anoCalendario} regime=${parsed.formaTributacao} ` +
         `faturamento=${parsed.faturamentoDeclarado} prejuizo=${parsed.prejuizoFiscalAcumulado} ` +
         `baseNeg=${parsed.baseNegativaCsll}`,
     );
+
+    // Pós-condição: Lucro Real sem receita é suspeito — pode indicar bug de parser ou ECF sem DRE
+    if (parsed.formaTributacao === 'lucro_real' && parsed.faturamentoDeclarado === 0) {
+      this.logger.warn(
+        `ECF Lucro Real com faturamentoDeclarado=0 — ` +
+        `cnpj=${cnpj} ano=${anoCalendario} codVer=${parsed.codVer} uri=${gcsUri} — ` +
+        `verifique se o L300 está presente no arquivo`,
+      );
+    }
 
     // 4. Upsert
     await this.prisma.ecfIndicador.upsert({
