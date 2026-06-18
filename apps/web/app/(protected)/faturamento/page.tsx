@@ -18,9 +18,10 @@ import {
   faturamentoApi,
   type FaturamentoCfopsConsolidado,
   type FaturamentoCfopsAno,
-  type FaturamentoAnual,
   type EmpresaFaturamento,
 } from '@/lib/faturamento-api';
+
+type MensalPonto = { label: string; vlFaturamentoBruto: number; vlComprasBruto: number };
 
 /* ─── Formatação ─────────────────────────────────────────────────────────── */
 
@@ -108,6 +109,14 @@ function yTickPct(v: number): string { return `${(v * 100).toFixed(0)}%`; }
 /* ─── Rótulos de mês ─────────────────────────────────────────────────────── */
 
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+function anualParaMensalPontos(r: { ano: number; mensal: { mes: number; vlFaturamentoBruto: number; vlComprasBruto: number }[] }): MensalPonto[] {
+  return r.mensal.map(m => ({
+    label:              `${MESES[m.mes - 1] ?? m.mes}/${String(r.ano).slice(2)}`,
+    vlFaturamentoBruto: m.vlFaturamentoBruto,
+    vlComprasBruto:     m.vlComprasBruto,
+  }));
+}
 
 /* ─── Painel simples: barra única ────────────────────────────────────────── */
 
@@ -304,7 +313,7 @@ export default function FaturamentoDashboardPage() {
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
   const [loadingProcessar, setLoadingProcessar] = useState(false);
   const [viewMode, setViewMode]             = useState<'anual' | 'mensal'>('anual');
-  const [dadosMensal, setDadosMensal]       = useState<FaturamentoAnual | null>(null);
+  const [dadosMensal, setDadosMensal]       = useState<MensalPonto[] | null>(null);
   const [carregandoMensal, setCarregandoMensal] = useState(false);
 
   useEffect(() => {
@@ -334,13 +343,13 @@ export default function FaturamentoDashboardPage() {
   useEffect(() => {
     if (viewMode !== 'mensal' || !dados) return;
     setCarregandoMensal(true);
-    faturamentoApi
-      .anual({ cnpj: dados.cnpj, ano: anoFim, fonte })
-      .then(setDadosMensal)
+    const anos = Array.from({ length: anoFim - anoInicio + 1 }, (_, i) => anoInicio + i);
+    Promise.all(anos.map(ano => faturamentoApi.anual({ cnpj: dados.cnpj, ano, fonte })))
+      .then(resultados => setDadosMensal(resultados.flatMap(anualParaMensalPontos)))
       .catch(() => toastError('Erro ao buscar dados mensais.'))
       .finally(() => setCarregandoMensal(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, dados, anoFim, fonte]);
+  }, [viewMode, dados, anoInicio, anoFim, fonte]);
 
   const processarSped = useCallback(async () => {
     setLoadingProcessar(true);
@@ -576,20 +585,20 @@ export default function FaturamentoDashboardPage() {
           ) : dadosMensal && (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Faturamento Bruto — {anoFim}</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Faturamento Bruto — {anoInicio}–{anoFim}</CardTitle></CardHeader>
                 <CardContent className="pt-0">
                   <PainelBarra
-                    data={dadosMensal.mensal.map(m => ({ label: MESES[m.mes - 1] ?? String(m.mes), valor: m.vlFaturamentoBruto }))}
+                    data={dadosMensal.map(p => ({ label: p.label, valor: p.vlFaturamentoBruto }))}
                     config={CFG_FAT_BRUTO}
                     fill="#37B24D"
                   />
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Compras — {anoFim}</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Compras — {anoInicio}–{anoFim}</CardTitle></CardHeader>
                 <CardContent className="pt-0">
                   <PainelBarra
-                    data={dadosMensal.mensal.map(m => ({ label: MESES[m.mes - 1] ?? String(m.mes), valor: m.vlComprasBruto }))}
+                    data={dadosMensal.map(p => ({ label: p.label, valor: p.vlComprasBruto }))}
                     config={CFG_COMPRAS}
                     fill="#7950F2"
                   />
@@ -602,15 +611,15 @@ export default function FaturamentoDashboardPage() {
           {carregandoMensal ? <PanelSkeleton /> : dadosMensal && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">Faturamento Bruto × Compras — {anoFim}</CardTitle>
+                <CardTitle className="text-sm font-semibold">Faturamento Bruto × Compras — {anoInicio}–{anoFim}</CardTitle>
                 <p className="text-xs text-muted-foreground">Devoluções mensais não disponíveis no EFD ICMS/IPI</p>
               </CardHeader>
               <CardContent className="pt-0">
                 <PainelComparado
-                  data={dadosMensal.mensal.map(m => ({
-                    label:              MESES[m.mes - 1] ?? String(m.mes),
-                    vlFaturamentoBruto: m.vlFaturamentoBruto,
-                    vlComprasBruto:     m.vlComprasBruto,
+                  data={dadosMensal.map(p => ({
+                    label:              p.label,
+                    vlFaturamentoBruto: p.vlFaturamentoBruto,
+                    vlComprasBruto:     p.vlComprasBruto,
                   }))}
                   comDevolucoes={false}
                 />
