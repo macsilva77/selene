@@ -18,6 +18,7 @@ import {
   faturamentoApi,
   type FaturamentoCfopsConsolidado,
   type FaturamentoCfopsAno,
+  type FaturamentoAnual,
   type EmpresaFaturamento,
 } from '@/lib/faturamento-api';
 
@@ -55,17 +56,22 @@ const FONTES = [
 
 /* ─── Chart configs ──────────────────────────────────────────────────────── */
 
-const CFG_FATURAMENTO: ChartConfig = {
-  vlFaturamentoBruto: { label: 'Faturamento Bruto',   color: '#37B24D' },
-  vlFatLiquido:       { label: 'Faturamento Líquido', color: '#3B5BDB' },
-  vlComprasBruto:     { label: 'Compras Brutas',      color: '#7950F2' },
-  vlDevolucoes:       { label: 'Devoluções',           color: '#E03131' },
+const CFG_FAT_LIQUIDO: ChartConfig = {
+  valor: { label: 'Faturamento Líquido', color: '#3B5BDB' },
+};
+
+const CFG_FAT_BRUTO: ChartConfig = {
+  valor: { label: 'Faturamento Bruto', color: '#37B24D' },
+};
+
+const CFG_COMPRAS: ChartConfig = {
+  valor: { label: 'Compras', color: '#7950F2' },
 };
 
 const CFG_PRINCIPAL: ChartConfig = {
-  vlComprasBruto:     { label: 'Total de compras', color: '#3B5BDB' },
-  vlFaturamentoBruto: { label: 'Total de vendas',  color: '#37B24D' },
-  vlDevolucoes:       { label: 'Devoluções',        color: '#E03131' },
+  vlFaturamentoBruto: { label: 'Faturamento Bruto', color: '#37B24D' },
+  vlComprasBruto:     { label: 'Compras Brutas',    color: '#7950F2' },
+  vlDevolucoes:       { label: 'Devoluções',         color: '#E03131' },
 };
 
 const CFG_VALORES: ChartConfig = {
@@ -99,105 +105,79 @@ function PanelSkeleton() {
 function yTickMilhoes(v: number): string { return fmtMilhoes(v); }
 function yTickPct(v: number): string { return `${(v * 100).toFixed(0)}%`; }
 
-/* ─── Painel 0: Faturamento anual ────────────────────────────────────────── */
+/* ─── Rótulos de mês ─────────────────────────────────────────────────────── */
 
-function PainelFaturamento({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
-  type D = { ano: string; vlFaturamentoBruto: number; vlFatLiquido: number; vlComprasBruto: number; vlDevolucoes: number };
+const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-  const data: D[] = anos.map(a => ({
-    ano:                String(a.ano),
-    vlFaturamentoBruto: a.vlFaturamentoBruto,
-    vlFatLiquido:       a.vlFatLiquido,
-    vlComprasBruto:     a.vlComprasBruto,
-    vlDevolucoes:       a.vlDevolucoes,
-  }));
+/* ─── Painel simples: barra única ────────────────────────────────────────── */
 
+function PainelBarra({
+  data,
+  config,
+  fill,
+}: Readonly<{
+  data: { label: string; valor: number }[];
+  config: ChartConfig;
+  fill: string;
+}>) {
   if (data.length === 0) return <EmptyChart />;
-
-  const maxBar = Math.max(...data.map(d => Math.max(d.vlFaturamentoBruto, d.vlComprasBruto)));
-  const maxDev = Math.max(...data.map(d => d.vlDevolucoes), 1);
-
+  const maxBar = Math.max(...data.map(d => d.valor), 1);
   return (
-    <ChartContainer config={CFG_FATURAMENTO} className="h-72 w-full">
-      <ComposedChart data={data} margin={{ top: 8, right: 60, left: 0, bottom: 8 }}>
+    <ChartContainer config={config} className="h-72 w-full">
+      <BarChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="ano" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-        <YAxis
-          yAxisId="left"
-          tickFormatter={yTickMilhoes}
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-          axisLine={false} tickLine={false} width={90}
-          domain={[0, maxBar * 1.15]}
-        />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          tickFormatter={yTickMilhoes}
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-          axisLine={false} tickLine={false} width={80}
-          domain={[0, maxDev * 2]}
-          label={{ value: 'Devoluções', angle: 90, position: 'insideRight', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-        />
+        <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+        <YAxis tickFormatter={yTickMilhoes} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} width={90} domain={[0, maxBar * 1.15]} />
         <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => CFG_FATURAMENTO[k]?.label ?? k} />
-        <Bar yAxisId="left" dataKey="vlFaturamentoBruto" name="vlFaturamentoBruto" fill="#37B24D" radius={[3,3,0,0]} maxBarSize={45} />
-        <Bar yAxisId="left" dataKey="vlFatLiquido"       name="vlFatLiquido"       fill="#3B5BDB" radius={[3,3,0,0]} maxBarSize={45} />
-        <Bar yAxisId="left" dataKey="vlComprasBruto"     name="vlComprasBruto"     fill="#7950F2" radius={[3,3,0,0]} maxBarSize={45} />
-        <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
-      </ComposedChart>
+        <Bar dataKey="valor" name="valor" fill={fill} radius={[3,3,0,0]} maxBarSize={55} />
+      </BarChart>
     </ChartContainer>
   );
 }
 
-/* ─── Painel 1: Vendas Brutas × Compras Brutas ───────────────────────────── */
+/* ─── Painel combinado: Faturamento Bruto × Compras ± linha devoluções ───── */
 
-function PainelVendasCompras({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
-  type D = { ano: string; vlComprasBruto: number; vlFaturamentoBruto: number; vlDevolucoes: number };
-
-  const data: D[] = anos.map(a => ({
-    ano:                String(a.ano),
-    vlComprasBruto:     a.vlComprasBruto,
-    vlFaturamentoBruto: a.vlFaturamentoBruto,
-    vlDevolucoes:       a.vlDevolucoes,
-  }));
-
+function PainelComparado({
+  data,
+  comDevolucoes,
+}: Readonly<{
+  data: { label: string; vlFaturamentoBruto: number; vlComprasBruto: number; vlDevolucoes?: number }[];
+  comDevolucoes: boolean;
+}>) {
   if (data.length === 0) return <EmptyChart />;
-
-  const maxBar = Math.max(...data.map(d => Math.max(d.vlComprasBruto, d.vlFaturamentoBruto)));
-  const maxDev = Math.max(...data.map(d => d.vlDevolucoes), 1);
+  const maxBar = Math.max(...data.map(d => Math.max(d.vlFaturamentoBruto, d.vlComprasBruto)), 1);
+  const maxDev = comDevolucoes ? Math.max(...data.map(d => d.vlDevolucoes ?? 0), 1) : 1;
 
   return (
     <ChartContainer config={CFG_PRINCIPAL} className="h-72 w-full">
-      <ComposedChart data={data} margin={{ top: 8, right: 60, left: 0, bottom: 8 }}>
+      <ComposedChart data={data} margin={{ top: 8, right: comDevolucoes ? 60 : 16, left: 0, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis
-          dataKey="ano"
-          tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-          axisLine={false} tickLine={false}
-          label={{ value: 'Ano:', position: 'insideBottomLeft', offset: -4, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-        />
+        <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
         <YAxis
           yAxisId="left"
           tickFormatter={yTickMilhoes}
           tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
           axisLine={false} tickLine={false} width={90}
           domain={[0, maxBar * 1.15]}
-          label={{ value: 'Compras e vendas', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
         />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          tickFormatter={yTickMilhoes}
-          tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-          axisLine={false} tickLine={false} width={80}
-          domain={[0, maxDev * 2]}
-          label={{ value: 'Devoluções', angle: 90, position: 'insideRight', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-        />
-        <ChartTooltip content={<ChartTooltipContent formatter={(value) => fmtBrl(Number(value))} labelFormatter={String} />} />
-        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(key) => CFG_PRINCIPAL[key]?.label ?? key} />
-        <Bar yAxisId="left" dataKey="vlComprasBruto"     name="vlComprasBruto"     fill="#3B5BDB" radius={[3,3,0,0]} maxBarSize={55} />
+        {comDevolucoes && (
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tickFormatter={yTickMilhoes}
+            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+            axisLine={false} tickLine={false} width={80}
+            domain={[0, maxDev * 2]}
+            label={{ value: 'Devoluções', angle: 90, position: 'insideRight', offset: 10, fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+          />
+        )}
+        <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => CFG_PRINCIPAL[k]?.label ?? k} />
         <Bar yAxisId="left" dataKey="vlFaturamentoBruto" name="vlFaturamentoBruto" fill="#37B24D" radius={[3,3,0,0]} maxBarSize={55} />
-        <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
+        <Bar yAxisId="left" dataKey="vlComprasBruto"     name="vlComprasBruto"     fill="#7950F2" radius={[3,3,0,0]} maxBarSize={55} />
+        {comDevolucoes && (
+          <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
+        )}
       </ComposedChart>
     </ChartContainer>
   );
@@ -323,6 +303,9 @@ export default function FaturamentoDashboardPage() {
   const [carregando, setCarregando]         = useState(false);
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
   const [loadingProcessar, setLoadingProcessar] = useState(false);
+  const [viewMode, setViewMode]             = useState<'anual' | 'mensal'>('anual');
+  const [dadosMensal, setDadosMensal]       = useState<FaturamentoAnual | null>(null);
+  const [carregandoMensal, setCarregandoMensal] = useState(false);
 
   useEffect(() => {
     faturamentoApi.listarEmpresas()
@@ -347,6 +330,17 @@ export default function FaturamentoDashboardPage() {
   }, [empresaId, fonte, anoInicio, anoFim]);
 
   useEffect(() => { if (empresaId) buscar(); }, [empresaId, buscar]);
+
+  useEffect(() => {
+    if (viewMode !== 'mensal' || !dados) return;
+    setCarregandoMensal(true);
+    faturamentoApi
+      .anual({ cnpj: dados.cnpj, ano: anoFim, fonte })
+      .then(setDadosMensal)
+      .catch(() => toastError('Erro ao buscar dados mensais.'))
+      .finally(() => setCarregandoMensal(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, dados, anoFim, fonte]);
 
   const processarSped = useCallback(async () => {
     setLoadingProcessar(true);
@@ -487,67 +481,143 @@ export default function FaturamentoDashboardPage() {
         </div>
       )}
 
-      {/* Painel 0 — Faturamento anual */}
-      {carregando ? <PanelSkeleton /> : (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Faturamento</CardTitle>
-            {dados && (
-              <p className="text-xs text-muted-foreground">
-                {dados.nome} — {maskCnpj(dados.cnpj.padStart(14, '0'))} · {fonte}
-              </p>
-            )}
-          </CardHeader>
-          <CardContent className="pt-0">
-            {dados ? <PainelFaturamento anos={dados.anos} /> : <EmptyChart />}
-          </CardContent>
-        </Card>
+      {/* Toggle Anual / Mensal */}
+      {(dados || carregando) && (
+        <div className="flex gap-1 rounded-lg border border-input bg-muted p-0.5 w-fit">
+          {(['anual', 'mensal'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setViewMode(m)}
+              className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${
+                viewMode === m
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {m === 'anual' ? 'Anual' : `Mensal (${anoFim})`}
+            </button>
+          ))}
+        </div>
       )}
 
-      {/* Painel 1 — Vendas Brutas x Compras Brutas */}
-      {carregando ? <PanelSkeleton /> : (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Vendas Brutas x Compras Brutas</CardTitle>
-            {dados && (
-              <p className="text-xs text-muted-foreground">
-                {dados.nome} — {maskCnpj(dados.cnpj.padStart(14, '0'))} · {fonte}
-              </p>
-            )}
-          </CardHeader>
-          <CardContent className="pt-0">
-            {dados ? <PainelVendasCompras anos={dados.anos} /> : <EmptyChart />}
-          </CardContent>
-        </Card>
-      )}
+      {viewMode === 'anual' ? (
+        <>
+          {/* Painéis A — Fat. Líquido + Compras lado a lado */}
+          {carregando ? (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><PanelSkeleton /><PanelSkeleton /></div>
+          ) : dados && (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Faturamento Líquido</CardTitle></CardHeader>
+                <CardContent className="pt-0">
+                  <PainelBarra
+                    data={dados.anos.map(a => ({ label: String(a.ano), valor: a.vlFatLiquido }))}
+                    config={CFG_FAT_LIQUIDO}
+                    fill="#3B5BDB"
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Compras</CardTitle></CardHeader>
+                <CardContent className="pt-0">
+                  <PainelBarra
+                    data={dados.anos.map(a => ({ label: String(a.ano), valor: a.vlComprasBruto }))}
+                    config={CFG_COMPRAS}
+                    fill="#7950F2"
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
-      {/* Painéis 2 e 3 lado a lado */}
-      {carregando ? (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <PanelSkeleton /><PanelSkeleton />
-        </div>
-      ) : dados && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {/* Painel 2 — Valores */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Valores</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <PainelValores anos={dados.anos} />
-            </CardContent>
-          </Card>
+          {/* Painel B — Faturamento Bruto × Compras + Devoluções */}
+          {carregando ? <PanelSkeleton /> : dados && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Faturamento Bruto × Compras Brutas</CardTitle>
+                <p className="text-xs text-muted-foreground">{dados.nome} — {maskCnpj(dados.cnpj.padStart(14, '0'))} · {fonte}</p>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <PainelComparado
+                  data={dados.anos.map(a => ({
+                    label:              String(a.ano),
+                    vlFaturamentoBruto: a.vlFaturamentoBruto,
+                    vlComprasBruto:     a.vlComprasBruto,
+                    vlDevolucoes:       a.vlDevolucoes,
+                  }))}
+                  comDevolucoes
+                />
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Painel 3 — Índices */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">Índices</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <PainelIndices anos={dados.anos} />
-            </CardContent>
-          </Card>
-        </div>
+          {/* Painéis C — Valores + Índices lado a lado */}
+          {carregando ? (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><PanelSkeleton /><PanelSkeleton /></div>
+          ) : dados && (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Valores</CardTitle></CardHeader>
+                <CardContent className="pt-0"><PainelValores anos={dados.anos} /></CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Índices</CardTitle></CardHeader>
+                <CardContent className="pt-0"><PainelIndices anos={dados.anos} /></CardContent>
+              </Card>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Painéis mensais — Fat. Bruto + Compras lado a lado */}
+          {carregandoMensal ? (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2"><PanelSkeleton /><PanelSkeleton /></div>
+          ) : dadosMensal && (
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Faturamento Bruto — {anoFim}</CardTitle></CardHeader>
+                <CardContent className="pt-0">
+                  <PainelBarra
+                    data={dadosMensal.mensal.map(m => ({ label: MESES[m.mes - 1] ?? String(m.mes), valor: m.vlFaturamentoBruto }))}
+                    config={CFG_FAT_BRUTO}
+                    fill="#37B24D"
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Compras — {anoFim}</CardTitle></CardHeader>
+                <CardContent className="pt-0">
+                  <PainelBarra
+                    data={dadosMensal.mensal.map(m => ({ label: MESES[m.mes - 1] ?? String(m.mes), valor: m.vlComprasBruto }))}
+                    config={CFG_COMPRAS}
+                    fill="#7950F2"
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Painel mensal combinado */}
+          {carregandoMensal ? <PanelSkeleton /> : dadosMensal && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Faturamento Bruto × Compras — {anoFim}</CardTitle>
+                <p className="text-xs text-muted-foreground">Devoluções mensais não disponíveis no EFD ICMS/IPI</p>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <PainelComparado
+                  data={dadosMensal.mensal.map(m => ({
+                    label:              MESES[m.mes - 1] ?? String(m.mes),
+                    vlFaturamentoBruto: m.vlFaturamentoBruto,
+                    vlComprasBruto:     m.vlComprasBruto,
+                  }))}
+                  comDevolucoes={false}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       {!carregando && !dados && !loadingEmpresas && (
