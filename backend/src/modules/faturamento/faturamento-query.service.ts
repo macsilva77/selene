@@ -175,7 +175,7 @@ export class FaturamentoQueryService {
       return {
         ...row,
         vlMercadorias:    Math.max(0, fat - row.vlDevolucoes - row.vlTransferencias - row.vlRemessas),
-        vlFatLiquido:     Math.max(0, fat - row.vlDevolucoes),
+        vlFatLiquido:     Math.max(0, fat - row.vlIcms - row.vlIpi - row.vlDevolucoes),
         idxEstadual:      fat > 0 ? row.vlEstaduais      / fat : 0,
         idxInterestadual: fat > 0 ? row.vlInterestaduais / fat : 0,
         idxExportacao:    fat > 0 ? row.vlExportacoes    / fat : 0,
