@@ -21,6 +21,11 @@
  *          [0]   [1]       [2]          [3]
  */
 
+import {
+  LinhaL300Bruta,
+  somarReceitaBrutaL300,
+} from '../../common/utils/ecf-l300-receita.util';
+
 export interface EcfIndicadoresResult {
   razaoSocial: string;
   cnpj: string;
@@ -88,9 +93,8 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
   let dtIni = '';
   let dtFin = '';
 
-  // Faturamento Lucro Real: maior valor de crédito da DRE (L300)
-  // NOTA: lógica max mantida intencionalmente — Correção 3 (soma por trimestre) é etapa futura.
-  let maxCreditoL300 = 0;
+  // Lucro Real: acumula todas as linhas L300 (todos os trimestres) para somarReceitaBrutaL300
+  const l300Linhas: LinhaL300Bruta[] = [];
   // Faturamento Lucro Presumido/Arbitrado: soma de VL_REC_BRUTA (P200)
   let somaP200 = 0;
   let isLucroReal = false;
@@ -138,9 +142,7 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
       }
 
       const vlCta = parseValorBr(campos[7] ?? '');
-      if (indDc === 'C' && vlCta > maxCreditoL300) {
-        maxCreditoL300 = vlCta;
-      }
+      l300Linhas.push({ cod: (campos[1] ?? '').trim(), indDc, vlCta });
 
     // ── P200: apuração — Lucro Presumido ─────────────────────────────────────
     // Leiaute: [0]=P200 [1]=PER_APU [2]=VL_REC_BRUTA [3]=VL_BASE_CAL ...
@@ -175,7 +177,7 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
   }
 
   const anoCalendario = extrairAnoCalendario(dtIni, dtFin);
-  const faturamentoDeclarado = isLucroReal ? maxCreditoL300 : somaP200;
+  const faturamentoDeclarado = isLucroReal ? somarReceitaBrutaL300(l300Linhas) : somaP200;
 
   return {
     razaoSocial,

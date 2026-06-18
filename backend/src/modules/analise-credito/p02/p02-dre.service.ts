@@ -10,6 +10,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { EcfDataSourceService } from '../infrastructure/ecf-data-source.service';
 import { Decimal } from '@prisma/client/runtime/library';
+import { criarPredicadoFolha } from '../../../common/utils/ecf-l300-receita.util';
 
 export type LinhaDre =
   | 'receita_bruta' | 'deducoes' | 'receita_liquida'
@@ -145,15 +146,8 @@ export class P02DreService {
   ): DreResult {
     const alertas: string[] = [];
 
-    // Derivar S/A: conta é folha (analítica) se nenhuma outra começa com cod + '.'
-    // O '.' literal evita confundir 3.01.01.1 com 3.01.01.10.
     const todosCodigos = new Set(registros.map(r => r.linhaCodigo));
-    const isFolha = (cod: string): boolean => {
-      for (const outro of todosCodigos) {
-        if (outro !== cod && outro.startsWith(cod + '.')) return false;
-      }
-      return true;
-    };
+    const isFolha = criarPredicadoFolha(todosCodigos);
 
     // Longest-prefix-match sobre folhas: L300_PREFIX_MAP está ordenado do mais
     // específico para o menos específico — find() retorna o primeiro (mais longo).
