@@ -127,29 +127,34 @@ export class FaturamentoProcessamentoService {
     };
   }
 
-  /** Descobre e processa todos os EFD_ICMS disponíveis no sped_arquivos. */
+  /** Descobre e processa todos os EFD_ICMS_IPI disponíveis via obrigações acessórias. */
   async processarTodos(tenantId: string, filtroAno?: number): Promise<ResultadoProcessamento[]> {
-    const arquivos = await this.prisma.spedArquivo.findMany({
+    const empresas = await this.prisma.empresa.findMany({
+      where: { tenantId },
+      select: { id: true, cnpj: true },
+    });
+    if (empresas.length === 0) {
+      this.logger.warn(`Nenhuma empresa para tenantId=${tenantId}`);
+      return [];
+    }
+    const cnpjs = empresas.map(e => e.cnpj);
+    const empresaMap = new Map(empresas.map(e => [e.cnpj, e.id]));
+
+    const arquivos = await this.prisma.obrigacaoAcessoria.findMany({
       where: {
-        tenantId,
-        tipo: 'EFD_ICMS',
-        status: 'DISPONIVEL',
-        ...(filtroAno ? { dataDocumento: { gte: new Date(filtroAno, 0, 1), lt: new Date(filtroAno + 1, 0, 1) } } : {}),
+        tipoObrigacao: 'EFD_ICMS_IPI',
+        cnpj: { in: cnpjs },
+        versaoAtual: true,
+        statusProcessamento: { in: ['Recebido', 'Processado'] },
+        ...(filtroAno ? { dataInicial: { gte: new Date(filtroAno, 0, 1), lt: new Date(filtroAno + 1, 0, 1) } } : {}),
       },
-      orderBy: { dataDocumento: 'asc' },
+      orderBy: { dataInicial: 'asc' },
     });
 
     if (arquivos.length === 0) {
-      this.logger.warn(`Nenhum EFD_ICMS disponível para tenantId=${tenantId}`);
+      this.logger.warn(`Nenhum EFD_ICMS_IPI disponível para tenantId=${tenantId}`);
       return [];
     }
-
-    const cnpjs = [...new Set(arquivos.map(a => a.cnpj))];
-    const empresaList = await this.prisma.empresa.findMany({
-      where: { tenantId, cnpj: { in: cnpjs } },
-      select: { id: true, cnpj: true },
-    });
-    const empresaMap = new Map(empresaList.map(e => [e.cnpj, e.id]));
 
     const resultados: ResultadoProcessamento[] = [];
     for (const arq of arquivos) {
@@ -159,7 +164,7 @@ export class FaturamentoProcessamentoService {
         continue;
       }
       try {
-        resultados.push(await this.processarArquivo({ tenantId, empresaId, cnpj: arq.cnpj, gcsUri: `gs://${arq.gcsBucket}/${arq.gcsPath}` }));
+        resultados.push(await this.processarArquivo({ tenantId, empresaId, cnpj: arq.cnpj, gcsUri: arq.caminhoBucket }));
       } catch (err) {
         this.logger.error(`Erro ao processar ${arq.cnpj} / ${arq.nomeArquivo}: ${String(err)}`);
       }
@@ -232,29 +237,34 @@ export class FaturamentoProcessamentoService {
     };
   }
 
-  /** Descobre e processa todos os EFD_CONTRIBUICOES disponíveis no sped_arquivos. */
+  /** Descobre e processa todos os EFD_CONTRIBUICOES disponíveis via obrigações acessórias. */
   async processarContribTodos(tenantId: string, filtroAno?: number): Promise<ResultadoProcessamentoContrib[]> {
-    const arquivos = await this.prisma.spedArquivo.findMany({
+    const empresas = await this.prisma.empresa.findMany({
+      where: { tenantId },
+      select: { id: true, cnpj: true },
+    });
+    if (empresas.length === 0) {
+      this.logger.warn(`Nenhuma empresa para tenantId=${tenantId}`);
+      return [];
+    }
+    const cnpjs = empresas.map(e => e.cnpj);
+    const empresaMap = new Map(empresas.map(e => [e.cnpj, e.id]));
+
+    const arquivos = await this.prisma.obrigacaoAcessoria.findMany({
       where: {
-        tenantId,
-        tipo: 'EFD_CONTRIBUICOES',
-        status: 'DISPONIVEL',
-        ...(filtroAno ? { dataDocumento: { gte: new Date(filtroAno, 0, 1), lt: new Date(filtroAno + 1, 0, 1) } } : {}),
+        tipoObrigacao: 'EFD_CONTRIBUICOES',
+        cnpj: { in: cnpjs },
+        versaoAtual: true,
+        statusProcessamento: { in: ['Recebido', 'Processado'] },
+        ...(filtroAno ? { dataInicial: { gte: new Date(filtroAno, 0, 1), lt: new Date(filtroAno + 1, 0, 1) } } : {}),
       },
-      orderBy: { dataDocumento: 'asc' },
+      orderBy: { dataInicial: 'asc' },
     });
 
     if (arquivos.length === 0) {
       this.logger.warn(`Nenhum EFD_CONTRIBUICOES disponível para tenantId=${tenantId}`);
       return [];
     }
-
-    const cnpjs = [...new Set(arquivos.map(a => a.cnpj))];
-    const empresaList = await this.prisma.empresa.findMany({
-      where: { tenantId, cnpj: { in: cnpjs } },
-      select: { id: true, cnpj: true },
-    });
-    const empresaMap = new Map(empresaList.map(e => [e.cnpj, e.id]));
 
     const resultados: ResultadoProcessamentoContrib[] = [];
     for (const arq of arquivos) {
@@ -264,7 +274,7 @@ export class FaturamentoProcessamentoService {
         continue;
       }
       try {
-        resultados.push(await this.processarContribArquivo({ tenantId, empresaId, cnpj: arq.cnpj, gcsUri: `gs://${arq.gcsBucket}/${arq.gcsPath}` }));
+        resultados.push(await this.processarContribArquivo({ tenantId, empresaId, cnpj: arq.cnpj, gcsUri: arq.caminhoBucket }));
       } catch (err) {
         this.logger.error(`Erro ao processar contrib ${arq.cnpj} / ${arq.nomeArquivo}: ${String(err)}`);
       }
