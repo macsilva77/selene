@@ -58,6 +58,7 @@ const FONTES = [
 const CFG_FATURAMENTO: ChartConfig = {
   vlFaturamentoBruto: { label: 'Faturamento Bruto',   color: '#37B24D' },
   vlFatLiquido:       { label: 'Faturamento Líquido', color: '#3B5BDB' },
+  vlComprasBruto:     { label: 'Compras Brutas',      color: '#7950F2' },
   vlDevolucoes:       { label: 'Devoluções',           color: '#E03131' },
 };
 
@@ -101,19 +102,20 @@ function yTickPct(v: number): string { return `${(v * 100).toFixed(0)}%`; }
 /* ─── Painel 0: Faturamento anual ────────────────────────────────────────── */
 
 function PainelFaturamento({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) {
-  type D = { ano: string; vlFaturamentoBruto: number; vlFatLiquido: number; vlDevolucoes: number };
+  type D = { ano: string; vlFaturamentoBruto: number; vlFatLiquido: number; vlComprasBruto: number; vlDevolucoes: number };
 
   const data: D[] = anos.map(a => ({
     ano:                String(a.ano),
     vlFaturamentoBruto: a.vlFaturamentoBruto,
     vlFatLiquido:       a.vlFatLiquido,
+    vlComprasBruto:     a.vlComprasBruto,
     vlDevolucoes:       a.vlDevolucoes,
   }));
 
   if (data.length === 0) return <EmptyChart />;
 
-  const maxBar  = Math.max(...data.map(d => d.vlFaturamentoBruto));
-  const maxDev  = Math.max(...data.map(d => d.vlDevolucoes), 1);
+  const maxBar = Math.max(...data.map(d => Math.max(d.vlFaturamentoBruto, d.vlComprasBruto)));
+  const maxDev = Math.max(...data.map(d => d.vlDevolucoes), 1);
 
   return (
     <ChartContainer config={CFG_FATURAMENTO} className="h-72 w-full">
@@ -138,8 +140,9 @@ function PainelFaturamento({ anos }: Readonly<{ anos: FaturamentoCfopsAno[] }>) 
         />
         <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
         <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => CFG_FATURAMENTO[k]?.label ?? k} />
-        <Bar yAxisId="left" dataKey="vlFaturamentoBruto" name="vlFaturamentoBruto" fill="#37B24D" radius={[3,3,0,0]} maxBarSize={55} />
-        <Bar yAxisId="left" dataKey="vlFatLiquido"       name="vlFatLiquido"       fill="#3B5BDB" radius={[3,3,0,0]} maxBarSize={55} />
+        <Bar yAxisId="left" dataKey="vlFaturamentoBruto" name="vlFaturamentoBruto" fill="#37B24D" radius={[3,3,0,0]} maxBarSize={45} />
+        <Bar yAxisId="left" dataKey="vlFatLiquido"       name="vlFatLiquido"       fill="#3B5BDB" radius={[3,3,0,0]} maxBarSize={45} />
+        <Bar yAxisId="left" dataKey="vlComprasBruto"     name="vlComprasBruto"     fill="#7950F2" radius={[3,3,0,0]} maxBarSize={45} />
         <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
       </ComposedChart>
     </ChartContainer>
