@@ -305,7 +305,7 @@ export default function FaturamentoDashboardPage() {
 
   const [empresas, setEmpresas]             = useState<EmpresaFaturamento[]>([]);
   const [empresaId, setEmpresaId]           = useState('');
-  const [fonte, setFonte]                   = useState('AMBOS');
+  const [fonte, setFonte]                   = useState('EFD_ICMS');
   const [anoInicio, setAnoInicio]           = useState(ANO_CORRENTE - 4);
   const [anoFim, setAnoFim]                 = useState(ANO_CORRENTE);
   const [dados, setDados]                   = useState<FaturamentoCfopsConsolidado | null>(null);
@@ -393,7 +393,8 @@ export default function FaturamentoDashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Análise de Faturamento</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Vendas, compras e índices fiscais extraídos do SPED EFD ICMS/IPI por ano.
+            Vendas, compras e índices fiscais por ano —{' '}
+            {fonte === 'EFD_ICMS' ? 'EFD ICMS/IPI' : fonte === 'EFD_CONTRIB' ? 'EFD Contribuições' : 'EFD ICMS/IPI + Contribuições'}
           </p>
         </div>
         <Button
@@ -504,7 +505,7 @@ export default function FaturamentoDashboardPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {m === 'anual' ? 'Anual' : `Mensal (${anoFim})`}
+              {m === 'anual' ? 'Anual' : anoInicio === anoFim ? `Mensal (${anoFim})` : `Mensal (${anoInicio}–${anoFim})`}
             </button>
           ))}
         </div>
