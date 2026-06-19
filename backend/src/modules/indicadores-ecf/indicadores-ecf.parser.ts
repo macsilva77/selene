@@ -96,11 +96,12 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
       const indFormaTrib = (campos[4] ?? '').trim();
       formaTributacao = IND_FORMA_TRIB_MAP[indFormaTrib] ?? 'nao_identificado';
       isLucroReal = formaTributacao === 'lucro_real';
-    } else if (rec === 'L300' && campos.length >= 6) {
-      // L300: |REG|NUM_ORD|COD_AGL|DESC_AGL|IND_DC|VL_CTA|
-      // campos[0]=REG  [1]=NUM_ORD  [2]=COD_AGL  [3]=DESC_AGL  [4]=IND_DC  [5]=VL_CTA
-      const indDc = (campos[4] ?? '').trim();
-      const vlCta = parseValorBr(campos[5] ?? '');
+    } else if (rec === 'L300' && campos.length >= 5) {
+      // Leiaute ≥9 (AC2022+): |REG|NUM_ORD|COD_AGL|DESC_AGL|IND_DC|VL_CTA|  (6 campos)
+      // Leiaute ≤8 (AC2021):  |REG|COD_AGL|DESC_AGL|IND_DC|VL_CTA|          (5 campos)
+      const novoFormato = campos.length >= 6;
+      const indDc = novoFormato ? (campos[4] ?? '').trim() : (campos[3] ?? '').trim();
+      const vlCta = novoFormato ? parseValorBr(campos[5] ?? '') : parseValorBr(campos[4] ?? '');
       if (indDc === 'C' && vlCta > maxCreditoL300) {
         maxCreditoL300 = vlCta;
       }
