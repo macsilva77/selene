@@ -299,13 +299,14 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
         <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow className="bg-muted/30">
-              <TableHead className="w-[13%]">CNPJ</TableHead>
-              {showInscricaoEstadual && <TableHead className="w-[9%]">Insc. Estadual</TableHead>}
-              <TableHead className="w-[8%]">Finalidade</TableHead>
-              <TableHead className="w-[20%]">Hash</TableHead>
-              <TableHead className="w-[10%]">Data Início</TableHead>
-              <TableHead className="w-[10%]">Data Fim</TableHead>
-              <TableHead className="w-[12%]">Data Envio SPED</TableHead>
+              <TableHead className="w-[11%]">CNPJ</TableHead>
+              <TableHead className="w-[18%]">Razão Social</TableHead>
+              {showInscricaoEstadual && <TableHead className="w-[8%]">Insc. Estadual</TableHead>}
+              <TableHead className="w-[7%]">Finalidade</TableHead>
+              <TableHead className="w-[18%]">Hash</TableHead>
+              <TableHead className="w-[9%]">Data Início</TableHead>
+              <TableHead className="w-[9%]">Data Fim</TableHead>
+              <TableHead className="w-[11%]">Data Envio SPED</TableHead>
               <TableHead className="w-[5%] text-center">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -313,7 +314,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
             {items.length === 0 && !carregando && (
               <TableRow>
                 <TableCell
-                  colSpan={showInscricaoEstadual ? 8 : 7}
+                  colSpan={showInscricaoEstadual ? 9 : 8}
                   className="text-center py-10 text-sm text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <ProhibitIcon size={24} className="text-muted-foreground/40" />
@@ -322,9 +323,16 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
                 </TableCell>
               </TableRow>
             )}
-            {items.map((item) => (
+            {items.map((item) => {
+              const cnpjRaw  = item.cnpj.replace(/\D/g, '');
+              const empresa  = empresas.find((e) => e.cnpj.replace(/\D/g, '') === cnpjRaw);
+              const razao    = empresa ? (empresa.nomeFantasia || empresa.nome) : '—';
+              return (
               <TableRow key={item.id} className={rowCls(item)}>
                 <TableCell className="font-mono text-xs">{formatarCnpj(item.cnpj)}</TableCell>
+                <TableCell className="text-xs overflow-hidden" title={razao}>
+                  <span className="block truncate">{razao}</span>
+                </TableCell>
                 {showInscricaoEstadual && (
                   <TableCell className="text-xs">{item.inscricaoEstadual ?? '—'}</TableCell>
                 )}
@@ -348,7 +356,8 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
                   />
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       </div>
