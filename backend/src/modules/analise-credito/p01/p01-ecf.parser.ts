@@ -117,11 +117,11 @@ function processarBP(
 }
 
 // DRE: L300 (Lucro Real) | P150 (Lucro Presumido/Arbitrado) | U150 (Imunes/Isentas)
-// Sinal: C = positivo (receita), D = negativo (despesa/custo)
+// Sinal L300: C = positivo (receita), D = negativo (despesa)
+// P150/U150: apenas VL_REC sem IND_DC, sempre crédito.
 
-// [FASE0-DRE] Contador para logar apenas as primeiras 3 linhas L300 por arquivo
+// Contador para logar as primeiras 3 linhas L300 por arquivo (diagnóstico).
 let _fase0DreRowCount = 0;
-let _fase0DreLoggedFile = '';
 
 function processarDRE(
   reg: RegistroEcfDRE,
@@ -130,30 +130,63 @@ function processarDRE(
   registros: EcfRegistroRow[],
   incs: EcfParseResult['inconsistencias'],
 ) {
-  if (campos.length < 8) return;
-  const cod  = (campos[1] ?? '').trim();
-  const desc = (campos[2] ?? '').trim();
   try {
-    // [FASE0-DRE] Log estrutural: mostra TODOS os campos brutos das primeiras 3 linhas L300
-    if (reg === 'L300' && _fase0DreRowCount < 3) {
-      console.log(
-        `[FASE0-DRE] campos brutos (row ${_fase0DreRowCount + 1}/3):\n` +
-        campos.map((v, i) => `  [${i}]=${JSON.stringify(v)}`).join('\n'),
-      );
-      _fase0DreRowCount++;
+    let cod: string;
+    let desc: string;
+    let valor: number;
+    let naturezaFinal: string;
+
+    if (reg === 'L300') {
+      // Leiaute ≥9 (AC2022+): |REG|NUM_ORD|COD_AGL_IND|DESC_AGL_IND|IND_DC|VL_CTA|
+      // Leiaute ≤8 (AC2021):  |REG|COD_AGL_IND|DESC_AGL_IND|IND_DC|VL_CTA|
+      if (campos.length < 5) return;
+      const novoFormato = campos.length >= 6;
+
+      if (_fase0DreRowCount < 3) {
+        console.log(
+          `[FASE0-DRE] campos (row ${_fase0DreRowCount + 1}/3, formato=${novoFormato ? 'novo6' : 'antigo5'}):\n` +
+          campos.map((v, i) => `  [${i}]=${JSON.stringify(v)}`).join('\n'),
+        );
+        _fase0DreRowCount++;
+      }
+
+      if (novoFormato) {
+        cod           = (campos[2] ?? '').trim();
+        desc          = (campos[3] ?? '').trim();
+        valor         = valorComSinal(campos, 5, 4, 'C');
+        naturezaFinal = (campos[4] ?? 'C').trim() || 'C';
+      } else {
+        cod           = (campos[1] ?? '').trim();
+        desc          = (campos[2] ?? '').trim();
+        valor         = valorComSinal(campos, 4, 3, 'C');
+        naturezaFinal = (campos[3] ?? 'C').trim() || 'C';
+      }
+    } else {
+      // P150/U150: |REG|TIPO_REC|DESC_REC|VL_REC|
+      if (campos.length < 4) return;
+      cod           = (campos[1] ?? '').trim();
+      desc          = (campos[2] ?? '').trim();
+      valor         = Math.abs(parseValorBr(campos[3] ?? ''));
+      naturezaFinal = 'C';
     }
 
     registros.push({
-      registroEcf: reg, trimestre, linhaCodigo: cod, descricao: desc,
-      indCta: null, nivel: null,
-      saldoAnterior: 0, naturezaAnterior: 'C',
-      totalDebitos: null, totalCreditos: null,
-      valor: valorComSinal(campos, 7, 8, 'C'),
-      naturezaFinal: (campos[8] ?? 'C').trim() || 'C',
-      status: 'ok',
+      registroEcf:      reg,
+      trimestre,
+      linhaCodigo:      cod,
+      descricao:        desc,
+      indCta:           null,
+      nivel:            null,
+      saldoAnterior:    0,
+      naturezaAnterior: 'C',
+      totalDebitos:     null,
+      totalCreditos:    null,
+      valor,
+      naturezaFinal,
+      status:           'ok',
     });
   } catch {
-    incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido: ${cod}`, severidade: 'alerta' });
+    incs.push({ tipoErro: `${reg}_PARSE`, descricao: `${reg} inválido`, severidade: 'alerta' });
   }
 }
 
