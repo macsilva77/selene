@@ -214,6 +214,28 @@ describe('calcularIndicadores — Grupo 2: Novas margens', () => {
   });
 });
 
+// ─── dl_ebitda com EBITDA não-positivo ───────────────────────────────────────
+
+describe('calcularIndicadores — dl_ebitda exige EBITDA > 0', () => {
+  // BAL_BASE: divCP=40k + divLP=150k = 190k; caixa=100k → dívida líquida = 90k
+  it('dl_ebitda = dívida líquida / EBITDA quando EBITDA > 0', () => {
+    const res = calcularIndicadores(BAL_BASE, DRE_BASE);
+    expect(val(res, 'dl_ebitda')).toBeCloseTo(90_000 / 360_000, 6);
+  });
+
+  it('dl_ebitda null quando EBITDA = 0', () => {
+    const dre = makeDre({ ...Object.fromEntries(DRE_BASE), ebitda: 0 });
+    const r = calcularIndicadores(BAL_BASE, dre);
+    expect(val(r, 'dl_ebitda')).toBeNull();
+  });
+
+  it('dl_ebitda null quando EBITDA < 0 (prejuízo operacional)', () => {
+    const dre = makeDre({ ...Object.fromEntries(DRE_BASE), ebitda: -329_155 });
+    const r = calcularIndicadores(BAL_BASE, dre);
+    expect(val(r, 'dl_ebitda')).toBeNull();
+  });
+});
+
 // ─── Grupo 3 — Ativo operacional absoluto ────────────────────────────────────
 
 describe('calcularIndicadores — Grupo 3: ativo_clientes e ativo_estoques', () => {

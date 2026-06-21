@@ -142,7 +142,10 @@ export function calcularIndicadores(
     ind('divida_financeira_tot', divTot,                           'reais'),
     ind('caixa_equiv',           acCaixa,                          'reais'),
     ind('divida_liquida',        divLiq,                           'reais'),
-    ind('dl_ebitda',             safeDiv(divLiq, ebitda),          'ratio'),
+    // Dívida Líquida/EBITDA só faz sentido com EBITDA > 0. Com EBITDA ≤ 0
+    // (prejuízo operacional) o múltiplo é absurdo (negativo) ou enganoso →
+    // retorna null para o front ocultar o indicador/selo em vez de exibir alavancagem falsa.
+    ind('dl_ebitda',             ebitda.greaterThan(0) ? safeDiv(divLiq, ebitda) : null, 'ratio'),
     // Valores absolutos de ativo operacional (usados na composição do ativo)
     ind('ativo_clientes',        acClientes,                       'reais'),
     ind('ativo_estoques',        acEstoques,                       'reais'),
