@@ -6,6 +6,7 @@ import { DuckDbService }             from './infrastructure/duckdb/duckdb.servic
 import { EcfParquetRepository }      from './infrastructure/duckdb/ecf-parquet.repository';
 import { ParquetCacheService }       from './infrastructure/cache/parquet-cache.service';
 import { EcfDataSourceService }      from './infrastructure/ecf-data-source.service';
+import { EcfBlocoResolver }          from './infrastructure/ecf-bloco.resolver';
 // ── P01 ───────────────────────────────────────────────────────────────────────
 import { P01GcsService }             from './p01/p01-gcs.service';
 import { P01Service }                from './p01/p01.service';
@@ -25,6 +26,7 @@ const infrastructure = [
   EcfParquetRepository,
   ParquetCacheService,
   EcfDataSourceService,
+  EcfBlocoResolver,
 ];
 
 @Module({

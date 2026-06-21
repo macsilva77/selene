@@ -4,6 +4,7 @@ import { PrismaService }      from '../../database/prisma.service';
 import { P02DreService, type DreResult } from './p02/p02-dre.service';
 import { P04Service }         from './p04/p04.service';
 import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
+import { EcfBlocoResolver }     from './infrastructure/ecf-bloco.resolver';
 import {
   calcularIndicadores,
   calcularEstruturaCapital,
@@ -24,6 +25,7 @@ export class AnaliseCreditoCalcularService {
   constructor(
     private readonly dreService:    P02DreService,
     private readonly ecfDataSource: EcfDataSourceService,
+    private readonly blocoResolver: EcfBlocoResolver,
     private readonly p04Service:    P04Service,
     private readonly prisma:        PrismaService,
   ) {}
@@ -173,11 +175,18 @@ export class AnaliseCreditoCalcularService {
     ]);
     const anos = [...new Set([...arqRows, ...regRows].map(r => r.exercicio))].sort((a, b) => a - b);
     const resultados: CalcularResultado[] = [];
+    let regimeDetectado: string | null = null;   // bloco presente vence o rótulo armazenado
 
     for (const ano of anos) {
+      // Fase 1: roteia pelo bloco demonstrativo PRESENTE (L→P→U), não pelo regime
+      // armazenado (que pode estar errado — ex.: Presumido gravado como lucro_real).
+      const bloco  = await this.blocoResolver.resolver(empresa.id, ano, empresa.regimeTributario);
+      const regime = bloco?.regime ?? empresa.regimeTributario;
+      if (bloco) regimeDetectado = bloco.regime;
+
       const [bal, drePair] = await Promise.all([
-        this.ecfBalData(empresa.id, ano, empresa.regimeTributario),
-        this.ecfDreData(empresa.id, ano, empresa.regimeTributario),
+        this.ecfBalData(empresa.id, ano, regime),
+        this.ecfDreData(empresa.id, ano, regime),
       ]);
 
       if (!bal || !drePair) {
@@ -201,8 +210,8 @@ export class AnaliseCreditoCalcularService {
       }
 
       const [balAnt, dreAntPair] = await Promise.all([
-        this.ecfBalData(empresa.id, ano - 1, empresa.regimeTributario),
-        this.ecfDreData(empresa.id, ano - 1, empresa.regimeTributario),
+        this.ecfBalData(empresa.id, ano - 1, regime),
+        this.ecfDreData(empresa.id, ano - 1, regime),
       ]);
 
       const dreAnt = dreAntPair?.data;
@@ -248,28 +257,47 @@ export class AnaliseCreditoCalcularService {
       resultados.push({ exercicio: ano, indicadores: indicadores.length, comDados: true });
     }
 
-    // P04 — alertas e classificação
-    // Remove o registro de processamento anterior para que P04 não pule (idempotência).
-    const anosComDados = resultados.filter(r => r.comDados).map(r => r.exercicio);
-    if (anosComDados.length > 0) {
-      await this.prisma.creditoProcessamento.deleteMany({
-        where: {
-          empresaId: empresa.id,
-          exercicio: { in: anosComDados },
-          tabelaDestino: { in: ['tb_alertas', 'tb_classificacoes'] },
-        },
-      });
-    }
-    for (const { exercicio, comDados } of resultados) {
-      if (!comDados) continue;
-      try {
-        await this.p04Service.processarExercicio(empresa.id, exercicio);
-      } catch (err) {
-        this.logger.warn(`[Calcular] ${empresa.cnpj} P04 exercicio=${exercicio}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    await this.rodarP04(empresa.id, empresa.cnpj, resultados);
+
+    // Fase 1: corrige o rótulo de regime no cadastro com o que foi DETECTADO pelo
+    // bloco presente (o dashboard lê creditoEmpresa.regimeTributario).
+    await this.corrigirRegime(empresa.id, empresa.cnpj, empresa.regimeTributario, regimeDetectado);
 
     this.logger.log(`[Calcular] ${empresa.cnpj} — ${resultados.filter(r => r.comDados).length} exercícios processados`);
     return resultados;
+  }
+
+  // ─── P04 e correção de regime ───────────────────────────────────────────────
+
+  /** Roda P04 (alertas/classificação) para os exercícios com dados, de forma idempotente. */
+  private async rodarP04(empresaId: string, cnpj: string, resultados: CalcularResultado[]): Promise<void> {
+    const anosComDados = resultados.filter(r => r.comDados).map(r => r.exercicio);
+    if (anosComDados.length === 0) return;
+
+    // Remove o registro de processamento anterior para que P04 não pule (idempotência).
+    await this.prisma.creditoProcessamento.deleteMany({
+      where: {
+        empresaId,
+        exercicio: { in: anosComDados },
+        tabelaDestino: { in: ['tb_alertas', 'tb_classificacoes'] },
+      },
+    });
+    for (const exercicio of anosComDados) {
+      try {
+        await this.p04Service.processarExercicio(empresaId, exercicio);
+      } catch (err) {
+        this.logger.warn(`[Calcular] ${cnpj} P04 exercicio=${exercicio}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /** Corrige creditoEmpresa.regimeTributario com o regime detectado pelo bloco presente. */
+  private async corrigirRegime(empresaId: string, cnpj: string, atual: string | null, detectado: string | null): Promise<void> {
+    if (!detectado || detectado === atual) return;
+    await this.prisma.creditoEmpresa.update({
+      where: { id: empresaId },
+      data:  { regimeTributario: detectado },
+    });
+    this.logger.log(`[Calcular] ${cnpj} — regime corrigido '${atual}' → '${detectado}' (bloco presente)`);
   }
 }

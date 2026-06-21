@@ -112,6 +112,22 @@ export class EcfParquetRepository {
     });
   }
 
+  /** Lista os tipos de registro presentes no Parquet (ex.: L300, P150, U100…). */
+  async registrosDisponiveis(buffer: Buffer): Promise<string[]> {
+    return this.withTempFile(buffer, async (fp) => {
+      const p    = toDuckPath(fp);
+      const conn = await this.duckdb.connect();
+      try {
+        const reader = await conn.runAndReadAll(
+          `SELECT DISTINCT registro_ecf FROM read_parquet('${p}') ORDER BY registro_ecf`,
+        );
+        return (reader.getRowObjects() as { registro_ecf: string }[]).map(r => r.registro_ecf);
+      } finally {
+        conn.closeSync();
+      }
+    });
+  }
+
   /**
    * Detecta se o Parquet tem o novo schema (pós-migração com colunas de movimentação).
    * Parquets antigos não têm ind_cta — usamos NULLs para compatibilidade retroativa.

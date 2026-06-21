@@ -99,6 +99,13 @@ export class EcfDataSourceService {
     return [];
   }
 
+  /** Tipos de registro presentes no Parquet da empresa/exercício (L300, P150, U100…). */
+  async registrosDisponiveis(empresaId: string, exercicio: number): Promise<Set<string>> {
+    const buffer = await this.obterBuffer(empresaId, exercicio);
+    if (!buffer) return new Set();
+    return new Set(await this.parquetRepo.registrosDisponiveis(buffer));
+  }
+
   /** Invalida cache explicitamente (ex: logo após reprocessamento P01). */
   invalidarCache(gcsPath: string): void {
     this.cache.invalidate(gcsPath);
