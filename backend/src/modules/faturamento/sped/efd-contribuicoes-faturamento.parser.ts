@@ -27,9 +27,10 @@ export interface FatoFaturamentoContrib {
 
 const IDX_0000 = { DT_INI: 4, NOME: 6, CNPJ: 7 } as const;
 
-// |A100|IND_OPER|IND_EMIT|COD_PART|COD_SIT|SER|SUB|NUM_DOC|CHV_NFE|DT_DOC|DT_EXE_SERV|
-//      VL_DOC  |VL_DESC |VL_BC_PIS|ALIQ_PIS|VL_PIS|VL_BC_COFINS|ALIQ_COFINS|VL_COFINS|
-const IDX_A100 = { IND_OPER: 2, COD_SIT: 5, VL_DOC: 12, VL_PIS: 16, VL_COFINS: 19 } as const;
+// Layout real (confirmado em arquivo): [12]=VL_DOC [13]=IND_PGTO [14]=VL_DESC
+//   [15]=VL_BC_PIS [16]=VL_PIS [17]=VL_BC_COFINS [18]=VL_COFINS [19]=VL_PIS_RET...
+// Antes VL_COFINS lia 19 (=VL_PIS_RET, geralmente 0) → COFINS zerada.
+const IDX_A100 = { IND_OPER: 2, COD_SIT: 5, VL_DOC: 12, VL_PIS: 16, VL_COFINS: 18 } as const;
 
 export async function parseEfdContribuicoesFaturamento(stream: Readable): Promise<FatoFaturamentoContrib> {
   let cnpj = '';

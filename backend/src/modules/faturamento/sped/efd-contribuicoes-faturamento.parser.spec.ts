@@ -29,10 +29,11 @@ function linha0000(dtIni: string, nome: string, cnpj: string): string {
 }
 
 /**
+ * Layout REAL do A100 (confirmado em arquivo): sem campos de alíquota.
  * |A100|IND_OPER|IND_EMIT|COD_PART|COD_SIT|SER|SUB|NUM_DOC|CHV_NFE|DT_DOC|DT_EXE_SERV|
- *      VL_DOC|VL_DESC|VL_BC_PIS|ALIQ_PIS|VL_PIS|VL_BC_COFINS|ALIQ_COFINS|VL_COFINS|COD_CTA|
  *  [2]        [3]     [4]       [5]      [6] [7] [8]        [9]        [10]   [11]
- *  [12]   [13]    [14]        [15]      [16]   [17]           [18]        [19]     [20]
+ *      VL_DOC|IND_PGTO|VL_DESC|VL_BC_PIS|VL_PIS|VL_BC_COFINS|VL_COFINS|COD_CTA|
+ *  [12]   [13]    [14]    [15]      [16]   [17]         [18]      [19]
  */
 function linhaA100(
   indOper: string,
@@ -43,7 +44,7 @@ function linhaA100(
 ): string {
   return (
     `|A100|${indOper}|0|PART001|${codSit}|001|000|000001|CHVNFSE|01012024|01012024|` +
-    `${vlDoc}|0|${vlDoc}|3,00|${vlPis}|${vlDoc}|3,00|${vlCofins}|CTB001|`
+    `${vlDoc}|0|0|${vlDoc}|${vlPis}|${vlDoc}|${vlCofins}|CTB001|`
   );
 }
 
