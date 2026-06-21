@@ -5,6 +5,7 @@ import {
 import { Prisma, AuditAcao } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { DIVIDA_FINANCEIRA_CP, DIVIDA_FINANCEIRA_LP } from './infrastructure/referencial-codigos';
+import { classificarCruzamento, CruzamentoAno } from './cruzamento-receita';
 import { P01Service }        from './p01/p01.service';
 import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
@@ -249,6 +250,55 @@ export class AnaliseCreditoController {
       calculado:     indPorAno.has(exercicio),
       comAlertas:    alertaAnos.has(exercicio),
     })).sort((a, b) => b.exercicio - a.exercicio);
+  }
+
+  /**
+   * Cruzamento Receita ECF × Faturamento EFD por ano (qualidade de dado / risco).
+   * Receita declarada (ECF) vs vendas de mercadoria (EFD, líquido de devoluções/
+   * transferências/remessas), só em anos com EFD ~completo. Pega serviço,
+   * subdeclaração e divergência.
+   */
+  @Get('empresas/:cnpj/cruzamento-receita')
+  async cruzamentoReceita(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+  ) {
+    this.validarCnpj(cnpj);
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    const [dreRows, efd] = await Promise.all([
+      this.prisma.creditoDre.findMany({
+        where:  { empresaId: empresa.id, linhaDre: 'receita_liquida' },
+        select: { exercicio: true, valor: true },
+      }),
+      this.prisma.faturamentoCompetencia.groupBy({
+        by:     ['ano'],
+        where:  { cnpj, fonte: 'EFD_ICMS' },
+        _sum:   { vlFaturamentoBruto: true, vlDevolucoes: true, vlTransferencias: true, vlRemessas: true },
+        _count: true,
+      }),
+    ]);
+
+    const recEcf = new Map(dreRows.map(d => [d.exercicio, Math.abs(Number(d.valor))]));
+    const efdMap = new Map(efd.map(r => [r.ano, {
+      vendas: Number(r._sum.vlFaturamentoBruto ?? 0) - Number(r._sum.vlDevolucoes ?? 0)
+            - Number(r._sum.vlTransferencias ?? 0) - Number(r._sum.vlRemessas ?? 0),
+      meses:  r._count,
+    }]));
+
+    const anos = [...new Set([...recEcf.keys(), ...efdMap.keys()])].sort((a, b) => a - b);
+    const resultado: CruzamentoAno[] = anos.map(ano => {
+      const receitaEcf = recEcf.get(ano) ?? 0;
+      const e = efdMap.get(ano);
+      const vendasEfd = e?.vendas ?? 0;
+      const mesesEfd  = e?.meses ?? 0;
+      const { flag, ratio } = classificarCruzamento(receitaEcf, vendasEfd, mesesEfd);
+      return { ano, receitaEcf, vendasEfd, mesesEfd, ratio, flag };
+    });
+    return { cnpj, razaoSocial: empresa.razaoSocial, anos: resultado };
   }
 
   @Get('empresas/:cnpj/indicadores')
