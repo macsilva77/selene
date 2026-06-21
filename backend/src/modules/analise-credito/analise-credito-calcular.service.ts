@@ -196,6 +196,7 @@ export class AnaliseCreditoCalcularService {
       ]);
 
       if (!bal || !drePair) {
+        await this.limparExercicio(empresa.id, ano);
         resultados.push({ exercicio: ano, indicadores: 0, comDados: false });
         continue;
       }
@@ -211,6 +212,7 @@ export class AnaliseCreditoCalcularService {
           `[Calcular] ${empresa.cnpj} ano=${ano}: DRE falhou validação — indicadores NÃO publicados.\n` +
           dreResult.alertas.filter(a => a.startsWith('[VALID')).map(a => `  ${a}`).join('\n'),
         );
+        await this.limparExercicio(empresa.id, ano);
         resultados.push({ exercicio: ano, indicadores: 0, comDados: false });
         continue;
       }
@@ -295,6 +297,19 @@ export class AnaliseCreditoCalcularService {
         this.logger.warn(`[Calcular] ${cnpj} P04 exercicio=${exercicio}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+  }
+
+  /**
+   * Remove os dados de análise de um exercício bloqueado/sem-dados. Sem isso, um
+   * ano que falha a validação mantém o tb_dre/indicadores ANTIGOS (ex.: EBITDA
+   * −202M stale) — o dashboard mostraria garbage em vez de "sem dado" (—).
+   */
+  private async limparExercicio(empresaId: string, exercicio: number): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.creditoDre.deleteMany({ where: { empresaId, exercicio } }),
+      this.prisma.creditoIndicador.deleteMany({ where: { empresaId, exercicio } }),
+      this.prisma.creditoEstruturaCapital.deleteMany({ where: { empresaId, exercicio } }),
+    ]);
   }
 
   /** Corrige creditoEmpresa.regimeTributario com o regime detectado pelo bloco presente. */
