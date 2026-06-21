@@ -123,6 +123,11 @@ function processarBP(
 // Contador para logar as primeiras 3 linhas L300 por arquivo (diagnóstico).
 let _fase0DreRowCount = 0;
 
+// COD_VER do registro 0000 (versão do leiaute ECF). Resolve os índices de campo
+// do L300 de forma version-aware (leiaute >= 9 / AC2022+ introduziu NUM_ORD).
+// Setado ao processar o 0000; um arquivo sempre começa por ele.
+let _codVerLeiaute = 0;
+
 function processarDRE(
   reg: RegistroEcfDRE,
   campos: string[],
@@ -137,29 +142,42 @@ function processarDRE(
     let naturezaFinal: string;
 
     if (reg === 'L300') {
-      // Leiaute ≥9 (AC2022+): |REG|NUM_ORD|COD_AGL_IND|DESC_AGL_IND|IND_DC|VL_CTA|
-      // Leiaute ≤8 (AC2021):  |REG|COD_AGL_IND|DESC_AGL_IND|IND_DC|VL_CTA|
+      // Layout real AC2021+ (leiautes 9–12), 9 campos:
+      // |REG|COD_CTA|DESC|IND_CTA(S/A)|NIVEL|COD_NAT|COD_CTA_SUP|VL_CTA|IND_DC|
+      //   0     1     2       3          4      5         6         7      8
+      // COD_VER (0000) confirma o leiaute. NUNCA usar cod=[2]: a regressão 7b15f1b
+      // assumiu 6 campos (cod=[2]/val=[5]) e zerava o L300 — o original e correto é
+      // cod=[1]/val=[7]/dc=[8] (foi o que gerou os Parquets corretos no parque).
       if (campos.length < 5) return;
-      const novoFormato = campos.length >= 6;
+      const novoLayout = campos.length >= 9;  // COD_NAT/COD_CTA_SUP presentes → VL=[7], IND_DC=[8]
+
+      // Sanidade: COD_VER >= 9 deve trazer o layout completo de 9 campos.
+      if (_codVerLeiaute >= 9 && !novoLayout) {
+        incs.push({
+          tipoErro:   'L300_LEIAUTE',
+          descricao:  `L300 COD_VER=${_codVerLeiaute}: esperava 9 campos, veio ${campos.length}`,
+          severidade: 'alerta',
+        });
+      }
 
       if (_fase0DreRowCount < 3) {
         console.log(
-          `[FASE0-DRE] campos (row ${_fase0DreRowCount + 1}/3, formato=${novoFormato ? 'novo6' : 'antigo5'}):\n` +
+          `[FASE0-DRE] campos (row ${_fase0DreRowCount + 1}/3, COD_VER=${_codVerLeiaute}, nFields=${campos.length}):\n` +
           campos.map((v, i) => `  [${i}]=${JSON.stringify(v)}`).join('\n'),
         );
         _fase0DreRowCount++;
       }
 
-      if (novoFormato) {
-        cod           = (campos[2] ?? '').trim();
-        desc          = (campos[3] ?? '').trim();
-        valor         = valorComSinal(campos, 5, 4, 'C');
-        naturezaFinal = (campos[4] ?? 'C').trim() || 'C';
+      cod  = (campos[1] ?? '').trim();
+      desc = (campos[2] ?? '').trim();
+      if (novoLayout) {
+        valor         = valorComSinal(campos, 7, 8, 'C');     // VL_CTA=[7], IND_DC=[8]
+        naturezaFinal = (campos[8] ?? 'C').trim() || 'C';
       } else {
-        cod           = (campos[1] ?? '').trim();
-        desc          = (campos[2] ?? '').trim();
-        valor         = valorComSinal(campos, 4, 3, 'C');
-        naturezaFinal = (campos[3] ?? 'C').trim() || 'C';
+        // leiaute compacto |REG|COD|DESC|IND_DC|VL| → VL último, IND_DC penúltimo
+        const vlIdx = campos.length - 1, dcIdx = campos.length - 2;
+        valor         = valorComSinal(campos, vlIdx, dcIdx, 'C');
+        naturezaFinal = (campos[dcIdx] ?? 'C').trim() || 'C';
       }
     } else {
       // P150/U150: |REG|TIPO_REC|DESC_REC|VL_REC|
@@ -237,6 +255,7 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
   // quando o código raiz '1' (ATIVO/início do plano) aparece novamente.
   let trimestreAtual = 0;
   let ultimoRec      = '';
+  _codVerLeiaute     = 0;  // reset: estado de módulo; será setado pelo 0000 do arquivo atual
 
   for (const linha of linhas) {
     const campos = parseLinha(linha);
@@ -248,6 +267,8 @@ export function parseEcf(buffer: Buffer): EcfParseResult {
       razaoSocial = (campos[4] ?? '').trim();
       if (!regimeTributario)
         regimeTributario = IND_TRIB_MAP[(campos[6] ?? '').trim()] ?? null;
+      // COD_VER_LC = campos[2] (versão do leiaute) → resolve índices L300 version-aware
+      _codVerLeiaute = Number.parseInt((campos[2] ?? '').trim(), 10) || 0;
       // [FASE0-DRE] Logar versão do leiaute (COD_VER_LC = campos[2]) e total de campos
       _fase0DreRowCount = 0; // reset por arquivo
       console.log(`[FASE0-DRE] 0000: campos.length=${campos.length} COD_VER_LC=${campos[2]?.trim() ?? 'n/a'} CNPJ=${campos[3]?.trim() ?? 'n/a'}`);
