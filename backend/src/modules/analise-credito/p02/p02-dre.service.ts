@@ -9,6 +9,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { EcfDataSourceService } from '../infrastructure/ecf-data-source.service';
+import type { EcfRegistroRow } from '../p01/p01-ecf.parser';
 import { Decimal } from '@prisma/client/runtime/library';
 
 export type LinhaDre =
@@ -103,8 +104,8 @@ export class P02DreService {
     const candidatos = this.candidatosDre(regimeTributario);
 
     for (const registroEcf of candidatos) {
-      const rows = await this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
-      this.logger.log(`[DIAG-DRE] empresaId=${empresaId} exercicio=${exercicio} trimestre=${trimestre ?? 'n/a'} registroEcf=${registroEcf} rows=${rows.length}`);
+      const rows = await this.obterLinhasDre(empresaId, exercicio, registroEcf, trimestre);
+      this.logger.log(`[DIAG-DRE] empresaId=${empresaId} exercicio=${exercicio} trimestre=${trimestre ?? 'anual(Σ)'} registroEcf=${registroEcf} rows=${rows.length}`);
       if (rows.length === 0) continue;
 
       // Mapeia para o formato interno (valor como Decimal)
@@ -121,6 +122,50 @@ export class P02DreService {
 
     this.logger.log(`[DIAG-DRE] empresaId=${empresaId} exercicio=${exercicio} → fallback ECD`);
     return this.montarDeEcd(empresaId, exercicio);
+  }
+
+  // ─── Agregação trimestre → anual ────────────────────────────────────────────
+
+  /**
+   * Obtém as linhas DRE do exercício.
+   *
+   * A ECF de lucro real trimestral traz 4 blocos L300 cobrindo períodos DISJUNTOS
+   * (L030: Q1=jan–mar, Q2=abr–jun, Q3=jul–set, Q4=out–dez). O ANUAL é portanto a
+   * SOMA dos quatro, não um único trimestre — ler só Q4 (`max`) subestima ~4×.
+   *
+   * - `trimestre` explícito → respeita (visão por período, ex.: tela trimestral).
+   * - sem `trimestre` + bloco anual nativo (trimestre 0) → usa-o direto.
+   * - sem `trimestre` + blocos trimestrais → soma por código (reconstitui o anual).
+   */
+  private async obterLinhasDre(
+    empresaId: string,
+    exercicio: number,
+    registroEcf: string,
+    trimestre?: number,
+  ): Promise<EcfRegistroRow[]> {
+    if (trimestre !== undefined) {
+      return this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre });
+    }
+    const trimestres = await this.ecfDataSource.trimestresDisponiveis(empresaId, exercicio, registroEcf);
+    if (trimestres.length === 0) return [];
+    if (trimestres.includes(0)) {
+      return this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre: 0 });
+    }
+    const blocos = await Promise.all(
+      trimestres.map(t => this.ecfDataSource.consultar(empresaId, exercicio, { registroEcf, trimestre: t })),
+    );
+    return this.somarLinhasPorCodigo(blocos.flat());
+  }
+
+  /** Soma os valores das linhas com o mesmo código (anual = Σ trimestres disjuntos). */
+  private somarLinhasPorCodigo(rows: EcfRegistroRow[]): EcfRegistroRow[] {
+    const acc = new Map<string, EcfRegistroRow>();
+    for (const r of rows) {
+      const existente = acc.get(r.linhaCodigo);
+      if (existente) existente.valor += r.valor;
+      else acc.set(r.linhaCodigo, { ...r, trimestre: 0 });
+    }
+    return [...acc.values()];
   }
 
   // ─── Ordem de candidatos por regime ─────────────────────────────────────────

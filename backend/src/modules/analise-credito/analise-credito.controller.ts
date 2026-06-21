@@ -944,9 +944,8 @@ export class AnaliseCreditoController {
   }
 
   /**
-   * Determina o trimestre correto (Q4 ou máximo disponível) para cada candidato
-   * de DRE e passa para dreService.montar, que agora filtra pelo trimestre certo.
-   * Sem esse filtro, dreService.montar mistura Q1-Q4 e pode usar valores de Q1.
+   * Monta a DRE ANUAL do exercício. dreService.montar (sem trimestre) agrega os
+   * blocos trimestrais disjuntos (Σ Q1..Q4) — ler só Q4 subestimava ~4×.
    */
   private async ecfDreData(empresaId: string, exercicio: number, regime: string | null): Promise<DreData | null> {
     const candidatos = this.registrosPorRegime(regime, 'dre');
@@ -957,9 +956,7 @@ export class AnaliseCreditoController {
         );
         if (!resultado || resultado.registros.length === 0) continue;
 
-        // Usa o trimestre ativo determinado pelo consultarComTrimestres (Q4 ou máximo)
-        const trimestre = resultado.trimestreAtivo;
-        const res = await this.dreService.montar(empresaId, exercicio, regime, trimestre);
+        const res = await this.dreService.montar(empresaId, exercicio, regime);
         if (res.linhas.length === 0) continue;
 
         const dre: DreData = new Map();

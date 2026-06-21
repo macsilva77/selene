@@ -142,9 +142,10 @@ export class AnaliseCreditoCalcularService {
         );
         if (!resultado || resultado.registros.length === 0) continue;
 
-        const trimestre  = resultado.trimestreAtivo;
         const origemDados = resultado.origemDados;
-        const res = await this.dreService.montar(empresaId, exercicio, regime, trimestre);
+        // DRE anual: montar agrega os trimestres disjuntos (Σ Q1..Q4) — não usar
+        // trimestreAtivo=Q4, que captura só out–dez.
+        const res = await this.dreService.montar(empresaId, exercicio, regime);
         if (res.linhas.length === 0) continue;
 
         const data: DreData = new Map();
