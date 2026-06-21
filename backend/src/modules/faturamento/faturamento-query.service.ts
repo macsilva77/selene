@@ -37,6 +37,44 @@ export interface ConsolidadoAnoFull extends ConsolidadoAnoRow {
   idxDevolucao:     number;
 }
 
+/** Faturamento dos últimos 12 meses disponíveis (LTM) + carga tributária efetiva. */
+export interface FaturamentoLtm {
+  meses:               number;       // quantos meses entraram (≤ 12)
+  periodoInicio:       string | null; // 'AAAA-MM'
+  periodoFim:          string | null;
+  vlFaturamentoBruto:  number;
+  vlImpostos:          number;       // ICMS + IPI + PIS + COFINS
+  cargaTributaria:     number | null; // impostos / bruto (null se bruto = 0)
+  vlVendasMercadoria:  number;       // bruto − devoluções − transferências − remessas
+  vlFatLiquido:        number;       // bruto − impostos − devoluções
+}
+
+export interface LtmRow {
+  ano: number; mes: number; bruto: number; icms: number; ipi: number;
+  pis: number; cofins: number; dev: number; transf: number; rem: number;
+}
+
+/** Agregação pura do LTM (últimos 12 meses já selecionados). Testável sem I/O. */
+export function agregarLtm(rows: LtmRow[]): FaturamentoLtm {
+  const bruto    = rows.reduce((s, r) => s + r.bruto, 0);
+  const impostos = rows.reduce((s, r) => s + r.icms + r.ipi + r.pis + r.cofins, 0);
+  const dev      = rows.reduce((s, r) => s + r.dev, 0);
+  const transf   = rows.reduce((s, r) => s + r.transf, 0);
+  const rem      = rows.reduce((s, r) => s + r.rem, 0);
+  const comp = (r: { ano: number; mes: number }) => `${r.ano}-${String(r.mes).padStart(2, '0')}`;
+  const ord  = [...rows].sort((a, b) => (a.ano * 12 + a.mes) - (b.ano * 12 + b.mes));
+  return {
+    meses:              rows.length,
+    periodoInicio:      ord.length ? comp(ord[0]) : null,
+    periodoFim:         ord.length ? comp(ord[ord.length - 1]) : null,
+    vlFaturamentoBruto: bruto,
+    vlImpostos:         impostos,
+    cargaTributaria:    bruto > 0 ? impostos / bruto : null,
+    vlVendasMercadoria: Math.max(0, bruto - dev - transf - rem),
+    vlFatLiquido:       Math.max(0, bruto - impostos - dev),
+  };
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -183,6 +221,32 @@ export class FaturamentoQueryService {
       };
     });
 
+    await this.cache.set(ck, result, CACHE_TTL_MS);
+    this.trackKey(params.tenantId, params.empresaId, ck);
+    return result;
+  }
+
+  // ── LTM (últimos 12 meses) + carga tributária ─────────────────────────────
+  async ltm(params: { tenantId: string; empresaId: string; fonte?: string }): Promise<FaturamentoLtm> {
+    const fonte = params.fonte ?? 'EFD_ICMS';
+    const ck = this.key(params.tenantId, params.empresaId, 'ltm', fonte);
+    const cached = await this.cache.get<FaturamentoLtm>(ck);
+    if (cached) return cached;
+
+    const rows = await this.prisma.$queryRaw<{ ano: number; mes: number; bruto: number; icms: number; ipi: number; pis: number; cofins: number; dev: number; transf: number; rem: number }[]>(
+      Prisma.sql`
+        SELECT ano, mes,
+          vl_faturamento_bruto::float8 AS bruto, vl_icms::float8 AS icms, vl_ipi::float8 AS ipi,
+          vl_pis::float8 AS pis, vl_cofins::float8 AS cofins, vl_devolucoes::float8 AS dev,
+          vl_transferencias::float8 AS transf, vl_remessas::float8 AS rem
+        FROM faturamento_competencias
+        WHERE tenant_id = ${params.tenantId} AND empresa_id = ${params.empresaId} AND fonte = ${fonte}
+        ORDER BY ano DESC, mes DESC
+        LIMIT 12
+      `,
+    );
+
+    const result = agregarLtm(rows);
     await this.cache.set(ck, result, CACHE_TTL_MS);
     this.trackKey(params.tenantId, params.empresaId, ck);
     return result;

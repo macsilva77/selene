@@ -329,6 +329,27 @@ export class FaturamentoController {
   }
 
   /**
+   * Faturamento dos últimos 12 meses (LTM) + carga tributária efetiva.
+   */
+  @Get('ltm')
+  @ApiOperation({ summary: 'Faturamento LTM (últimos 12 meses) + carga tributária' })
+  @RequiresPermission('faturamento:visualizar')
+  async ltm(
+    @Query() q: ConsolidadoQueryDto,
+    @CurrentUser() user: { tenantId: string },
+  ) {
+    if (!q.empresaId) throw new BadRequestException('empresaId é obrigatório');
+    const empresa = await this.prisma.empresa.findFirst({
+      where: { id: q.empresaId, tenantId: user.tenantId },
+      select: { id: true, cnpj: true, nome: true },
+    });
+    if (!empresa) throw new NotFoundException('Empresa não encontrada');
+
+    const ltm = await this.query.ltm({ tenantId: user.tenantId, empresaId: q.empresaId, fonte: q.fonte ?? 'EFD_ICMS' });
+    return { empresaId: empresa.id, cnpj: empresa.cnpj, nome: empresa.nome, ...ltm };
+  }
+
+  /**
    * Consolidado multi-ano com breakdown por categoria de CFOP.
    * GROUP BY + string_agg executados no banco via FaturamentoQueryService + cache 1h.
    */
