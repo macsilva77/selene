@@ -15,7 +15,8 @@ import type { KpiAnual } from '@/lib/analise-credito-api';
 
 /* ─── Formatação ─────────────────────────────────────────────────────────── */
 
-function fmtBrl(v: number): string {
+function fmtBrl(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—';   // null-vs-zero: ausência → "—", não R$ 0,00
   const abs = Math.abs(v);
   if (abs >= 1e9) return `R$ ${(v / 1e9).toFixed(1)}B`;
   if (abs >= 1e6) return `R$ ${(v / 1e6).toFixed(1)}M`;

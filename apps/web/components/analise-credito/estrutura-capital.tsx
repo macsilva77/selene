@@ -15,7 +15,8 @@ const toN = (v: string | null | undefined): number => {
 const fmtN = (v: number, dec = 2): string =>
   v.toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 
-function fmtBrl(v: number): string {
+function fmtBrl(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return '—';   // null-vs-zero: ausência → "—", não R$ 0,00
   const abs = Math.abs(v);
   if (abs >= 1e9) return `R$ ${fmtN(v / 1e9, 1)}B`;
   if (abs >= 1e6) return `R$ ${fmtN(v / 1e6, 1)}M`;

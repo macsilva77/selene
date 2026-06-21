@@ -407,11 +407,15 @@ export class AnaliseCreditoController {
     const dre: Record<string, string | null> = {};
     for (const r of dreRows) dre[r.linhaDre] = r.valor.toString();
 
-    // Fallback ECF quando calcular ainda não rodou
+    // Fallback ECF quando calcular ainda não rodou. null-vs-zero (Fase 5): só
+    // emite valores se a DRE for CONFIÁVEL (validacaoOk); senão deixa null → UI
+    // mostra "—" em vez de R$ 0,00 sintético (que mascara prejuízo como neutro).
     if (dreRows.length === 0) {
       try {
         const dreEcf = await this.dreService.montar(empresa.id, exercicio, empresa.regimeTributario);
-        for (const row of dreEcf.linhas) dre[row.linhaDre] = row.valor.toString();
+        if (dreEcf.validacaoOk) {
+          for (const row of dreEcf.linhas) dre[row.linhaDre] = row.valor.toString();
+        }
       } catch { /* ECF ausente — mantém dre vazio */ }
     }
 
@@ -511,14 +515,17 @@ export class AnaliseCreditoController {
       let pl:                string | null = plMap.get(ano)                  ?? null;
       let dividaFinanceira:  string | null = dividaMap.get(ano)              ?? null;
 
-      // Fallback ECF quando calcular ainda não rodou
+      // Fallback ECF quando calcular ainda não rodou. null-vs-zero (Fase 5): só
+      // emite se a DRE for confiável (validacaoOk); senão mantém null → UI "—".
       if (!drePipe || drePipe.size === 0) {
         try {
           const dreEcf = await this.dreService.montar(empresa.id, ano, empresa.regimeTributario);
-          for (const row of dreEcf.linhas) {
-            if (row.linhaDre === 'receita_liquida') receitaLiquida = row.valor.toString();
-            if (row.linhaDre === 'ebitda')          ebitda         = row.valor.toString();
-            if (row.linhaDre === 'lucro_liquido')   lucroLiquido   = row.valor.toString();
+          if (dreEcf.validacaoOk) {
+            for (const row of dreEcf.linhas) {
+              if (row.linhaDre === 'receita_liquida') receitaLiquida = row.valor.toString();
+              if (row.linhaDre === 'ebitda')          ebitda         = row.valor.toString();
+              if (row.linhaDre === 'lucro_liquido')   lucroLiquido   = row.valor.toString();
+            }
           }
         } catch { /* ECF ausente */ }
       }
