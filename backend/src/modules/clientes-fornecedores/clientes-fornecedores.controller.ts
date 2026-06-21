@@ -342,11 +342,16 @@ export class ClientesFornecedoresController {
    * Retorna imediatamente HTTP 202; o trabalho ocorre em background.
    */
   @Post('reprocessar')
-  @HttpCode(HttpStatus.ACCEPTED)
+  @HttpCode(HttpStatus.OK)
   @RequiresPermission('clientes-fornecedores.processar')
-  async reprocessar(@CurrentUser('tenantId') tenantId: string) {
+  async reprocessar(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('force') force?: string,   // 'true' → reprocessa também competências já feitas
+    @Query('cnpj')  cnpjFiltro?: string, // limita a 1 empresa (escopo seguro p/ síncrono)
+  ) {
+    const forcar = force === 'true';
     const empresas = await this.prisma.empresa.findMany({
-      where:  { tenantId },
+      where:  { tenantId, ...(cnpjFiltro ? { cnpj: cnpjFiltro } : {}) },
       select: { id: true, cnpj: true },
     });
     const cnpjToId = new Map(empresas.map(e => [e.cnpj, e.id]));
@@ -386,7 +391,8 @@ export class ClientesFornecedoresController {
       jaProcessadas.map(p => `${p.cnpj}|${p.ano}|${p.mes}`),
     );
 
-    const pendentes = icmsFiles.filter(f => {
+    // force → reprocessa tudo (ignora o skip de já-processadas)
+    const pendentes = forcar ? icmsFiles : icmsFiles.filter(f => {
       const ano = f.dataInicial.getFullYear();
       const mes = f.dataInicial.getMonth() + 1;
       return !processadasSet.has(`${f.cnpj}|${ano}|${mes}`);
@@ -414,53 +420,54 @@ export class ClientesFornecedoresController {
 
     const BATCH_SIZE = 4;
 
-    void (async () => {
-      let ok = 0;
-      let erros = 0;
+    // SÍNCRONO: o request aguarda o processamento (Cloud Run mata task de background;
+    // mantendo o request vivo, o reprocesso conclui de forma confiável). Para o
+    // parque inteiro, escope por ?cnpj= para não estourar o timeout do request.
+    let ok = 0;
+    let erros = 0;
+    for (let i = 0; i < pendentes.length; i += BATCH_SIZE) {
+      const batch = pendentes.slice(i, i + BATCH_SIZE);
+      const resultados = await Promise.allSettled(
+        batch.map(async (icms) => {
+          const empresaId = cnpjToId.get(icms.cnpj);
+          if (!empresaId) throw new Error(`empresaId não encontrado para ${icms.cnpj}`);
+          const ano = icms.dataInicial.getFullYear();
+          const mes = icms.dataInicial.getMonth() + 1;
+          await this.processamentoService.processar({
+            tenantId,
+            empresaId,
+            cnpj:              icms.cnpj,
+            ano,
+            mes,
+            spedIcmsIpiGcsUri: icms.caminhoBucket,
+            spedContribGcsUri: contribMap.get(`${icms.cnpj}|${icms.dataInicial.getTime()}`),
+          });
+        }),
+      );
 
-      for (let i = 0; i < pendentes.length; i += BATCH_SIZE) {
-        const batch = pendentes.slice(i, i + BATCH_SIZE);
-        const resultados = await Promise.allSettled(
-          batch.map(async (icms) => {
-            const empresaId = cnpjToId.get(icms.cnpj);
-            if (!empresaId) throw new Error(`empresaId não encontrado para ${icms.cnpj}`);
-            const ano = icms.dataInicial.getFullYear();
-            const mes = icms.dataInicial.getMonth() + 1;
-            await this.processamentoService.processar({
-              tenantId,
-              empresaId,
-              cnpj:              icms.cnpj,
-              ano,
-              mes,
-              spedIcmsIpiGcsUri: icms.caminhoBucket,
-              spedContribGcsUri: contribMap.get(`${icms.cnpj}|${icms.dataInicial.getTime()}`),
-            });
-          }),
-        );
-
-        for (const r of resultados) {
-          if (r.status === 'fulfilled') ok++;
-          else {
-            erros++;
-            this.logger.warn(
-              `[Reprocessar] Erro no batch: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
-            );
-          }
+      for (const r of resultados) {
+        if (r.status === 'fulfilled') ok++;
+        else {
+          erros++;
+          this.logger.warn(
+            `[Reprocessar] Erro no batch: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+          );
         }
       }
+    }
 
-      this.logger.log(
-        `[Reprocessar] tenant=${tenantId} — ${ok}/${pendentes.length} concluída(s), ${erros} erro(s)`,
-      );
-    })().catch(err =>
-      this.logger.error('[Reprocessar] Erro em background', err instanceof Error ? err.stack : String(err)),
+    this.logger.log(
+      `[Reprocessar] tenant=${tenantId} force=${forcar} cnpj=${cnpjFiltro ?? 'todos'} — ${ok}/${pendentes.length} concluída(s), ${erros} erro(s)`,
     );
 
     return {
-      mensagem:  `Reprocessamento iniciado para ${pendentes.length} competência(s) pendente(s)` +
+      mensagem:  `Reprocessamento concluído: ${ok}/${pendentes.length} competência(s)` +
+                 (erros > 0 ? `, ${erros} erro(s)` : '') +
                  (ignoradas > 0 ? ` — ${ignoradas} já processada(s) ignorada(s)` : ''),
-      status:    'aceito',
+      status:    'concluido',
       total:     pendentes.length,
+      ok,
+      erros,
       ignoradas,
     };
   }
