@@ -3,7 +3,10 @@
  * Fonte primária: ECF L300/P150/U150 (regime-aware), depois ECD.
  *
  * Convenção de valores em tb_dre:
- *   Positivo = valor bruto da linha (sempre >= 0)
+ *   Linhas-bucket (receita, cmv, despesas…): magnitude (sempre >= 0).
+ *   Resultados derivados (ebit, ebitda, lucro_liquido): CARREGAM SINAL — podem
+ *     ser negativos (prejuízo). O sinal é essencial para a reconciliação [VALID-B]
+ *     e para as margens (margem_liquida/ebitda negativas em empresa no prejuízo).
  *   A fórmula de cálculo é responsabilidade de quem lê tb_dre (P03/P05).
  */
 import { Injectable, Logger } from '@nestjs/common';
@@ -256,14 +259,16 @@ export class P02DreService {
         .join('\n'),
     );
 
-    // lucro_liquido: nó raiz da DRE (sintético — intencionalmente não é folha)
+    // lucro_liquido: nó raiz da DRE (sintético — intencionalmente não é folha).
+    // PRESERVA O SINAL: prejuízo entra negativo. abs() aqui quebrava a
+    // reconciliação [VALID-B] (LL + add-backs ≠ EBITDA) em empresas no vermelho.
     if (!acc.has('lucro_liquido')) {
       const raiz = [...registros].sort((a, b) => {
         const la = a.linhaCodigo.split('.').length;
         const lb = b.linhaCodigo.split('.').length;
         return la === lb ? a.linhaCodigo.localeCompare(b.linhaCodigo) : la - lb;
       })[0];
-      if (raiz) acc.set('lucro_liquido', abs(raiz.valor));
+      if (raiz) acc.set('lucro_liquido', raiz.valor);
     }
 
     if (acc.has('receita_bruta') && acc.has('deducoes') && !acc.has('receita_liquida')) {
@@ -278,7 +283,11 @@ export class P02DreService {
       alertas.push(`${naoClassificados.length} folha(s) L300 não classificadas: ${naoClassificados.slice(0, 3).map(x => x.cod).join(', ')}`);
     }
 
-    this.calcularEbitEbitda(acc, registros, alertas);
+    // Âncora robusta: nó sintético 3.01.01 (Resultado Operacional) já soma TODOS
+    // os filhos — inclusive galhos sem entrada no prefix-map (ex.: 3.01.01.11,
+    // ganhos/perdas de capital) que escapariam da recompilação por buckets.
+    const resultadoOperacional = registros.find(r => r.linhaCodigo === '3.01.01')?.valor;
+    this.calcularEbitEbitda(acc, registros, alertas, resultadoOperacional);
 
     // A3 — verificação hierárquica (alerta, não aborta)
     this.verificarHierarquia(registros, isFolha, alertas);
@@ -339,6 +348,7 @@ export class P02DreService {
     acc: Map<LinhaDre, Decimal>,
     registros: { descricao: string; valor: Decimal }[],
     alertas: string[],
+    resultadoOperacional?: Decimal,   // nó 3.01.01 (L300) — âncora; undefined nos demais caminhos
   ) {
     // Depreciação: mapa ou busca por descrição
     let deprec = acc.get('depreciacao') ?? new Decimal(0);
@@ -376,7 +386,22 @@ export class P02DreService {
       `\n  deprec=${deprec.toFixed(2)}`,
     );
 
-    // ── Caminho primário: top-down a partir da Receita Líquida ────────────────
+    // ── Caminho L300: ÂNCORA no Resultado Operacional (3.01.01) ───────────────
+    // 3.01.01 já tem D&A e DespFin deduzidas (estão dentro de 3.01.01.07/.09).
+    // EBIT = ResultadoOperacional + DespFin − RecFin   (devolve os juros pagos)
+    // EBITDA = EBIT + D&A                              (add-back de depreciação)
+    // Robusto a galhos não mapeados (3.01.01.11 etc.) e reconcilia por construção.
+    if (resultadoOperacional !== undefined) {
+      const despFin = acc.get('desp_financeiras') ?? new Decimal(0);
+      const recFin  = acc.get('rec_financeiras')  ?? new Decimal(0);
+      const ebit    = resultadoOperacional.add(despFin).minus(recFin);
+      acc.set('ebit',   ebit);
+      acc.set('ebitda', ebit.add(deprec));
+      if (!deprec.greaterThan(0)) alertas.push('Depreciação não encontrada — EBITDA = EBIT');
+      return;
+    }
+
+    // ── Fallback (P150/U150/ECD): top-down a partir da Receita Líquida ─────────
     // Despesas operacionais (desp_admin + outras_desp) já incluem D&A.
     // EBIT = RL − CMV − DespOp + OutrasRec  (D&A embutida, sem deduzi-la separado)
     // EBITDA = EBIT + deprec  (add-back D&A encontrado por descrição)
