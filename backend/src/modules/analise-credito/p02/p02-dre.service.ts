@@ -13,6 +13,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { EcfDataSourceService } from '../infrastructure/ecf-data-source.service';
 import type { EcfRegistroRow } from '../p01/p01-ecf.parser';
+import { semanticaDaConta, GRUPOS_FINANCEIROS } from '../infrastructure/referencial-codigos';
 import { Decimal } from '@prisma/client/runtime/library';
 
 export type LinhaDre =
@@ -21,7 +22,7 @@ export type LinhaDre =
   | 'desp_vendas' | 'desp_admin' | 'desp_financeiras'
   | 'rec_financeiras' | 'outras_desp' | 'outras_rec'
   | 'ebit' | 'depreciacao' | 'ebitda'
-  | 'ir_csll' | 'lucro_liquido';
+  | 'ir_csll' | 'participacoes' | 'lucro_liquido';
 
 export interface DreRow {
   linhaDre: LinhaDre;
@@ -59,8 +60,11 @@ const L300_PREFIX_MAP: Array<{ prefixo: string; linha: LinhaDre }> = [
   { prefixo: '3.01.01.07',       linha: 'desp_admin'       }, // Despesas Operacionais
   { prefixo: '3.01.01.09',       linha: 'outras_desp'      }, // Outras Desp. Operacionais
   // ── Nível 3 ──────────────────────────────────────────────────────────────────
+  { prefixo: '3.01.05',          linha: 'participacoes'    }, // Participações (irmão de 3.01.01)
   { prefixo: '3.01.02',          linha: 'ir_csll'          }, // IR
   { prefixo: '3.01.03',          linha: 'ir_csll'          }, // CSLL → soma com IR
+  // ── Nível 2 ──────────────────────────────────────────────────────────────────
+  { prefixo: '3.02',             linha: 'ir_csll'          }, // Provisão IRPJ/CSLL (folhas 3.02.x)
 ];
 
 // Palavras-chave para P150/U150 e fallback ECD (descrições padronizadas RFB)
@@ -80,6 +84,7 @@ const DRE_KEYWORDS: Record<LinhaDre, string[]> = {
   depreciacao:      ['depreciacao', 'amortizacao', 'exaustao'],
   ebitda:           [],
   ir_csll:          ['imposto renda', 'irpj', 'csll', 'contribuicao social sobre lucro'],
+  participacoes:    ['participacao'],
   lucro_liquido:    ['lucro liquido', 'resultado liquido', 'resultado do periodo'],
 };
 
@@ -212,14 +217,40 @@ export class P02DreService {
     const acc = new Map<LinhaDre, Decimal>();
     const naoClassificados: Array<{ cod: string; valor: Decimal; desc: string }> = [];
 
+    const addAcc = (linha: LinhaDre, v: Decimal) =>
+      acc.set(linha, (acc.get(linha) ?? new Decimal(0)).add(abs(v)));
+
     for (const r of registros) {
       if (!isFolha(r.linhaCodigo)) continue;
+      // Override semântico por código: receita/despesa financeira e D&A estão
+      // espalhadas em folhas de 05/07/09; isolá-las é o que torna EBIT/EBITDA corretos.
+      const sem = semanticaDaConta(r.linhaCodigo);
+      if (sem) {
+        addAcc(sem === 'RECEITA_FINANCEIRA' ? 'rec_financeiras'
+             : sem === 'DESPESA_FINANCEIRA' ? 'desp_financeiras'
+             : 'depreciacao', r.valor);   // DEPRECIACAO | AMORTIZACAO | EXAUSTAO
+        continue;
+      }
       const match = L300_PREFIX_MAP.find(m => r.linhaCodigo.startsWith(m.prefixo));
       if (!match) {
         naoClassificados.push({ cod: r.linhaCodigo, valor: r.valor, desc: r.descricao });
         continue;
       }
-      acc.set(match.linha, (acc.get(match.linha) ?? new Decimal(0)).add(abs(r.valor)));
+      addAcc(match.linha, r.valor);
+    }
+
+    // Guard-rail de completude (orphan-log): folhas não classificadas com valor
+    // material dentro dos grupos financeiros (05/07/09) podem ser conta financeira
+    // não mapeada → o Resultado Financeiro/EBIT sairia errado. Loga; o gate efetivo
+    // é o [VALID-B] (reconciliação) + [VALID-C] (nao_class/RL).
+    const orfasFinanceiras = naoClassificados.filter(
+      x => GRUPOS_FINANCEIROS.some(g => x.cod.startsWith(g + '.')) && abs(x.valor).greaterThan(1),
+    );
+    if (orfasFinanceiras.length > 0) {
+      alertas.push(
+        `[ORPHAN] ${orfasFinanceiras.length} folha(s) não mapeada(s) em grupo financeiro: ` +
+        orfasFinanceiras.slice(0, 5).map(x => `${x.cod}=${x.valor.toFixed(0)}`).join(', '),
+      );
     }
 
     // Débito 3: D&A folhas-only — evita dupla contagem quando nó sintético e folha
@@ -440,19 +471,21 @@ export class P02DreService {
     }
   }
 
-  // B: reconciliação contábil — EBITDA = LL + IR/CSLL + DespFin − RecFin + D&A
+  // B: reconciliação contábil — EBITDA = LL + IR/CSLL + DespFin − RecFin + D&A + Particip
+  // (LL é após IRPJ e participações; EBITDA é antes → ambos add-back).
   // Falha forte: mapeamento incompleto → não publicar.
   private verificarReconciliacao(acc: Map<LinhaDre, Decimal>, alertas: string[]): boolean {
     const ebitda = acc.get('ebitda');
     const ll     = acc.get('lucro_liquido');
     if (!ebitda || !ll || ebitda.isZero()) return true; // sem dados suficientes
 
-    const ir      = acc.get('ir_csll')          ?? new Decimal(0);
-    const despFin = acc.get('desp_financeiras') ?? new Decimal(0);
-    const recFin  = acc.get('rec_financeiras')  ?? new Decimal(0);
-    const deprec  = acc.get('depreciacao')      ?? new Decimal(0);
+    const ir       = acc.get('ir_csll')          ?? new Decimal(0);
+    const despFin  = acc.get('desp_financeiras') ?? new Decimal(0);
+    const recFin   = acc.get('rec_financeiras')  ?? new Decimal(0);
+    const deprec   = acc.get('depreciacao')      ?? new Decimal(0);
+    const particip = acc.get('participacoes')    ?? new Decimal(0);
 
-    const ebitdaReconciliado = ll.add(ir).add(despFin).minus(recFin).add(deprec);
+    const ebitdaReconciliado = ll.add(ir).add(despFin).minus(recFin).add(deprec).add(particip);
     const dif = ebitdaReconciliado.minus(ebitda).abs();
     const tol = Decimal.max(new Decimal(1), ebitda.abs().mul('0.005')); // ±0.5% ou R$1
 
@@ -460,7 +493,7 @@ export class P02DreService {
       alertas.push(
         `[VALID-B] reconciliação falhou: LL=${ll.toFixed(0)} IR=${ir.toFixed(0)} ` +
         `DespFin=${despFin.toFixed(0)} RecFin=${recFin.toFixed(0)} D&A=${deprec.toFixed(0)} ` +
-        `→ ${ebitdaReconciliado.toFixed(0)} vs EBITDA=${ebitda.toFixed(0)} dif=${dif.toFixed(0)}`,
+        `Particip=${particip.toFixed(0)} → ${ebitdaReconciliado.toFixed(0)} vs EBITDA=${ebitda.toFixed(0)} dif=${dif.toFixed(0)}`,
       );
       return false;
     }
