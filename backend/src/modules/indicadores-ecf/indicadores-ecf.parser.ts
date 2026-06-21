@@ -97,11 +97,12 @@ export function parseEcfIndicadores(buffer: Buffer): EcfIndicadoresResult {
       formaTributacao = IND_FORMA_TRIB_MAP[indFormaTrib] ?? 'nao_identificado';
       isLucroReal = formaTributacao === 'lucro_real';
     } else if (rec === 'L300' && campos.length >= 5) {
-      // Leiaute ≥9 (AC2022+): |REG|NUM_ORD|COD_AGL|DESC_AGL|IND_DC|VL_CTA|  (6 campos)
-      // Leiaute ≤8 (AC2021):  |REG|COD_AGL|DESC_AGL|IND_DC|VL_CTA|          (5 campos)
-      const novoFormato = campos.length >= 6;
-      const indDc = novoFormato ? (campos[4] ?? '').trim() : (campos[3] ?? '').trim();
-      const vlCta = novoFormato ? parseValorBr(campos[5] ?? '') : parseValorBr(campos[4] ?? '');
+      // Layout referencial REAL de 9 campos (parseLinha → campos[0]=REG):
+      //   [1]=COD_CTA [2]=DESC [3]=IND_CTA [4]=NIVEL [5]=COD_NAT [6]=COD_CTA_SUP [7]=VL_CTA [8]=IND_DC
+      // Antes lia [4]/[5] (NIVEL/COD_NAT) → IND_DC nunca era 'C' → faturamento Lucro Real = 0.
+      const novoLayout = campos.length >= 9;
+      const indDc = (novoLayout ? (campos[8] ?? '') : (campos.at(-2) ?? '')).trim();
+      const vlCta = parseValorBr(novoLayout ? (campos[7] ?? '') : (campos.at(-1) ?? ''));
       if (indDc === 'C' && vlCta > maxCreditoL300) {
         maxCreditoL300 = vlCta;
       }
