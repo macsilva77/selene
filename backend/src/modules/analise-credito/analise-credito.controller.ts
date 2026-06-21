@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, AuditAcao } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { DIVIDA_FINANCEIRA_CP, DIVIDA_FINANCEIRA_LP } from './infrastructure/referencial-codigos';
 import { P01Service }        from './p01/p01.service';
 import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
@@ -910,11 +911,15 @@ export class AnaliseCreditoController {
         const rlp       = getAbs('1.02.01');
         const ancOutros = Decimal.max(0, ancTot.minus(rlp));
 
+        // Dívida financeira por código referencial (Fase 3): CP=2.01.01.07, LP=2.02.01.01.
+        const somaCod = (codigos: readonly string[]): Decimal =>
+          codigos.reduce((s, c) => s.add(getAbs(c)), new Decimal(0));
+
         const fornec   = getAbs('2.01.01.01');
-        const empCP    = Decimal.min(getAbs('2.01.01.04').add(getAbs('2.01.02')), pcTot);
+        const empCP    = Decimal.min(somaCod(DIVIDA_FINANCEIRA_CP), pcTot);
         const pcOutros = Decimal.max(0, pcTot.minus(fornec).minus(empCP));
 
-        const empLP     = Decimal.min(getAbs('2.02.01').add(getAbs('2.02.02')), pncTot);
+        const empLP     = Decimal.min(somaCod(DIVIDA_FINANCEIRA_LP), pncTot);
         const pncOutros = Decimal.max(0, pncTot.minus(empLP));
 
         const bal: BalData = new Map();
