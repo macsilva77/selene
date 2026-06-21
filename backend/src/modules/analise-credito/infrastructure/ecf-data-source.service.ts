@@ -9,9 +9,11 @@ import { withRetry, isGcsPermanentError } from '../shared/with-retry';
 /**
  * Fonte única de dados ECF para P02 e demonstrações.
  *
- * Cadeia de prioridade por empresa/exercício:
- *   1. Parquet no GCS  (creditoEcfArquivo → download → DuckDB)
- *   2. Banco relacional (creditoEcfRegistros — dados anteriores à migração)
+ * Fonte: Parquet no GCS (creditoEcfArquivo → download → DuckDB).
+ *
+ * Débito 5: o fallback para o banco relacional (creditoEcfRegistros, com
+ * naturezaFinal='D' hardcoded) foi removido — a medição do parque (5a) mostrou
+ * 0 empresas dependentes desse caminho e P01 não escreve mais nessa tabela.
  *
  * Cache: chave = `${gcsPath}:${hashMd5}` — invalidação automática quando o
  * arquivo é reprocessado (novo hash). Não requer invalidação explícita.
@@ -81,19 +83,20 @@ export class EcfDataSourceService {
       }
     }
 
-    return this.consultarComTrimestresDb(empresaId, exercicio, registroEcf, trimestre, linhaCodigoPrefixo);
+    // Sem arquivo Parquet (ou download falhou): não há fonte. Ver Débito 5 no cabeçalho.
+    return null;
   }
 
   async consultar(empresaId: string, exercicio: number, opts: EcfConsultaOptions = {}): Promise<EcfRegistroRow[]> {
     const buffer = await this.obterBuffer(empresaId, exercicio);
     if (buffer) return this.parquetRepo.consultar(buffer, opts);
-    return this.consultarDb(empresaId, exercicio, opts);
+    return [];
   }
 
   async trimestresDisponiveis(empresaId: string, exercicio: number, registroEcf: string): Promise<number[]> {
     const buffer = await this.obterBuffer(empresaId, exercicio);
     if (buffer) return this.parquetRepo.trimestresDisponiveis(buffer, registroEcf);
-    return this.trimestresDisponiveisDb(empresaId, exercicio, registroEcf);
+    return [];
   }
 
   /** Invalida cache explicitamente (ex: logo após reprocessamento P01). */
@@ -132,78 +135,10 @@ export class EcfDataSourceService {
       return buffer;
     } catch (err) {
       this.logger.warn(
-        `Falha ao baixar Parquet ${gcsPath} — usando fallback DB. ` +
+        `Falha ao baixar Parquet ${gcsPath} — sem dados para este exercício. ` +
         (err instanceof Error ? err.message : JSON.stringify(err)),
       );
       return null;
     }
-  }
-
-  // ─── Fallback: banco relacional ─────────────────────────────────────────────
-
-  private async consultarComTrimestresDb(
-    empresaId:           string,
-    exercicio:           number,
-    registroEcf:         string,
-    trimestreReq?:       number,
-    linhaCodigoPrefixo?: string,
-  ): Promise<EcfConsultaResult | null> {
-    const trimestresRows = await this.prisma.creditoEcfRegistro.findMany({
-      where:    { empresaId, exercicio, registroEcf },
-      select:   { trimestre: true },
-      distinct: ['trimestre'],
-      orderBy:  { trimestre: 'asc' },
-    });
-    const trimestres = trimestresRows.map(r => r.trimestre);
-    if (trimestres.length === 0) return null;
-
-    const trimestreAtivo = trimestreReq !== undefined && trimestres.includes(trimestreReq)
-      ? trimestreReq
-      : Math.max(...trimestres);
-
-    const rows = await this.consultarDb(empresaId, exercicio, {
-      registroEcf,
-      trimestre: trimestreAtivo,
-      linhaCodigoPrefixo,
-    });
-    return { trimestres, trimestreAtivo, registros: rows, origemDados: 'db_legado' };
-  }
-
-  private async consultarDb(empresaId: string, exercicio: number, opts: EcfConsultaOptions): Promise<EcfRegistroRow[]> {
-    const rows = await this.prisma.creditoEcfRegistro.findMany({
-      where: {
-        empresaId,
-        exercicio,
-        ...(opts.registroEcf             ? { registroEcf: opts.registroEcf }                         : {}),
-        ...(opts.trimestre !== undefined  ? { trimestre: opts.trimestre }                              : {}),
-        ...(opts.linhaCodigoPrefixo      ? { linhaCodigo: { startsWith: opts.linhaCodigoPrefixo } }  : {}),
-      },
-      orderBy: { linhaCodigo: 'asc' },
-    });
-    return rows.map(r => ({
-      registroEcf:      r.registroEcf,
-      trimestre:        r.trimestre,
-      linhaCodigo:      r.linhaCodigo,
-      descricao:        r.descricao,
-      indCta:           null,
-      nivel:            null,
-      saldoAnterior:    0,
-      naturezaAnterior: 'D',
-      totalDebitos:     null,
-      totalCreditos:    null,
-      valor:            r.valor.toNumber(),
-      naturezaFinal:    'D',
-      status:           r.status,
-    }));
-  }
-
-  private async trimestresDisponiveisDb(empresaId: string, exercicio: number, registroEcf: string): Promise<number[]> {
-    const rows = await this.prisma.creditoEcfRegistro.findMany({
-      where:    { empresaId, exercicio, registroEcf },
-      select:   { trimestre: true },
-      distinct: ['trimestre'],
-      orderBy:  { trimestre: 'asc' },
-    });
-    return rows.map(r => r.trimestre);
   }
 }
