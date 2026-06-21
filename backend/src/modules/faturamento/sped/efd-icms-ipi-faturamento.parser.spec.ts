@@ -43,10 +43,12 @@ function linhaC100(
   codSit: string,
   vlDoc: string,
   vlIpi = '0,00',
+  vlPis = '0,00',
+  vlCofins = '0,00',
 ): string {
-  // 12 zeros entre vlDoc (campo 12) e vlIpi (campo 25): preenchem 13–24
-  // (…[23]=VL_BC_ICMS_ST [24]=VL_ICMS_ST [25]=VL_IPI).
-  return `|C100|${indOper}|0|PART001|55|${codSit}|001|000001|CHVNFE|01012024|01012024|${vlDoc}|0|0|0|0|0|0|0|0|0|0|0|0|${vlIpi}|`;
+  // 12 zeros entre vlDoc (campo 12) e vlIpi (campo 25): preenchem 13–24.
+  // [25]=VL_IPI [26]=VL_PIS [27]=VL_COFINS.
+  return `|C100|${indOper}|0|PART001|55|${codSit}|001|000001|CHVNFE|01012024|01012024|${vlDoc}|0|0|0|0|0|0|0|0|0|0|0|0|${vlIpi}|${vlPis}|${vlCofins}|`;
 }
 
 /**
@@ -105,7 +107,7 @@ describe('parseEfdIcmsIpiFaturamento — 0000', () => {
 describe('parseEfdIcmsIpiFaturamento — C100 saída válida', () => {
   const content = stream([
     linha0000('01012024', 'Empresa A', '11222333000181'),
-    linhaC100('1', '00', '10.000,00', '500,00'),
+    linhaC100('1', '00', '10.000,00', '500,00', '165,00', '760,00'),
   ]);
 
   let resultado: FatoFaturamento;
@@ -117,6 +119,14 @@ describe('parseEfdIcmsIpiFaturamento — C100 saída válida', () => {
 
   it('acumula vlIpi', () => {
     expect(resultado.vlIpi).toBeCloseTo(500, 2);
+  });
+
+  it('acumula vlPis do C100 (campo 26)', () => {
+    expect(resultado.vlPis).toBeCloseTo(165, 2);
+  });
+
+  it('acumula vlCofins do C100 (campo 27)', () => {
+    expect(resultado.vlCofins).toBeCloseTo(760, 2);
   });
 
   it('conta 1 documento', () => {

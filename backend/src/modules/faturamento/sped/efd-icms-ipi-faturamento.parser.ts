@@ -29,6 +29,8 @@ export interface FatoFaturamento {
   vlFaturamentoBruto: number;
   vlIcms: number;
   vlIpi: number;
+  vlPis: number;
+  vlCofins: number;
   qtdDocumentos: number;
   vlComprasBruto: number;
   qtdDocumentosCompras: number;
@@ -39,9 +41,9 @@ export interface FatoFaturamento {
 const VALID_COD_SIT = new Set(['00', '01']);
 
 const IDX_0000 = { DT_INI: 4, NOME: 6, CNPJ: 7 } as const;
-// VL_IPI é o campo 25 do C100 (…[23]=VL_BC_ICMS_ST [24]=VL_ICMS_ST [25]=VL_IPI [26]=VL_PIS).
-// Antes lia 23 (base de ICMS-ST) como IPI — confirmado em arquivo real.
-const IDX_C100 = { IND_OPER: 2, COD_SIT: 6, VL_DOC: 12, VL_IPI: 25 } as const;
+// C100: …[23]=VL_BC_ICMS_ST [24]=VL_ICMS_ST [25]=VL_IPI [26]=VL_PIS [27]=VL_COFINS.
+// PIS/COFINS de mercadoria saem daqui (o de Contribuições só lê A100/serviços).
+const IDX_C100 = { IND_OPER: 2, COD_SIT: 6, VL_DOC: 12, VL_IPI: 25, VL_PIS: 26, VL_COFINS: 27 } as const;
 const IDX_C190 = { CFOP: 3, VL_OPR: 5, VL_ICMS: 7 } as const;
 
 // ─── Estado mutável durante o parse ──────────────────────────────────────────
@@ -52,6 +54,8 @@ interface ParseState {
   competencia: string;
   vlFaturamentoBruto: number;
   vlIpi: number;
+  vlPis: number;
+  vlCofins: number;
   vlIcms: number;
   qtdDocumentos: number;
   vlComprasBruto: number;
@@ -75,6 +79,8 @@ function processarC100(fields: string[], s: ParseState): void {
     s.inValidSaida     = true;
     s.vlFaturamentoBruto += parseBr(fields[IDX_C100.VL_DOC] ?? '0');
     s.vlIpi              += parseBr(fields[IDX_C100.VL_IPI] ?? '0');
+    s.vlPis              += parseBr(fields[IDX_C100.VL_PIS] ?? '0');
+    s.vlCofins           += parseBr(fields[IDX_C100.VL_COFINS] ?? '0');
     s.qtdDocumentos      += 1;
   } else if (indOper === '0' && valid) {
     s.inValidSaida     = false;
@@ -103,7 +109,7 @@ function processarC190(fields: string[], s: ParseState): void {
 export async function parseEfdIcmsIpiFaturamento(stream: Readable): Promise<FatoFaturamento> {
   const s: ParseState = {
     cnpj: '', razaoSocial: '', competencia: '',
-    vlFaturamentoBruto: 0, vlIpi: 0, vlIcms: 0,
+    vlFaturamentoBruto: 0, vlIpi: 0, vlPis: 0, vlCofins: 0, vlIcms: 0,
     qtdDocumentos: 0, vlComprasBruto: 0, qtdDocumentosCompras: 0,
     cfopMap: new Map(),
     inValidSaida: false,
@@ -124,6 +130,7 @@ export async function parseEfdIcmsIpiFaturamento(stream: Readable): Promise<Fato
   return {
     cnpj: s.cnpj, razaoSocial: s.razaoSocial, competencia: s.competencia,
     vlFaturamentoBruto: s.vlFaturamentoBruto, vlIcms: s.vlIcms, vlIpi: s.vlIpi,
+    vlPis: s.vlPis, vlCofins: s.vlCofins,
     qtdDocumentos: s.qtdDocumentos, vlComprasBruto: s.vlComprasBruto,
     qtdDocumentosCompras: s.qtdDocumentosCompras, cfops,
   };

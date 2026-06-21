@@ -90,6 +90,8 @@ export class FaturamentoProcessamentoService {
         vlFaturamentoBruto:   faturamento.vlFaturamentoBruto,
         vlIcms:               faturamento.vlIcms,
         vlIpi:                faturamento.vlIpi,
+        vlPis:                faturamento.vlPis,
+        vlCofins:             faturamento.vlCofins,
         qtdDocumentos:        faturamento.qtdDocumentos,
         vlComprasBruto:       faturamento.vlComprasBruto,
         qtdDocumentosCompras: faturamento.qtdDocumentosCompras,
@@ -102,6 +104,8 @@ export class FaturamentoProcessamentoService {
         vlFaturamentoBruto:   faturamento.vlFaturamentoBruto,
         vlIcms:               faturamento.vlIcms,
         vlIpi:                faturamento.vlIpi,
+        vlPis:                faturamento.vlPis,
+        vlCofins:             faturamento.vlCofins,
         qtdDocumentos:        faturamento.qtdDocumentos,
         vlComprasBruto:       faturamento.vlComprasBruto,
         qtdDocumentosCompras: faturamento.qtdDocumentosCompras,
@@ -313,8 +317,10 @@ export class FaturamentoProcessamentoService {
     const vlFaturamentoBruto = Number(icms.vlFaturamentoBruto) + Number(contrib.vlFaturamentoBruto);
     const vlIcms             = Number(icms.vlIcms);
     const vlIpi              = Number(icms.vlIpi);
-    const vlPis              = Number(contrib.vlPis);
-    const vlCofins           = Number(contrib.vlCofins);
+    // PIS/COFINS = mercadoria (C100 do ICMS) + serviços (A100 do Contrib). Sem dupla
+    // contagem: o parser de Contribuições lê só A100, justamente para não repetir o C100.
+    const vlPis              = Number(icms.vlPis)    + Number(contrib.vlPis);
+    const vlCofins           = Number(icms.vlCofins) + Number(contrib.vlCofins);
     const qtdDocumentos      = icms.qtdDocumentos + contrib.qtdDocumentos;
     const vlComprasBruto     = Number(icms.vlComprasBruto);
     const qtdDocumentosCompras = icms.qtdDocumentosCompras;
