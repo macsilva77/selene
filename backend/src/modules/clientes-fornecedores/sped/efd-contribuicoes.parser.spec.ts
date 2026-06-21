@@ -7,7 +7,7 @@
  * Registros testados:
  *   0150 — cadastro do participante (para lookup A100)
  *   A100 — documentos de serviços ISS (Bloco A)
- *   F100 — demais documentos (Bloco F, usa CNPJ diretamente)
+ *   F100 — demais documentos (Bloco F, participante via COD_PART → 0150)
  */
 
 import { parseEfdContribuicoes } from './efd-contribuicoes.parser';
@@ -37,13 +37,14 @@ function linhaA100(indOper: string, codPart: string, codSit: string, vlDoc: stri
   return `|A100|${indOper}|1|${codPart}|${codSit}|001|000|000001|CHV|01012024|01012024|${vlDoc}|0|`;
 }
 
-/** Monta uma linha F100.
- *  |F100|IND_OPER|CNPJ|DT_EMIS|VL_DOC|...|
- *  IDX: [2]=IND_OPER [3]=CNPJ [5]=VL_DOC
+/** Monta uma linha F100 (layout real).
+ *  |F100|IND_OPER|COD_PART|COD_ITEM|DT_OPER|VL_OPER|CST_PIS|...|
+ *  IDX: [2]=IND_OPER [3]=COD_PART [6]=VL_OPER
+ *  O participante é resolvido por COD_PART → 0150 (não há CNPJ direto no F100).
  */
-function linhaF100(indOper: string, cnpj: string, vlDoc: string): string {
-  // pos: 0    1     2        3     4          5
-  return `|F100|${indOper}|${cnpj}|01012024|${vlDoc}|0|`;
+function linhaF100(indOper: string, codPart: string, vlOper: string): string {
+  // pos: 0    1     2        3         4      5          6
+  return `|F100|${indOper}|${codPart}|ITEM01|01012024|${vlOper}|02|`;
 }
 
 // ─── A100 — cliente ───────────────────────────────────────────────────────────
@@ -106,17 +107,18 @@ describe('parseEfdContribuicoes — A100 com COD_SIT≠00 ignorado', () => {
   });
 });
 
-// ─── F100 — usa CNPJ diretamente ─────────────────────────────────────────────
+// ─── F100 — participante via COD_PART → 0150 ─────────────────────────────────
 
-describe('parseEfdContribuicoes — F100 usa CNPJ diretamente', () => {
+describe('parseEfdContribuicoes — F100 via COD_PART → 0150', () => {
   const content = buf([
-    linhaF100('1', '12345678000195', '3500,00'),
+    linha0150('PART01', 'Cliente F Ltda', '12345678000195'),
+    linhaF100('1', 'PART01', '3500,00'),
   ]);
 
   let resultado: FatoParticipante[];
   beforeAll(() => { resultado = parseEfdContribuicoes(content); });
 
-  it('retorna 1 participante sem necessidade de 0150', () => {
+  it('retorna 1 participante resolvido pelo 0150', () => {
     expect(resultado).toHaveLength(1);
   });
 
@@ -124,72 +126,50 @@ describe('parseEfdContribuicoes — F100 usa CNPJ diretamente', () => {
     expect(resultado[0].tipoParticipante).toBe('CLIENTE');
   });
 
-  it('valorTotal correto', () => {
+  it('valorTotal é o VL_OPER (campo 6), não a data', () => {
     expect(resultado[0].valorTotal).toBeCloseTo(3500, 2);
   });
 
-  it('cnpj preenchido a partir do campo CNPJ do F100', () => {
+  it('cnpj e razaoSocial vêm do 0150', () => {
     expect(resultado[0].cnpj).toBe('12345678000195');
+    expect(resultado[0].razaoSocial).toBe('Cliente F Ltda');
   });
 });
 
-// ─── F100 — CNPJ '00000000000000' deve ser ignorado ──────────────────────────
+// ─── F100 sem COD_PART deve ser ignorado ─────────────────────────────────────
 
-describe('parseEfdContribuicoes — F100 com CNPJ zerado ignorado', () => {
-  it('não inclui F100 com CNPJ=00000000000000', () => {
-    const content = buf([
-      linhaF100('0', '00000000000000', '1000,00'),
-    ]);
-    const resultado = parseEfdContribuicoes(content);
-    expect(resultado).toHaveLength(0);
+describe('parseEfdContribuicoes — F100 sem COD_PART ignorado', () => {
+  it('não inclui F100 com COD_PART vazio', () => {
+    const content = buf([linhaF100('0', '', '1000,00')]);
+    expect(parseEfdContribuicoes(content)).toHaveLength(0);
   });
 
-  it('não inclui F100 com CNPJ vazio', () => {
+  it('não inclui F100 com COD_PART sem 0150 correspondente', () => {
     const content = buf([
-      linhaF100('0', '', '1000,00'),
-    ]);
-    const resultado = parseEfdContribuicoes(content);
-    expect(resultado).toHaveLength(0);
-  });
-});
-
-// ─── F100 sem 0150 correspondente — razão social vazia ───────────────────────
-
-describe('parseEfdContribuicoes — F100 sem 0150 correspondente', () => {
-  it('inclui participante com razaoSocial vazia quando sem 0150', () => {
-    const content = buf([
-      // 0150 com CNPJ diferente — não deve ser usado para este F100
       linha0150('OUTRO', 'Outra Empresa', '99999999000199'),
-      linhaF100('0', '11111111000111', '800,00'), // sem 0150 correspondente
+      linhaF100('0', 'NAOEXISTE', '800,00'),
     ]);
-    const resultado = parseEfdContribuicoes(content);
-    const part = resultado.find(r => r.cnpj === '11111111000111');
-    if (!part) throw new Error('participante não encontrado');
-    expect(part.razaoSocial).toBe('');
-    expect(part.valorTotal).toBeCloseTo(800, 2);
+    expect(parseEfdContribuicoes(content)).toHaveLength(0);
   });
 });
 
 // ─── Merge: mesmo participante em A100 e F100 ────────────────────────────────
 
 describe('parseEfdContribuicoes — merge de A100 e F100 do mesmo participante', () => {
-  // A100 usa COD_PART → 0150; F100 usa CNPJ diretamente.
-  // São acumulados em chaves distintas (A|codPart|tipo vs F|cnpj|tipo),
-  // portanto aparecem como duas entradas separadas no resultado final.
-  // O merge real (por CNPJ) acontece no processamento acima (parquet/DuckDB).
-  // Este teste verifica que ambas as linhas são processadas corretamente.
+  // A100 e F100 usam COD_PART → 0150. São acumulados em chaves distintas
+  // (A|codPart|tipo vs F|codPart|tipo), aparecendo como duas entradas (o merge
+  // por CNPJ acontece depois, no parquet/DuckDB). Mesmo cnpj/razão em ambas.
   const cnpj = '55566677700001';
   const content = buf([
     linha0150('PART_AB', 'Empresa Mista SA', cnpj),
     linhaA100('1', 'PART_AB', '00', '2000,00'),
-    linhaF100('1', cnpj, '3000,00'),
+    linhaF100('1', 'PART_AB', '3000,00'),
   ]);
 
   let resultado: FatoParticipante[];
   beforeAll(() => { resultado = parseEfdContribuicoes(content); });
 
-  it('retorna 2 entradas (A100 via codPart + F100 via CNPJ)', () => {
-    // Cada bloco acumula separadamente antes do join pelo parquet
+  it('retorna 2 entradas (A100 + F100, chaves distintas)', () => {
     expect(resultado).toHaveLength(2);
   });
 
@@ -200,16 +180,12 @@ describe('parseEfdContribuicoes — merge de A100 e F100 do mesmo participante',
     expect(totalClientes).toBeCloseTo(5000, 2);
   });
 
-  it('F100 entry tem cnpj correto', () => {
-    const f100Entry = resultado.find(r => r.codPart === cnpj);
-    if (!f100Entry) throw new Error('entrada F100 não encontrada');
-    expect(f100Entry.cnpj).toBe(cnpj);
-  });
-
-  it('A100 entry tem razaoSocial via 0150', () => {
-    const a100Entry = resultado.find(r => r.codPart === 'PART_AB');
-    if (!a100Entry) throw new Error('entrada A100 não encontrada');
-    expect(a100Entry.razaoSocial).toBe('Empresa Mista SA');
+  it('ambas as entradas têm cnpj e razaoSocial do 0150', () => {
+    expect(resultado).toHaveLength(2);
+    for (const r of resultado) {
+      expect(r.cnpj).toBe(cnpj);
+      expect(r.razaoSocial).toBe('Empresa Mista SA');
+    }
   });
 });
 
@@ -237,7 +213,8 @@ describe('parseEfdContribuicoes — A100 fornecedor (IND_OPER=0)', () => {
 
 describe('parseEfdContribuicoes — F100 fornecedor (IND_OPER=0)', () => {
   const content = buf([
-    linhaF100('0', '44433322200001', '900,00'),
+    linha0150('FORNF', 'Fornecedor F Ltda', '44433322200001'),
+    linhaF100('0', 'FORNF', '900,00'),
   ]);
 
   let resultado: FatoParticipante[];

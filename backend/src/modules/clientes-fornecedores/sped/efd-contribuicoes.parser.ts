@@ -24,8 +24,10 @@ const IDX_0150 = { COD_PART: 2, NOME: 3, CNPJ: 5 } as const;
 // A100: |A100|IND_OPER|IND_EMIT|COD_PART|COD_SIT|SER|SUB|NUM_DOC|CHV_NFE|DT_DOC|DT_EXE_SERV|VL_DOC|...|
 const IDX_A100 = { IND_OPER: 2, COD_PART: 4, COD_SIT: 5, VL_DOC: 12 } as const;
 
-// F100: |F100|IND_OPER|CNPJ|DT_EMIS|VL_DOC|...|
-const IDX_F100 = { IND_OPER: 2, CNPJ: 3, VL_DOC: 5 } as const;
+// F100 (layout real): |F100|IND_OPER|COD_PART|COD_ITEM|DT_OPER|VL_OPER|CST_PIS|...|
+// O participante vem de COD_PART (campo 3) → 0150; NÃO há CNPJ direto. O valor é
+// VL_OPER (campo 6). Antes lia CNPJ=3 (=COD_PART) e VL_DOC=5 (=DT_OPER, a DATA!).
+const IDX_F100 = { IND_OPER: 2, COD_PART: 3, VL_OPER: 6 } as const;
 
 interface Participante {
   nome: string;
@@ -34,12 +36,10 @@ interface Participante {
 }
 
 export function parseEfdContribuicoes(buffer: Buffer): FatoParticipante[] {
-  // Mapa de participantes do 0150 (por COD_PART para A100)
+  // Mapa de participantes do 0150 (por COD_PART — usado por A100 e F100)
   const partPorCodigo = new Map<string, Participante>();
-  // Mapa reverso CNPJ→Participante (para lookup de F100)
-  const partPorCnpj = new Map<string, Participante>();
 
-  // chave: `${codPart|cnpj}|${CLIENTE|FORNECEDOR}`
+  // chave: `${A|F}|${codPart}|${CLIENTE|FORNECEDOR}`
   const agregados = new Map<string, { valor: number; qtd: number; part: Participante }>();
 
   for (const raw of iterLines(buffer)) {
@@ -53,7 +53,6 @@ export function parseEfdContribuicoes(buffer: Buffer): FatoParticipante[] {
       const cnpj = (fields[IDX_0150.CNPJ] ?? '').replace(/\D/g, '').padStart(14, '0');
       const p: Participante = { nome, cnpj, cnpjRaiz: cnpj.slice(0, 8) };
       partPorCodigo.set(codPart, p);
-      if (cnpj) partPorCnpj.set(cnpj, p);
 
     } else if (reg === 'A100') {
       // Bloco A — serviços ISS: usa COD_PART → 0150
@@ -77,24 +76,19 @@ export function parseEfdContribuicoes(buffer: Buffer): FatoParticipante[] {
       agregados.set(key, agg);
 
     } else if (reg === 'F100') {
-      // Bloco F — demais documentos: usa CNPJ diretamente
-      const cnpjRaw = (fields[IDX_F100.CNPJ] ?? '').replace(/\D/g, '').padStart(14, '0');
-      if (!cnpjRaw || cnpjRaw === '00000000000000') continue;
+      // Bloco F — demais documentos: participante via COD_PART → 0150 (sem CNPJ direto).
+      const codPart = fields[IDX_F100.COD_PART] ?? '';
+      if (!codPart) continue;            // sem participante identificável
+      const part = partPorCodigo.get(codPart);
+      if (!part) continue;               // COD_PART sem cadastro 0150
 
       const tipo: 'CLIENTE' | 'FORNECEDOR' =
         (fields[IDX_F100.IND_OPER] ?? '') === '1' ? 'CLIENTE' : 'FORNECEDOR';
-      const vlDoc = parseBr(fields[IDX_F100.VL_DOC] ?? '0');
+      const vlOper = parseBr(fields[IDX_F100.VL_OPER] ?? '0');
 
-      // Tenta resolver razão social via 0150; caso não encontre, deixa vazio
-      const part: Participante = partPorCnpj.get(cnpjRaw) ?? {
-        nome: '',
-        cnpj: cnpjRaw,
-        cnpjRaiz: cnpjRaw.slice(0, 8),
-      };
-
-      const key = `F|${cnpjRaw}|${tipo}`;
+      const key = `F|${codPart}|${tipo}`;
       const agg = agregados.get(key) ?? { valor: 0, qtd: 0, part };
-      agg.valor += vlDoc;
+      agg.valor += vlOper;
       agg.qtd += 1;
       agregados.set(key, agg);
     }
