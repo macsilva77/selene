@@ -215,6 +215,9 @@ export function VisaoGeral({
     indicadores.find(i => i.indicador === nome && i.exercicio === exercicio);
   const sev = (nome: string) => alertaMap.get(nome);
 
+  // Fase 6 — receita lançada fora de 3.01.01.01.01: margens usam proxy; sinaliza na UI.
+  const receitaSuspeita = Number(ind('receita_suspeita')?.valor ?? 0) > 0;
+
   const criticos  = alertas.filter(a => a.exercicio === exercicio && a.severidade === 'critico').length;
   const atencao_  = alertas.filter(a => a.exercicio === exercicio && a.severidade === 'atencao').length;
   const positivos = alertas.filter(a => a.exercicio === exercicio && a.severidade === 'positivo').length;
@@ -268,6 +271,18 @@ export function VisaoGeral({
           </div>
         </div>
       </div>
+
+      {/* Fase 6 — alerta de receita suspeita (lançada fora do galho de receita bruta) */}
+      {receitaSuspeita && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800">
+          <span className="mt-0.5 text-sm font-semibold">⚠ Receita suspeita</span>
+          <p className="text-xs leading-snug">
+            A receita parece lançada fora de <code>3.01.01.01.01</code> (ex.: em Outras Receitas
+            Operacionais). EBITDA e Lucro Líquido são confiáveis; as <strong>margens</strong> usam
+            uma receita-proxy (receita líquida + outras receitas operacionais) — interprete com cautela.
+          </p>
+        </div>
+      )}
 
       {/* ── KPIs linha 1: resultados ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

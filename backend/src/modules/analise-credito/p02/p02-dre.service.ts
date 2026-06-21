@@ -36,6 +36,9 @@ export interface DreResult {
   fonteUsada:  string;
   alertas:     string[];
   validacaoOk: boolean;   // false = NÃO publicar indicadores (ver alertas)
+  // Fase 6: receita lançada fora de 3.01.01.01.01 (ex.: em 3.01.01.05) → RL anômala.
+  // Absolutos (EBITDA/LL) continuam válidos; margens viram null/proxy + alerta na UI.
+  receitaSuspeita?: boolean;
 }
 
 // ─── Mapeamento de prefixos L300 → linha DRE ─────────────────────────────────
@@ -333,6 +336,13 @@ export class P02DreService {
     const invariantesOk = this.verificarInvariantes(acc, naoClassTotal, alertas);
     const validacaoOk = reconciliaOk && invariantesOk;
 
+    // Fase 6: receita lançada fora de 3.01.01.01.01 (RL anômala) — absolutos seguem
+    // válidos (publica), só as margens é que ficam suspeitas.
+    const receitaSuspeita = this.detectarReceitaSuspeita(acc);
+    if (receitaSuspeita) {
+      alertas.push('[DATA-QUALITY] receita_suspeita: receita lançada fora de 3.01.01.01.01 (ex.: 3.01.01.05) — margens via proxy/null');
+    }
+
     if (!validacaoOk) {
       this.logger.warn(
         `[VALID-DRE] empresaId=${diagEmpresaId} exercicio=${diagExercicio} FALHOU — indicadores não serão publicados:\n` +
@@ -347,7 +357,24 @@ export class P02DreService {
       fonteUsada:  fonte,
       alertas,
       validacaoOk,
+      receitaSuspeita,
     };
+  }
+
+  /**
+   * Fase 6 — receita suspeita: a Receita Líquida (3.01.01.01) ficou ≤ 0 (receita
+   * bruta ínfima vs. deduções) PORÉM há receita material em Outras Receitas
+   * Operacionais (3.01.01.05) e o resultado é positivo → a receita foi lançada
+   * fora do galho de receita bruta. Margens ficam não confiáveis (denominador).
+   */
+  private detectarReceitaSuspeita(acc: Map<LinhaDre, Decimal>): boolean {
+    const rb       = acc.get('receita_bruta')   ?? new Decimal(0);
+    const ded      = acc.get('deducoes')        ?? new Decimal(0);
+    const outraRec = acc.get('outras_rec')      ?? new Decimal(0);
+    const ll       = acc.get('lucro_liquido')   ?? new Decimal(0);
+    const rlNegativa       = rb.lessThanOrEqualTo(ded);          // RL = rb − ded ≤ 0
+    const receitaForaLugar = outraRec.greaterThan(ded) && outraRec.greaterThan(0);
+    return rlNegativa && receitaForaLugar && ll.greaterThan(0);
   }
 
   // ─── EBIT / EBITDA ───────────────────────────────────────────────────────────
@@ -512,10 +539,13 @@ export class P02DreService {
     let ok = true;
 
     if (rl?.greaterThan(0)) {
+      // Fase 6: margem ≥ 99% NÃO bloqueia mais a publicação. Com o EBITDA ancorado
+      // em 3.01.01 e a reconciliação [VALID-B] verde, o absoluto é confiável; uma
+      // margem absurda indica RECEITA anômala (denominador), tratada como flag
+      // (receita_suspeita) — não como mapa incompleto. Só registra o sinal.
       const margem = ebitda.dividedBy(rl);
       if (margem.greaterThanOrEqualTo('0.99')) {
-        alertas.push(`[VALID-C] margemEbitda=${(margem.toNumber() * 100).toFixed(1)}% ≥ 99% — mapeamento incompleto`);
-        ok = false;
+        alertas.push(`[VALID-C] margemEbitda=${(margem.toNumber() * 100).toFixed(1)}% ≥ 99% — receita anômala (não bloqueia)`);
       }
       const naoClassRatio = naoClassTotal.dividedBy(rl);
       if (naoClassRatio.greaterThan('0.02')) {

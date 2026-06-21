@@ -38,6 +38,19 @@ export function getDre(dre: DreData, linhaDre: string): Decimal {
   return dre.get(linhaDre) ?? new Decimal(0);
 }
 
+/**
+ * Fase 6 — receita suspeita: Receita Líquida ≤ 0 (receita bruta ínfima vs. deduções)
+ * porém com Outras Receitas Operacionais (3.01.01.05) material e resultado positivo
+ * → receita lançada fora de 3.01.01.01.01. Margens passam a usar o proxy de receita.
+ */
+export function receitaSuspeita(dre: DreData): boolean {
+  const rb       = getDre(dre, 'receita_bruta');
+  const ded      = getDre(dre, 'deducoes');
+  const outraRec = getDre(dre, 'outras_rec');
+  const ll       = getDre(dre, 'lucro_liquido');
+  return rb.lessThanOrEqualTo(ded) && outraRec.greaterThan(ded) && outraRec.greaterThan(0) && ll.greaterThan(0);
+}
+
 /** Divisão segura — retorna null se denominador for zero ou null. */
 export function safeDiv(a: Decimal | null, b: Decimal | null): Decimal | null {
   if (a === null || b === null) return null;
@@ -88,6 +101,14 @@ export function calcularIndicadores(
   const despFin   = getDre(dre, 'desp_financeiras');
   const lucroBruto = getDre(dre, 'lucro_bruto');
 
+  // Fase 6 — receita suspeita (lançada fora de 3.01.01.01.01): a Receita Líquida é
+  // um denominador não confiável → margens/giro usam a ReceitaOperacionalProxy
+  // (3.01.01.01 + 3.01.01.05 = receita_bruta − deduções + outras_rec). Os absolutos
+  // (EBITDA/LL/EBIT) NÃO mudam. A flag receita_suspeita sinaliza o alerta na UI.
+  const suspeitaReceita = receitaSuspeita(dre);
+  const recProxy  = recBruta.minus(getDre(dre, 'deducoes')).add(getDre(dre, 'outras_rec'));
+  const recMargem = suspeitaReceita ? recProxy : recLiq;
+
   // ── Grupo 1 — Liquidez ───────────────────────────────────────────────────────
   const grp1: IndicadorCalc[] = [
     ind('liquidez_corrente', safeDiv(ac, pc),                            'ratio'),
@@ -116,18 +137,20 @@ export function calcularIndicadores(
     ind('ebitda',          ebitda,                      'reais'),
     ind('lucro_liquido',   lucroLiq,                    'reais'),
     ind('pl',              pl,                          'reais'),
-    // Ratios
-    ind('margem_ebitda',   safeDiv(ebitda,   recLiq),   'percentual'),
-    ind('margem_liquida',  safeDiv(lucroLiq, recLiq),   'percentual'),
+    // Ratios — margens/giro usam recMargem (= proxy quando receita suspeita)
+    ind('margem_ebitda',   safeDiv(ebitda,   recMargem), 'percentual'),
+    ind('margem_liquida',  safeDiv(lucroLiq, recMargem), 'percentual'),
     ind('roe',             roeVal,                       'percentual'),
     ind('roa',             roaVal,                       'percentual'),
     ind('roic',            roicVal,                      'percentual'),
     ind('grau_alavancagem',    safeDiv(roeVal, roaVal),      'ratio'),
-    ind('giro_ativo',          safeDiv(recLiq, ativoTot),   'ratio'),
+    ind('giro_ativo',          safeDiv(recMargem, ativoTot), 'ratio'),
     // Cascata de margens (bruta → EBIT → EBITDA → líquida)
-    ind('margem_bruta',        safeDiv(lucroBruto, recLiq), 'percentual'),
-    ind('margem_ebit',         safeDiv(ebit,       recLiq), 'percentual'),
+    ind('margem_bruta',        safeDiv(lucroBruto, recMargem), 'percentual'),
+    ind('margem_ebit',         safeDiv(ebit,       recMargem), 'percentual'),
     ind('cobertura_ebitda_df', safeDiv(ebitda, despFin),    'ratio'),
+    // Flag de qualidade de dado (1 = receita suspeita) — alerta na UI
+    ind('receita_suspeita',    suspeitaReceita ? new Decimal(1) : new Decimal(0), 'ratio'),
   ];
 
   // ── Grupo 3 — Endividamento ──────────────────────────────────────────────────
