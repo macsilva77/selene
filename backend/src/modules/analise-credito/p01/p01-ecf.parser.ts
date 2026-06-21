@@ -117,8 +117,8 @@ function processarBP(
 }
 
 // DRE: L300 (Lucro Real) | P150 (Lucro Presumido/Arbitrado) | U150 (Imunes/Isentas)
-// Sinal L300: C = positivo (receita), D = negativo (despesa)
-// P150/U150: apenas VL_REC sem IND_DC, sempre crédito.
+// Os três usam o MESMO layout referencial de 9 campos e a MESMA árvore 3.x.
+// Sinal: C = positivo (receita), D = negativo (despesa/custo) via IND_DC.
 
 // Contador para logar as primeiras 3 linhas L300 por arquivo (diagnóstico).
 let _fase0DreRowCount = 0;
@@ -136,56 +136,44 @@ function processarDRE(
   incs: EcfParseResult['inconsistencias'],
 ) {
   try {
-    let cod: string;
-    let desc: string;
+    // L300 (Real), P150 (Presumido/Arbitrado) e U150 (Imune/Isenta) compartilham o
+    // MESMO layout referencial de 9 campos (AC2021+) e a MESMA árvore de códigos 3.x:
+    // |REG|COD_CTA|DESC|IND_CTA(S/A)|NIVEL|COD_NAT|COD_CTA_SUP|VL_CTA|IND_DC|
+    //   0     1     2       3          4      5         6         7      8
+    // NUNCA usar cod=[2]/val=[3]: a suposição antiga (P150 de 4 campos, L300 de 6)
+    // lia IND_CTA como valor e ZERAVA a DRE de Presumido/Imune.
+    if (campos.length < 5) return;
+    const novoLayout = campos.length >= 9;  // COD_NAT/COD_CTA_SUP presentes → VL=[7], IND_DC=[8]
+
+    // Sanidade: COD_VER (0000) >= 9 deve trazer o layout completo de 9 campos.
+    if (_codVerLeiaute >= 9 && !novoLayout) {
+      incs.push({
+        tipoErro:   `${reg}_LEIAUTE`,
+        descricao:  `${reg} COD_VER=${_codVerLeiaute}: esperava 9 campos, veio ${campos.length}`,
+        severidade: 'alerta',
+      });
+    }
+
+    if (_fase0DreRowCount < 3) {
+      console.log(
+        `[FASE0-DRE] ${reg} campos (row ${_fase0DreRowCount + 1}/3, COD_VER=${_codVerLeiaute}, nFields=${campos.length}):\n` +
+        campos.map((v, i) => `  [${i}]=${JSON.stringify(v)}`).join('\n'),
+      );
+      _fase0DreRowCount++;
+    }
+
+    const cod  = (campos[1] ?? '').trim();
+    const desc = (campos[2] ?? '').trim();
     let valor: number;
     let naturezaFinal: string;
-
-    if (reg === 'L300') {
-      // Layout real AC2021+ (leiautes 9–12), 9 campos:
-      // |REG|COD_CTA|DESC|IND_CTA(S/A)|NIVEL|COD_NAT|COD_CTA_SUP|VL_CTA|IND_DC|
-      //   0     1     2       3          4      5         6         7      8
-      // COD_VER (0000) confirma o leiaute. NUNCA usar cod=[2]: a regressão 7b15f1b
-      // assumiu 6 campos (cod=[2]/val=[5]) e zerava o L300 — o original e correto é
-      // cod=[1]/val=[7]/dc=[8] (foi o que gerou os Parquets corretos no parque).
-      if (campos.length < 5) return;
-      const novoLayout = campos.length >= 9;  // COD_NAT/COD_CTA_SUP presentes → VL=[7], IND_DC=[8]
-
-      // Sanidade: COD_VER >= 9 deve trazer o layout completo de 9 campos.
-      if (_codVerLeiaute >= 9 && !novoLayout) {
-        incs.push({
-          tipoErro:   'L300_LEIAUTE',
-          descricao:  `L300 COD_VER=${_codVerLeiaute}: esperava 9 campos, veio ${campos.length}`,
-          severidade: 'alerta',
-        });
-      }
-
-      if (_fase0DreRowCount < 3) {
-        console.log(
-          `[FASE0-DRE] campos (row ${_fase0DreRowCount + 1}/3, COD_VER=${_codVerLeiaute}, nFields=${campos.length}):\n` +
-          campos.map((v, i) => `  [${i}]=${JSON.stringify(v)}`).join('\n'),
-        );
-        _fase0DreRowCount++;
-      }
-
-      cod  = (campos[1] ?? '').trim();
-      desc = (campos[2] ?? '').trim();
-      if (novoLayout) {
-        valor         = valorComSinal(campos, 7, 8, 'C');     // VL_CTA=[7], IND_DC=[8]
-        naturezaFinal = (campos[8] ?? 'C').trim() || 'C';
-      } else {
-        // leiaute compacto |REG|COD|DESC|IND_DC|VL| → VL último, IND_DC penúltimo
-        const vlIdx = campos.length - 1, dcIdx = campos.length - 2;
-        valor         = valorComSinal(campos, vlIdx, dcIdx, 'C');
-        naturezaFinal = (campos[dcIdx] ?? 'C').trim() || 'C';
-      }
+    if (novoLayout) {
+      valor         = valorComSinal(campos, 7, 8, 'C');     // VL_CTA=[7], IND_DC=[8]
+      naturezaFinal = (campos[8] ?? 'C').trim() || 'C';
     } else {
-      // P150/U150: |REG|TIPO_REC|DESC_REC|VL_REC|
-      if (campos.length < 4) return;
-      cod           = (campos[1] ?? '').trim();
-      desc          = (campos[2] ?? '').trim();
-      valor         = Math.abs(parseValorBr(campos[3] ?? ''));
-      naturezaFinal = 'C';
+      // leiaute compacto |REG|COD|DESC|IND_DC|VL| → VL último, IND_DC penúltimo
+      const vlIdx = campos.length - 1, dcIdx = campos.length - 2;
+      valor         = valorComSinal(campos, vlIdx, dcIdx, 'C');
+      naturezaFinal = (campos[dcIdx] ?? 'C').trim() || 'C';
     }
 
     registros.push({

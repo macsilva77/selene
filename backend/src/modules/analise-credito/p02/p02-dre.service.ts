@@ -119,8 +119,8 @@ export class P02DreService {
         naturezaFinal: r.naturezaFinal,  // 'C'=crédito/receita | 'D'=débito/despesa
       }));
 
-      if (registroEcf === 'L300') return this.montarDeL300(registros, empresaId, exercicio);
-      return this.montarDeEcfKeywords(registros, registroEcf);
+      // L300/P150/U150 têm os mesmos códigos referenciais 3.x → mesmo builder.
+      return this.montarDeReferencial(registros, registroEcf, empresaId, exercicio);
     }
 
     this.logger.log(`[DIAG-DRE] empresaId=${empresaId} exercicio=${exercicio} → fallback ECD`);
@@ -184,13 +184,17 @@ export class P02DreService {
     return MAPA[regime ?? ''] ?? ['L300', 'P150', 'U150'];
   }
 
-  // ─── Fonte L300 (Lucro Real — mapeamento por prefixo de código) ──────────────
+  // ─── Builder referencial (L300/P150/U150 — mapeamento por prefixo de código) ──
+  // Os três blocos compartilham a árvore 3.x; o único bloco-específico é o rótulo
+  // de fonte (ecf_l300 / ecf_p150 / ecf_u150).
 
-  private montarDeL300(
+  private montarDeReferencial(
     registros: { linhaCodigo: string; descricao: string; valor: Decimal; naturezaFinal: string }[],
+    registroEcf: string,
     diagEmpresaId = '',
     diagExercicio = 0,
   ): DreResult {
+    const fonte = `ecf_${registroEcf.toLowerCase()}`;
     const alertas: string[] = [];
 
     // Derivar S/A: conta é folha (analítica) se nenhuma outra começa com cod + '.'
@@ -305,41 +309,14 @@ export class P02DreService {
       );
     }
 
-    const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({ linhaDre, valor, fonte: 'ecf_l300' }));
+    const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({ linhaDre, valor, fonte }));
     return {
       linhas,
       completo:    acc.has('receita_liquida') && acc.has('lucro_liquido'),
-      fonteUsada:  'ecf_l300',
+      fonteUsada:  fonte,
       alertas,
       validacaoOk,
     };
-  }
-
-  // ─── Fonte P150 / U150 (mapeamento por palavras-chave nas descrições RFB) ───
-
-  private montarDeEcfKeywords(
-    registros: { linhaCodigo: string; descricao: string; valor: Decimal; naturezaFinal: string }[],
-    registroEcf: string,
-  ): DreResult {
-    const alertas: string[] = [];
-    const acc = new Map<LinhaDre, Decimal>();
-
-    for (const r of registros) {
-      const desc = r.descricao.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      for (const [linha, palavras] of Object.entries(DRE_KEYWORDS) as [LinhaDre, string[]][]) {
-        if (palavras.some(p => desc.includes(p))) {
-          acc.set(linha, (acc.get(linha) ?? new Decimal(0)).add(abs(r.valor)));
-          break;
-        }
-      }
-    }
-
-    this.derivarLucroLiquido(acc, alertas);
-    this.calcularEbitEbitda(acc, registros, alertas);
-
-    const fonte = `ecf_${registroEcf.toLowerCase()}`;
-    const linhas = [...acc.entries()].map(([linhaDre, valor]) => ({ linhaDre, valor, fonte }));
-    return { linhas, completo: acc.has('receita_liquida'), fonteUsada: fonte, alertas, validacaoOk: true };
   }
 
   // ─── EBIT / EBITDA ───────────────────────────────────────────────────────────
