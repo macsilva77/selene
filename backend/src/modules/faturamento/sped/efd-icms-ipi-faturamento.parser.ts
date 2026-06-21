@@ -39,7 +39,9 @@ export interface FatoFaturamento {
 const VALID_COD_SIT = new Set(['00', '01']);
 
 const IDX_0000 = { DT_INI: 4, NOME: 6, CNPJ: 7 } as const;
-const IDX_C100 = { IND_OPER: 2, COD_SIT: 6, VL_DOC: 12, VL_IPI: 23 } as const;
+// VL_IPI é o campo 25 do C100 (…[23]=VL_BC_ICMS_ST [24]=VL_ICMS_ST [25]=VL_IPI [26]=VL_PIS).
+// Antes lia 23 (base de ICMS-ST) como IPI — confirmado em arquivo real.
+const IDX_C100 = { IND_OPER: 2, COD_SIT: 6, VL_DOC: 12, VL_IPI: 25 } as const;
 const IDX_C190 = { CFOP: 3, VL_OPR: 5, VL_ICMS: 7 } as const;
 
 // ─── Estado mutável durante o parse ──────────────────────────────────────────

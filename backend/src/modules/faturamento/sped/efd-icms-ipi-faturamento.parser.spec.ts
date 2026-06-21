@@ -44,8 +44,9 @@ function linhaC100(
   vlDoc: string,
   vlIpi = '0,00',
 ): string {
-  // 10 zeros entre vlDoc e vlIpi preenchem as posições 13–22
-  return `|C100|${indOper}|0|PART001|55|${codSit}|001|000001|CHVNFE|01012024|01012024|${vlDoc}|0|0|0|0|0|0|0|0|0|0|${vlIpi}|`;
+  // 12 zeros entre vlDoc (campo 12) e vlIpi (campo 25): preenchem 13–24
+  // (…[23]=VL_BC_ICMS_ST [24]=VL_ICMS_ST [25]=VL_IPI).
+  return `|C100|${indOper}|0|PART001|55|${codSit}|001|000001|CHVNFE|01012024|01012024|${vlDoc}|0|0|0|0|0|0|0|0|0|0|0|0|${vlIpi}|`;
 }
 
 /**
