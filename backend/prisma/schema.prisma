@@ -60,6 +60,7 @@ model Tenant {
   faturamentoCompetencias FaturamentoCompetencia[]
   snSituacoes             SimplesNacionalSituacao[]
   pgdasDeclaracoes        PgdasDeclaracao[]
+  certificadoConvites     CertificadoConvite[]
 
   @@map("tenants")
 }
@@ -112,6 +113,7 @@ model Usuario {
   workflowRevisoresTipoDoc    WorkflowRevisorTipoDoc[]
   workflowSignatariosTipoDoc  WorkflowSignatarioTipoDoc[]
   certificadosCriados         CertificadoDigital[]        @relation("CertCriadoPor")
+  certificadoConvitesCriados  CertificadoConvite[]        @relation("ConviteCertCriadoPor")
   dfeConfigsCriados           DfeConfig[]                 @relation("DfeConfigCriadoPor")
   etiquetaHistorico           EtiquetaHistorico[]
 
@@ -1033,6 +1035,45 @@ model CertificadoLog {
   @@index([certificadoId])
   @@index([tenantId, criadoEm])
   @@map("certificados_logs")
+}
+
+enum ConviteCertificadoStatus {
+  PENDENTE
+  USADO
+  EXPIRADO
+  REVOGADO
+}
+
+/// Convite de onboarding: link público para o cliente enviar o próprio certificado A1.
+/// A empresa é criada automaticamente a partir dos dados do certificado quando o convite é usado.
+model CertificadoConvite {
+  id             String                   @id @default(uuid())
+  tenantId       String                   @map("tenant_id")
+  /// sha256(rawToken) — o token cru nunca é persistido
+  tokenHash      String                   @unique @map("token_hash")
+  email          String
+  /// Apelido para o admin localizar o convite (ex.: "Padaria do João")
+  apelido        String?
+  status         ConviteCertificadoStatus @default(PENDENTE)
+  expiraEm       DateTime                 @map("expira_em")
+  usadoEm        DateTime?                @map("usado_em")
+  ipUso          String?                  @map("ip_uso")
+  criadoPorId    String                   @map("criado_por_id")
+  /// Certificado gerado ao concluir (rastreio)
+  certificadoId  String?                  @map("certificado_id")
+  /// Empresa criada/associada ao concluir (rastreio)
+  empresaId      String?                  @map("empresa_id")
+  /// Razão social / CNPJ lidos do certificado enviado (preenchidos na conclusão)
+  razaoSocial    String?                  @map("razao_social")
+  cnpj           String?
+  criadoEm       DateTime                 @default(now()) @map("criado_em")
+  atualizadoEm   DateTime                 @updatedAt @map("atualizado_em")
+
+  tenant         Tenant                   @relation(fields: [tenantId], references: [id])
+  criadoPor      Usuario                  @relation("ConviteCertCriadoPor", fields: [criadoPorId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("certificados_convites")
 }
 
 // ── Distribuição de DF-e (NF-e / CT-e / NFS-e) ───────────────────────────────

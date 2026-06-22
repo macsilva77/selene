@@ -85,6 +85,95 @@ export class MailService {
     }
   }
 
+  async enviarConviteCertificado(
+    to: string,
+    link: string,
+    apelido: string | null,
+    validadeHoras: number,
+  ): Promise<void> {
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to,
+        subject: '[Selene] Envio do seu Certificado Digital A1',
+        html: this.buildConviteCertificadoHtml(link, apelido, validadeHoras, this.logoUrl),
+      });
+      this.logger.log(`E-mail de convite de certificado enviado para ${to}`);
+    } catch (err) {
+      this.logger.error(`Falha ao enviar e-mail de convite para ${to}: ${(err as Error).message}`);
+      throw err;
+    }
+  }
+
+  private buildConviteCertificadoHtml(
+    link: string,
+    apelido: string | null,
+    validadeHoras: number,
+    logoUrl: string,
+  ): string {
+    const saudacao = apelido ? `Olá, ${apelido}!` : 'Olá!';
+    const validadeTxt = validadeHoras % 24 === 0 ? `${validadeHoras / 24} dia(s)` : `${validadeHoras} horas`;
+    return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#eef0f8;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#eef0f8;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(46,58,124,0.10);">
+        <!-- Header -->
+        <tr>
+          <td style="background:#2E3A7C;padding:32px 40px;">
+            <img src="${logoUrl}" alt="Selene" height="40" style="display:block;border:0;" />
+            <p style="margin:10px 0 0;color:#C8CDED;font-size:13px;letter-spacing:0.5px;">Plataforma de Gestão Empresarial</p>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px;">
+            <p style="margin:0 0 16px;font-size:17px;color:#1E2A5E;font-weight:600;">${saudacao}</p>
+            <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.7;">
+              Para iniciarmos o atendimento da sua empresa, precisamos do seu <strong>Certificado Digital A1</strong>
+              (arquivo <strong>.pfx</strong> ou <strong>.p12</strong>). O envio é feito de forma segura, diretamente por você —
+              <strong>sua senha não é compartilhada com nossa equipe</strong>.
+            </p>
+            <p style="margin:0 0 8px;font-size:14px;color:#4a5568;">O link abaixo é válido por <strong>${validadeTxt}</strong>:</p>
+            <table cellpadding="0" cellspacing="0" style="margin:28px 0;">
+              <tr>
+                <td style="background:#2E3A7C;border-radius:10px;">
+                  <a href="${link}" style="display:inline-block;padding:14px 36px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;letter-spacing:0.3px;">
+                    Enviar meu certificado
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 8px;font-size:12px;color:#718096;">
+              Se o botão não funcionar, copie e cole este link no navegador:
+            </p>
+            <p style="margin:0 0 16px;font-size:12px;">
+              <a href="${link}" style="color:#2E3A7C;word-break:break-all;">${link}</a>
+            </p>
+            <p style="margin:24px 0 0;padding:16px;background:#f0f9ff;border-left:4px solid #2E3A7C;border-radius:4px;font-size:12px;color:#1E2A5E;">
+              O certificado é armazenado com criptografia AES-256. Use este link apenas em um dispositivo de sua confiança.
+            </p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f0f2fa;padding:20px 40px;border-top:1px solid #dde1f0;">
+            <p style="margin:0;font-size:11px;color:#8892b0;text-align:center;">
+              Este é um e-mail automático enviado pelo Selene. Por favor, não responda.<br>
+              Se você não esperava este e-mail, ignore-o com segurança.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+  }
+
   private buildResetSenhaHtml(nome: string, link: string, logoUrl: string): string {
     return `
 <!DOCTYPE html>

@@ -524,6 +524,124 @@ export class CertificadosService extends AuditableService {
     return { success: true, message: 'Certificado armazenado e associado com sucesso.', logs };
   }
 
+  // ── Onboarding (fluxo público via link de convite) ───────────────────────────
+
+  /**
+   * Ingestão de certificado a partir do link público de onboarding.
+   * Diferente do wizard autenticado: a empresa NÃO existe ainda — ela é criada
+   * automaticamente a partir do CNPJ/razão social lidos do próprio certificado.
+   */
+  async armazenarDeOnboarding(params: {
+    buffer: Buffer;
+    password: string;
+    tenantId: string;
+    criadoPorId: string;
+    ip: string;
+  }): Promise<{ certificadoId: string; empresaId: string; razaoSocial: string; cnpj: string }> {
+    const { buffer, password, tenantId, criadoPorId, ip } = params;
+
+    const parseResult = this.parsePfx(buffer, password);
+    if (!parseResult.ok) {
+      throw new BadRequestException(parseResult.errorMessage);
+    }
+    const parsed = parseResult.data;
+
+    if (parsed.status === CertificadoStatus.VENCIDO) {
+      throw new BadRequestException(
+        `O certificado está vencido (validade: ${parsed.dataValidade.toLocaleDateString('pt-BR')}). Não é possível armazenar certificados vencidos.`,
+      );
+    }
+
+    const existing = await this.prisma.certificadoDigital.findFirst({
+      where: { tenantId, thumbprint: parsed.thumbprint, ativo: true },
+    });
+    if (existing) {
+      throw new ConflictException('Este certificado já foi enviado anteriormente.');
+    }
+
+    const { encrypted, storageIv } = this.encryptFile(buffer);
+    const { encrypted: certPemEnc, storageIv: certPemIv } = this.encryptFile(Buffer.from(parsed.pemCert, 'utf8'));
+    const pemKeyEncResult = parsed.pemKey ? this.encryptFile(Buffer.from(parsed.pemKey, 'utf8')) : null;
+    const senhaEncResult = this.encryptFile(Buffer.from(password, 'utf8'));
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Cria/recupera a empresa a partir dos dados do certificado
+      const empresa = await tx.empresa.upsert({
+        where: { tenantId_cnpj: { tenantId, cnpj: parsed.cnpjCert } },
+        create: {
+          tenantId,
+          nome: parsed.razaoSocial,
+          cnpj: parsed.cnpjCert,
+          ativo: true,
+        },
+        update: {},
+      });
+
+      const cert = await tx.certificadoDigital.create({
+        data: {
+          tenantId,
+          criadoPorId,
+          razaoSocial: parsed.razaoSocial,
+          cnpjCert: parsed.cnpjCert,
+          raizCnpj: parsed.raizCnpj,
+          numeroSerie: parsed.numeroSerie,
+          autoridadeCert: parsed.autoridadeCert,
+          dataEmissao: parsed.dataEmissao,
+          dataValidade: parsed.dataValidade,
+          thumbprint: parsed.thumbprint,
+          status: parsed.status,
+          arquivoEnc: encrypted,
+          storageIv,
+          certPemEnc,
+          certPemIv,
+          keyPemEnc: pemKeyEncResult?.encrypted ?? null,
+          keyPemIv: pemKeyEncResult?.storageIv ?? null,
+          senhaEnc: senhaEncResult.encrypted,
+          senhaIv: senhaEncResult.storageIv,
+          nomeArquivo: `onboarding-${parsed.cnpjCert}.pfx`,
+        },
+      });
+
+      await tx.certificadoEmpresa.create({
+        data: { certificadoId: cert.id, empresaId: empresa.id },
+      });
+
+      await tx.certificadoLog.create({
+        data: {
+          certificadoId: cert.id,
+          tenantId,
+          usuarioId: criadoPorId,
+          acao: CertificadoAcao.UPLOAD,
+          descricao: `Certificado recebido via link de onboarding e associado à empresa ${parsed.razaoSocial} (${this.formatCnpj(parsed.cnpjCert)}).`,
+          ipOrigem: ip,
+        },
+      });
+
+      return { certId: cert.id, empresaId: empresa.id };
+    });
+
+    await this.audit('CertificadoDigital', result.certId, AuditAcao.CREATE, {
+      usuarioId: criadoPorId,
+      depois: { thumbprint: parsed.thumbprint, status: parsed.status, viaOnboarding: true, empresaId: result.empresaId },
+      ipOrigem: ip,
+    });
+
+    // Dispara pipeline de coleta de SPEDs para o CNPJ recém-cadastrado
+    await this.pubSub.publish(this.topicNovoCertificado, {
+      evento:    'novo_certificado',
+      cnpj:      parsed.cnpjCert,
+      tenantId,
+      timestamp: new Date().toISOString(),
+    }).catch((err) => this.logger.error(`Falha ao publicar novo_certificado: ${err}`));
+
+    return {
+      certificadoId: result.certId,
+      empresaId: result.empresaId,
+      razaoSocial: parsed.razaoSocial,
+      cnpj: parsed.cnpjCert,
+    };
+  }
+
   // ── Listar ───────────────────────────────────────────────────────────────────
 
   async listar(

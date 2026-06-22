@@ -16,10 +16,12 @@ import {
   EyeSlash,
   FileArrowUp,
   Trash,
+  LinkSimple,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { ConviteModal, ConvitesView } from './convites';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                */
@@ -640,6 +642,9 @@ export default function CertificadosPage() {
   const [page, setPage] = useState(1);
   const [showWizard, setShowWizard] = useState(false);
   const [selected, setSelected] = useState<Certificado | null>(null);
+  const [view, setView] = useState<'certificados' | 'convites'>('certificados');
+  const [showConvite, setShowConvite] = useState(false);
+  const [convitesRefresh, setConvitesRefresh] = useState(0);
   const { toasts, success, error: toastError, dismiss } = useToast();
 
   const handleDelete = useCallback(async (id: string) => {
@@ -753,14 +758,15 @@ export default function CertificadosPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={loadCerts}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+            type="button"
+            onClick={() => setShowConvite(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary/30 text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
           >
-            <ArrowClockwise size={16} className={loading ? 'animate-spin' : ''} />
-            Atualizar
+            <LinkSimple size={16} />
+            Gerar link
           </button>
           <button
+            type="button"
             onClick={() => setShowWizard(true)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
@@ -770,6 +776,31 @@ export default function CertificadosPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-border -mt-2">
+        {([
+          { key: 'certificados', label: 'Certificados' },
+          { key: 'convites', label: 'Convites de onboarding' },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setView(t.key)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              view === t.key
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'convites' ? (
+        <ConvitesView refreshKey={convitesRefresh} />
+      ) : (
+      <>
       {/* Stats cards */}
       {!loading && certs.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -935,6 +966,8 @@ export default function CertificadosPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Wizard modal */}
       {showWizard && (
@@ -943,6 +976,17 @@ export default function CertificadosPage() {
           onSuccess={() => {
             loadCerts();
             setShowWizard(false);
+          }}
+        />
+      )}
+
+      {/* Convite modal */}
+      {showConvite && (
+        <ConviteModal
+          onClose={() => setShowConvite(false)}
+          onCreated={() => {
+            setConvitesRefresh((k) => k + 1);
+            setView('convites');
           }}
         />
       )}
