@@ -75,15 +75,19 @@ export class FaturamentoCanceladosService {
       }
     }
 
-    // Faturamento bruto VÁLIDO (saídas) por ano — base das taxas de cancelamento.
+    // Base das taxas de cancelamento: por ano, somatório de documentos VÁLIDOS de
+    // saída (qtdDocumentos) e faturamento bruto. ⚠ usar _sum.qtdDocumentos — NÃO
+    // _count (que contaria competências/meses, inflando a taxa absurdamente).
     const fatRows = await this.prisma.faturamentoCompetencia.groupBy({
       by:    ['ano'],
       where: { tenantId, empresaId, fonte: 'EFD_ICMS' },
-      _sum:  { vlFaturamentoBruto: true },
-      _count: true,
+      _sum:  { vlFaturamentoBruto: true, qtdDocumentos: true },
     });
     const faturadoPorAno = new Map<number, FaturadoAno>(
-      fatRows.map(r => [r.ano, { valor: Number(r._sum.vlFaturamentoBruto ?? 0), qtd: r._count }]),
+      fatRows.map(r => [r.ano, {
+        valor: Number(r._sum.vlFaturamentoBruto ?? 0),
+        qtd:   Number(r._sum.qtdDocumentos ?? 0),
+      }]),
     );
 
     const agregado = agregarCancelados(docs, faturadoPorAno);

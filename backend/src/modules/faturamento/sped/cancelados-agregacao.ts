@@ -17,6 +17,9 @@ export interface CanceladosPorAno {
   valorExtemporaneo:  number;
   qtdSaidas:          number;
   valorSaidas:        number;
+  qtdEntradas:        number;
+  qtdNFe:             number;
+  qtdSAT:             number;
   valorFaturado:      number | null; // bruto válido (saídas) do ano
   taxaValor:          number | null; // valorSaidas canceladas / faturado válido
   taxaQtd:            number | null; // qtdSaidas canceladas / (válidos + canceladas)
@@ -57,11 +60,13 @@ function acumularAno(
 ): void {
   const a = anoMap.get(ano) ?? {
     ano, qtd: 0, valor: 0, qtdExtemporaneos: 0, valorExtemporaneo: 0,
-    qtdSaidas: 0, valorSaidas: 0, valorFaturado: null, taxaValor: null, taxaQtd: null,
+    qtdSaidas: 0, valorSaidas: 0, qtdEntradas: 0, qtdNFe: 0, qtdSAT: 0,
+    valorFaturado: null, taxaValor: null, taxaQtd: null,
   };
   a.qtd += 1; a.valor += d.vlDoc;
   if (d.extemporaneo) { a.qtdExtemporaneos += 1; a.valorExtemporaneo += d.vlDoc; }
-  if (saida) { a.qtdSaidas += 1; a.valorSaidas += d.vlDoc; }
+  if (saida) { a.qtdSaidas += 1; a.valorSaidas += d.vlDoc; } else { a.qtdEntradas += 1; }
+  if (d.tipo === 'SAT') { a.qtdSAT += 1; } else { a.qtdNFe += 1; }
   anoMap.set(ano, a);
 }
 

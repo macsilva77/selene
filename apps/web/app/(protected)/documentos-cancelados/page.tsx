@@ -52,6 +52,8 @@ export default function DocumentosCanceladosPage() {
   const [dados, setDados]         = useState<CanceladosResposta | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [pagina, setPagina]       = useState(0);
+  const [anoIni, setAnoIni]       = useState<number | null>(null);
+  const [anoFim, setAnoFim]       = useState<number | null>(null);
   const PAGE = 50;
 
   useEffect(() => {
@@ -75,23 +77,47 @@ export default function DocumentosCanceladosPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
-  const resumo = dados?.resumo;
-  // taxa global de cancelamento (saídas) — soma dos anos com faturado conhecido
+  // anos disponíveis + reset do período ao trocar de empresa/dados
+  const anos = useMemo(
+    () => [...new Set((dados?.porAno ?? []).map(a => a.ano))].sort((a, b) => a - b),
+    [dados],
+  );
+  useEffect(() => {
+    setAnoIni(anos.length ? anos[0] : null);
+    setAnoFim(anos.length ? anos[anos.length - 1] : null);
+    setPagina(0);
+  }, [anos]);
+
+  const ini = anoIni ?? -Infinity;
+  const fim = anoFim ?? Infinity;
+  const noPeriodo = (ano: number) => ano >= ini && ano <= fim;
+  const anoDeComp = (c: string) => Number(c.slice(0, 4));
+
+  const porAnoF = useMemo(() => (dados?.porAno ?? []).filter(a => noPeriodo(a.ano)), [dados, ini, fim]);
+  const serieF  = useMemo(() => (dados?.serieMensal ?? []).filter(m => noPeriodo(anoDeComp(m.competencia))), [dados, ini, fim]);
+  const docsF   = useMemo(() => (dados?.docs ?? []).filter(d => noPeriodo(anoDeComp(d.competencia))), [dados, ini, fim]);
+
+  // resumo recalculado para o período (soma dos anos no intervalo)
+  const resumo = useMemo(() => {
+    const r = { qtd: 0, qtdSaidas: 0, qtdEntradas: 0, qtdNFe: 0, qtdSAT: 0, qtdExtemporaneos: 0 };
+    for (const a of porAnoF) {
+      r.qtd += a.qtd; r.qtdSaidas += a.qtdSaidas; r.qtdEntradas += a.qtdEntradas;
+      r.qtdNFe += a.qtdNFe; r.qtdSAT += a.qtdSAT; r.qtdExtemporaneos += a.qtdExtemporaneos;
+    }
+    return dados ? r : null;
+  }, [dados, porAnoF]);
+
+  // taxa de cancelamento (saídas) no período = Σ canceladas / Σ (válidas + canceladas)
   const taxaGlobal = useMemo(() => {
-    if (!dados) return null;
     let canc = 0, base = 0;
-    for (const a of dados.porAno) {
-      if (a.valorFaturado != null && a.taxaQtd != null && a.qtdSaidas > 0) {
-        canc += a.qtdSaidas;
-        base += a.qtdSaidas / a.taxaQtd; // reconstrói (válidos + canceladas)
-      }
+    for (const a of porAnoF) {
+      if (a.taxaQtd != null && a.qtdSaidas > 0) { canc += a.qtdSaidas; base += a.qtdSaidas / a.taxaQtd; }
     }
     return base > 0 ? canc / base : null;
-  }, [dados]);
+  }, [porAnoF]);
 
-  const docs       = dados?.docs ?? [];
-  const totalPags  = Math.ceil(docs.length / PAGE);
-  const docsPagina = docs.slice(pagina * PAGE, pagina * PAGE + PAGE);
+  const totalPags  = Math.ceil(docsF.length / PAGE);
+  const docsPagina = docsF.slice(pagina * PAGE, pagina * PAGE + PAGE);
 
   return (
     <div className="flex flex-col gap-4 p-6">
@@ -107,23 +133,50 @@ export default function DocumentosCanceladosPage() {
         </div>
       </div>
 
-      {/* Seletor */}
+      {/* Seletores */}
       <Card>
-        <CardContent className="p-4">
-          <label htmlFor="sel-emp" className="text-xs font-medium text-muted-foreground block mb-1">Empresa</label>
-          <select
-            id="sel-emp"
-            className="w-full max-w-xl rounded-md border border-input bg-background px-3 py-2 text-sm"
-            value={empresaId}
-            onChange={e => setEmpresaId(e.target.value)}
-          >
-            {empresas.length === 0 && <option value="">Nenhuma empresa</option>}
-            {empresas.map(e => (
-              <option key={e.id} value={e.id}>
-                {maskCnpj(e.cnpj)} — {e.nome || e.nomeFantasia || 'Sem razão social'}
-              </option>
-            ))}
-          </select>
+        <CardContent className="flex flex-wrap items-end gap-4 p-4">
+          <div className="flex-1 min-w-[280px]">
+            <label htmlFor="sel-emp" className="text-xs font-medium text-muted-foreground block mb-1">Empresa</label>
+            <select
+              id="sel-emp"
+              className="w-full max-w-xl rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={empresaId}
+              onChange={e => setEmpresaId(e.target.value)}
+            >
+              {empresas.length === 0 && <option value="">Nenhuma empresa</option>}
+              {empresas.map(e => (
+                <option key={e.id} value={e.id}>
+                  {maskCnpj(e.cnpj)} — {e.nome || e.nomeFantasia || 'Sem razão social'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {anos.length > 0 && (
+            <div>
+              <span className="text-xs font-medium text-muted-foreground block mb-1">Período</span>
+              <div className="flex items-center gap-1.5">
+                <select
+                  aria-label="Ano inicial"
+                  className="rounded-md border border-input bg-background px-2 py-2 text-sm"
+                  value={anoIni ?? ''}
+                  onChange={e => { setAnoIni(Number(e.target.value)); setPagina(0); }}
+                >
+                  {anos.map(a => <option key={a} value={a} disabled={anoFim != null && a > anoFim}>{a}</option>)}
+                </select>
+                <span className="text-muted-foreground text-xs">–</span>
+                <select
+                  aria-label="Ano final"
+                  className="rounded-md border border-input bg-background px-2 py-2 text-sm"
+                  value={anoFim ?? ''}
+                  onChange={e => { setAnoFim(Number(e.target.value)); setPagina(0); }}
+                >
+                  {anos.map(a => <option key={a} value={a} disabled={anoIni != null && a < anoIni}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -173,7 +226,7 @@ export default function DocumentosCanceladosPage() {
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Cancelamentos por mês</CardTitle></CardHeader>
                 <CardContent className="pt-0">
                   <ChartContainer config={CFG_SERIE} className="h-64 w-full">
-                    <BarChart data={dados!.serieMensal} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                    <BarChart data={serieF} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="competencia" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} minTickGap={16} />
                       <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} width={40} />
@@ -199,7 +252,7 @@ export default function DocumentosCanceladosPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {dados!.porAno.map(a => (
+                      {porAnoF.map(a => (
                         <tr key={a.ano} className="border-t border-border hover:bg-muted/30">
                           <td className="px-3 py-2 font-medium tabular-nums">{a.ano}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{fmtInt(a.qtd)}</td>
@@ -218,9 +271,9 @@ export default function DocumentosCanceladosPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     Detalhe
-                    {dados!.totalDocs > docs.length && (
+                    {dados!.totalDocs > dados!.docs.length && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-normal text-amber-600">
-                        <WarningIcon size={12} /> mostrando os {fmtInt(docs.length)} de {fmtInt(dados!.totalDocs)} (limite)
+                        <WarningIcon size={12} /> detalhe limitado a {fmtInt(dados!.docs.length)} de {fmtInt(dados!.totalDocs)}
                       </span>
                     )}
                   </CardTitle>

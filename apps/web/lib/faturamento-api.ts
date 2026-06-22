@@ -127,6 +127,9 @@ export interface CanceladosPorAno {
   ano:               number;
   qtd:               number;
   qtdSaidas:         number;
+  qtdEntradas:       number;
+  qtdNFe:            number;
+  qtdSAT:            number;
   qtdExtemporaneos:  number;
   taxaQtd:           number | null; // saídas canceladas / (válidas + canceladas)
   taxaValor:         number | null;
