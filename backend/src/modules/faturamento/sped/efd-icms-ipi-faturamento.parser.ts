@@ -3,14 +3,24 @@
  *
  * Registros utilizados:
  *   0000 — Identificação (CNPJ, razão social, competência via DT_INI)
- *   C100 — Documentos fiscais (IND_OPER=1 → saídas, IND_OPER=0 → entradas/compras)
+ *   C100 — Documentos fiscais NF-e/NFC-e (IND_OPER=1 → saídas, 0 → entradas)
  *   C190 — Analítico por CFOP/CST (filho do C100 corrente)
+ *   C490 — Analítico por CFOP/CST do ECF / cupom fiscal (varejo)
+ *   C850 — Analítico por CFOP/CST do SAT-CF-e (varejo)
+ *   C405/C800 — Documentos de cupom (Redução Z do ECF / CF-e SAT) p/ contagem
  *
  * Regras:
  *   IND_OPER = '1' + COD_SIT em {'00','01'} → saída válida (faturamento)
  *   IND_OPER = '0' + COD_SIT em {'00','01'} → entrada válida (compras)
  *   COD_SIT '07'=denegado — nota rejeitada pela SEFAZ, NÃO acumulada
  *   C190 acumulado apenas enquanto o C100 pai é saída válida
+ *
+ * Cupom fiscal (C490/C850): postos e varejo registram a venda ao consumidor em
+ * ECF (Emissor de Cupom Fiscal) ou SAT-CF-e, NÃO em NF-e. Ignorá-los subcontava
+ * gravemente o faturamento desses contribuintes. São saídas por natureza (sem
+ * IND_OPER) e NÃO se sobrepõem ao C100/C190 — cada venda está em exatamente um
+ * modelo de documento. Mesma estrutura analítica do C190 (CFOP=3, VL_OPR=5,
+ * VL_ICMS=7); usa-se VL_OPR como bruto (varejo não tem IPI, VL_OPR ≈ VL_DOC).
  */
 
 import type { Readable } from 'node:stream';
@@ -45,6 +55,8 @@ const IDX_0000 = { DT_INI: 4, NOME: 6, CNPJ: 7 } as const;
 // PIS/COFINS de mercadoria saem daqui (o de Contribuições só lê A100/serviços).
 const IDX_C100 = { IND_OPER: 2, COD_SIT: 6, VL_DOC: 12, VL_IPI: 25, VL_PIS: 26, VL_COFINS: 27 } as const;
 const IDX_C190 = { CFOP: 3, VL_OPR: 5, VL_ICMS: 7 } as const;
+// C490 (ECF) e C850 (SAT) compartilham a mesma estrutura analítica do C190.
+const IDX_CUPOM = { CFOP: 3, VL_OPR: 5, VL_ICMS: 7 } as const;
 
 // ─── Estado mutável durante o parse ──────────────────────────────────────────
 
@@ -104,6 +116,23 @@ function processarC190(fields: string[], s: ParseState): void {
   s.cfopMap.set(cfop, entry);
 }
 
+/**
+ * Analítico de cupom fiscal (C490=ECF, C850=SAT). Sempre saída de varejo —
+ * entra no bruto, no ICMS e no breakdown de CFOP, igual a uma saída via C190.
+ */
+function processarCupomAnalitico(fields: string[], s: ParseState): void {
+  const cfop = (fields[IDX_CUPOM.CFOP] ?? '').trim();
+  if (!cfop) return;
+
+  const vlOpr = parseBr(fields[IDX_CUPOM.VL_OPR] ?? '0');
+  s.vlFaturamentoBruto += vlOpr;
+  s.vlIcms             += parseBr(fields[IDX_CUPOM.VL_ICMS] ?? '0');
+  const entry = s.cfopMap.get(cfop) ?? { vlOpr: 0, qtd: 0 };
+  entry.vlOpr += vlOpr;
+  entry.qtd   += 1;
+  s.cfopMap.set(cfop, entry);
+}
+
 // ─── Ponto de entrada ─────────────────────────────────────────────────────────
 
 export async function parseEfdIcmsIpiFaturamento(stream: Readable): Promise<FatoFaturamento> {
@@ -121,6 +150,8 @@ export async function parseEfdIcmsIpiFaturamento(stream: Readable): Promise<Fato
     if      (reg === '0000') processarReg0000(fields, s);
     else if (reg === 'C100') processarC100(fields, s);
     else if (reg === 'C190') processarC190(fields, s);
+    else if (reg === 'C490' || reg === 'C850') processarCupomAnalitico(fields, s);
+    else if (reg === 'C405' || reg === 'C800') s.qtdDocumentos += 1; // documento de cupom
   }
 
   const cfops: FatoCfop[] = [...s.cfopMap.entries()]

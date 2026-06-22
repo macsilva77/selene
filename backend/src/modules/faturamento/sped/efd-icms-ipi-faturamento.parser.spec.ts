@@ -59,6 +59,25 @@ function linhaC190(cfop: string, vlOpr: string, vlIcms: string): string {
   return `|C190|000|${cfop}|12,00|${vlOpr}|${vlOpr}|${vlIcms}|0|0|0|`;
 }
 
+/**
+ * Analítico de cupom fiscal — mesma estrutura do C190.
+ *   |C490|CST_ICMS|CFOP|ALIQ_ICMS|VL_OPR|VL_BC_ICMS|VL_ICMS|... (idem C850)
+ *         [2]     [3]   [4]       [5]    [6]         [7]
+ */
+function linhaCupom(reg: 'C490' | 'C850', cfop: string, vlOpr: string, vlIcms: string): string {
+  return `|${reg}|000|${cfop}|18,00|${vlOpr}|${vlOpr}|${vlIcms}|0|0|0|`;
+}
+
+/** |C800|COD_MOD|COD_SIT|NUM_CFE|DT_DOC|VL_CFE|... — só conta como documento. */
+function linhaC800(vlCfe: string): string {
+  return `|C800|65|00|000001|01012024|${vlCfe}|0|0|0|0|`;
+}
+
+/** |C405|DT_DOC|CRO|CRZ|NUM_COO_FIN|GT_FIN|VL_BRT| — só conta como documento. */
+function linhaC405(vlBrt: string): string {
+  return `|C405|01012024|1|10|000100|99999,99|${vlBrt}|`;
+}
+
 // ─── extrairCompetencia ───────────────────────────────────────────────────────
 
 describe('extrairCompetencia', () => {
@@ -325,6 +344,67 @@ describe('parseEfdIcmsIpiFaturamento — arquivo sem documentos', () => {
     expect(r.vlIpi).toBe(0);
     expect(r.qtdDocumentos).toBe(0);
     expect(r.cfops).toHaveLength(0);
+  });
+});
+
+// ─── Cupom fiscal (C490 ECF / C850 SAT) — varejo ─────────────────────────────
+
+describe('parseEfdIcmsIpiFaturamento — cupom fiscal C490/C850', () => {
+  it('C850 (SAT) sem C100 acumula bruto, ICMS e CFOP', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
+      linha0000('01012024', 'Posto SAT', '11111111000111'),
+      linhaCupom('C850', '5656', '20.000,00', '3.400,00'),
+    ]));
+    expect(r.vlFaturamentoBruto).toBeCloseTo(20000, 2);
+    expect(r.vlIcms).toBeCloseTo(3400, 2);
+    expect(r.cfops).toHaveLength(1);
+    expect(r.cfops[0].cfop).toBe('5656');
+    expect(r.cfops[0].vlOpr).toBeCloseTo(20000, 2);
+  });
+
+  it('C490 (ECF) sem C100 acumula bruto, ICMS e CFOP', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
+      linha0000('01012024', 'Posto ECF', '22222222000122'),
+      linhaCupom('C490', '5405', '15.000,00', '2.550,00'),
+    ]));
+    expect(r.vlFaturamentoBruto).toBeCloseTo(15000, 2);
+    expect(r.vlIcms).toBeCloseTo(2550, 2);
+    expect(r.cfops[0].cfop).toBe('5405');
+  });
+
+  it('cupom NÃO depende de C100 válido (independe de inValidSaida)', async () => {
+    // C100 de entrada zera inValidSaida; o C850 seguinte deve acumular mesmo assim
+    const r = await parseEfdIcmsIpiFaturamento(stream([
+      linha0000('01012024', 'Posto Mix', '33333333000133'),
+      linhaC100('0', '00', '5.000,00'),          // entrada (compra)
+      linhaCupom('C850', '5656', '8.000,00', '1.360,00'),
+    ]));
+    expect(r.vlFaturamentoBruto).toBeCloseTo(8000, 2);
+    expect(r.vlComprasBruto).toBeCloseTo(5000, 2);
+  });
+
+  it('soma NF-e (C100/C190) e cupom (C850) no mesmo bruto', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
+      linha0000('01012024', 'Posto NFCe+SAT', '44444444000144'),
+      linhaC100('1', '00', '2.000,00'),
+      linhaC190('5102', '2.000,00', '240,00'),
+      linhaCupom('C850', '5656', '18.000,00', '3.060,00'),
+    ]));
+    expect(r.vlFaturamentoBruto).toBeCloseTo(20000, 2);
+    expect(r.vlIcms).toBeCloseTo(3300, 2);
+    expect(r.cfops.map(c => c.cfop)).toEqual(['5102', '5656']);
+  });
+
+  it('C800/C405 contam como documentos sem somar valor', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
+      linha0000('01012024', 'Posto Docs', '55555555000155'),
+      linhaC800('50,00'),
+      linhaC800('30,00'),
+      linhaC405('12.345,67'),
+      linhaCupom('C850', '5656', '80,00', '13,60'),
+    ]));
+    expect(r.qtdDocumentos).toBe(3);              // 2×C800 + 1×C405
+    expect(r.vlFaturamentoBruto).toBeCloseTo(80, 2); // valor vem só do analítico C850
   });
 });
 
