@@ -102,7 +102,7 @@ export default function DocumentosCanceladosPage() {
         <div>
           <h1 className="text-xl font-semibold">Documentos Cancelados</h1>
           <p className="text-sm text-muted-foreground">
-            Extraído do EFD ICMS (NF-e/NFC-e + CF-e SAT) · sinal de risco para análise de crédito
+            Emissão própria no EFD ICMS (NF-e/NFC-e + CF-e SAT) · sinal de risco para análise de crédito
           </p>
         </div>
       </div>
@@ -131,9 +131,10 @@ export default function DocumentosCanceladosPage() {
       <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
         <InfoIcon size={15} className="mt-0.5 shrink-0" />
         <p className="leading-snug">
-          O SPED reporta documento cancelado <strong>sem valor monetário</strong> (convenção fiscal), então a
-          análise é por <strong>quantidade</strong>. Foco em <strong>cancelamentos de saída</strong> (a empresa
-          cancelando as próprias vendas) e <strong>extemporâneos</strong> (estorno retroativo — red flag).
+          Apenas <strong>emissão própria</strong> (documentos emitidos pela empresa; terceiros excluídos). O SPED
+          reporta cancelado <strong>sem valor monetário</strong> (convenção fiscal), então a análise é por
+          <strong> quantidade</strong>. Foco em <strong>cancelamentos de saída</strong> (a empresa cancelando as
+          próprias vendas) e <strong>extemporâneos</strong> (estorno retroativo — red flag).
         </p>
       </div>
 
