@@ -22,6 +22,7 @@ import { VisaoGeral }       from './visao-geral';
 import { KpisAnuais }       from './kpis-anuais';
 import { EstruturaCapital } from './estrutura-capital';
 import { Alertas }          from './alertas';
+import { CruzamentoReceita } from './cruzamento-receita';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -29,7 +30,7 @@ function formatarCnpj(cnpj: string) {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 }
 
-type Tab = 'visao' | 'estrutura' | 'evolucao' | 'alertas';
+type Tab = 'visao' | 'estrutura' | 'evolucao' | 'cruzamento' | 'alertas';
 
 /* ─── Componente principal ───────────────────────────────────────────────── */
 
@@ -149,10 +150,11 @@ export function AnaliseCreditoDashboard() {
   ).length;
 
   const TAB_ITEMS: { id: Tab; label: string; badge?: number }[] = [
-    { id: 'visao',     label: 'Visão geral'          },
-    { id: 'estrutura', label: 'Estrutura de capital' },
-    { id: 'evolucao',  label: 'Evolução'             },
-    { id: 'alertas',   label: 'Alertas', badge: qtdAlertas > 0 ? qtdAlertas : undefined },
+    { id: 'visao',      label: 'Visão geral'          },
+    { id: 'estrutura',  label: 'Estrutura de capital' },
+    { id: 'evolucao',   label: 'Evolução'             },
+    { id: 'cruzamento', label: 'Cruzamento ECF×EFD'   },
+    { id: 'alertas',    label: 'Alertas', badge: qtdAlertas > 0 ? qtdAlertas : undefined },
   ];
 
   return (
@@ -333,6 +335,10 @@ export function AnaliseCreditoDashboard() {
                       : <p className="text-sm text-muted-foreground">Nenhum dado disponível.</p>
                     }
                   </div>
+                )}
+
+                {tab === 'cruzamento' && (
+                  <CruzamentoReceita cnpj={cnpjSelecionado} />
                 )}
 
                 {tab === 'alertas' && (

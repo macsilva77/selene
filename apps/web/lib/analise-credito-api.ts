@@ -124,6 +124,28 @@ export interface KpiAnual {
   dividaFinanceira:  string | null;
 }
 
+export type CruzamentoFlag =
+  | 'CONSISTENTE'
+  | 'SUBDECLARACAO'
+  | 'DIVERGENCIA'
+  | 'SERVICO'
+  | 'SEM_DADOS';
+
+export interface CruzamentoAno {
+  ano:        number;
+  receitaEcf: number;
+  vendasEfd:  number;
+  mesesEfd:   number;
+  ratio:      number | null; // vendasEfd / receitaEcf
+  flag:       CruzamentoFlag;
+}
+
+export interface CruzamentoReceita {
+  cnpj:        string;
+  razaoSocial: string;
+  anos:        CruzamentoAno[];
+}
+
 /* ─── API calls ──────────────────────────────────────────────────────────── */
 
 export const analiseCreditoApi = {
@@ -174,6 +196,10 @@ export const analiseCreditoApi = {
   /** KPIs primários para todos os exercícios disponíveis */
   kpisAnuais: (cnpj: string) =>
     api.get<KpiAnual[]>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/kpis-anuais`).then(r => r.data),
+
+  /** Cruzamento Receita ECF × Faturamento EFD por ano (qualidade de dado / risco) */
+  cruzamentoReceita: (cnpj: string) =>
+    api.get<CruzamentoReceita>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/cruzamento-receita`).then(r => r.data),
 
   /**
    * Lê ECF Parquet → calcula indicadores, DRE, estrutura → salva → roda alertas.

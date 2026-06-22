@@ -90,6 +90,22 @@ export interface FaturamentoCfopsConsolidado {
   anos:      FaturamentoCfopsAno[];
 }
 
+/* ─── LTM (últimos 12 meses) + carga tributária ──────────────────────────── */
+
+export interface FaturamentoLtm {
+  empresaId:           string;
+  cnpj:                string;
+  nome:                string;
+  meses:               number;        // quantos meses entraram (≤ 12)
+  periodoInicio:       string | null; // 'AAAA-MM'
+  periodoFim:          string | null;
+  vlFaturamentoBruto:  number;
+  vlImpostos:          number;        // ICMS + IPI + PIS + COFINS
+  cargaTributaria:     number | null; // impostos / bruto (null se bruto = 0)
+  vlVendasMercadoria:  number;        // bruto − devoluções − transferências − remessas
+  vlFatLiquido:        number;        // bruto − impostos − devoluções
+}
+
 /* ─── Empresa ────────────────────────────────────────────────────────────── */
 
 export interface EmpresaFaturamento {
@@ -164,6 +180,13 @@ export const faturamentoApi = {
     fonte?:     string;
   }): Promise<FaturamentoCfopsConsolidado> {
     return api.get('/faturamento/cfops-consolidado', { params }).then(r => r.data);
+  },
+
+  /** Faturamento dos últimos 12 meses (LTM) + carga tributária efetiva. */
+  ltm(params: { empresaId: string; fonte?: string }): Promise<FaturamentoLtm> {
+    return api.get('/faturamento/ltm', {
+      params: { empresaId: params.empresaId, fonte: params.fonte ?? 'EFD_ICMS' },
+    }).then(r => r.data);
   },
 
   listarEmpresas(): Promise<EmpresaFaturamento[]> {

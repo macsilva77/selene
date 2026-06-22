@@ -18,6 +18,7 @@ import {
   faturamentoApi,
   type FaturamentoCfopsConsolidado,
   type FaturamentoCfopsAno,
+  type FaturamentoLtm,
   type EmpresaFaturamento,
 } from '@/lib/faturamento-api';
 
@@ -315,6 +316,7 @@ export default function FaturamentoDashboardPage() {
   const [viewMode, setViewMode]             = useState<'anual' | 'mensal'>('anual');
   const [dadosMensal, setDadosMensal]       = useState<MensalPonto[] | null>(null);
   const [carregandoMensal, setCarregandoMensal] = useState(false);
+  const [ltm, setLtm]                       = useState<FaturamentoLtm | null>(null);
 
   useEffect(() => {
     faturamentoApi.listarEmpresas()
@@ -339,6 +341,14 @@ export default function FaturamentoDashboardPage() {
   }, [empresaId, fonte, anoInicio, anoFim]);
 
   useEffect(() => { if (empresaId) buscar(); }, [empresaId, buscar]);
+
+  // LTM (últimos 12 meses) + carga tributária — independe do range de anos
+  useEffect(() => {
+    if (!empresaId) { setLtm(null); return; }
+    faturamentoApi.ltm({ empresaId, fonte })
+      .then(setLtm)
+      .catch(() => setLtm(null));
+  }, [empresaId, fonte]);
 
   useEffect(() => {
     if (viewMode !== 'mensal' || !dados) return;
@@ -488,6 +498,36 @@ export default function FaturamentoDashboardPage() {
           <KpiCard label="Compras totais"        value={fmtMilhoes(totais.compras)} sub={fmtBrl(totais.compras)} />
           <KpiCard label="Devoluções"            value={fmtMilhoes(totais.dev)}    sub={`${((totais.dev / (totais.fat || 1)) * 100).toFixed(1)}% do fat.`} />
           <KpiCard label="Faturamento líquido"   value={fmtMilhoes(totais.liquido)} sub={fmtBrl(totais.liquido)} />
+        </div>
+      )}
+
+      {/* LTM — últimos 12 meses + carga tributária efetiva */}
+      {ltm && ltm.meses > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Últimos 12 meses (LTM)
+            {ltm.periodoInicio && ltm.periodoFim && (
+              <span className="ml-2 font-normal normal-case text-muted-foreground/70">
+                {ltm.periodoInicio} a {ltm.periodoFim} · {ltm.meses} {ltm.meses === 1 ? 'mês' : 'meses'}
+              </span>
+            )}
+          </p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <KpiCard label="Faturamento bruto LTM"  value={fmtMilhoes(ltm.vlFaturamentoBruto)} sub={fmtBrl(ltm.vlFaturamentoBruto)} />
+            <Card className="border-primary/40 bg-primary/5">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground mb-1">Carga tributária efetiva</p>
+                <p className="text-lg font-semibold tabular-nums leading-tight text-primary">
+                  {ltm.cargaTributaria == null ? '—' : fmtPct(ltm.cargaTributaria)}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {fmtBrl(ltm.vlImpostos)} de impostos
+                </p>
+              </CardContent>
+            </Card>
+            <KpiCard label="Vendas de mercadoria LTM" value={fmtMilhoes(ltm.vlVendasMercadoria)} sub={fmtBrl(ltm.vlVendasMercadoria)} />
+            <KpiCard label="Faturamento líquido LTM"  value={fmtMilhoes(ltm.vlFatLiquido)}       sub={fmtBrl(ltm.vlFatLiquido)} />
+          </div>
         </div>
       )}
 
