@@ -24,6 +24,7 @@ import {
   UsersThreeIcon,
   ArrowsClockwiseIcon,
   StorefrontIcon,
+  ProhibitIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -70,6 +71,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Análise Fiscal',
     items: [
       { href: '/faturamento',                         icon: ChartBarIcon,        label: 'Faturamento' },
+      { href: '/documentos-cancelados',               icon: ProhibitIcon,        label: 'Documentos Cancelados' },
       { href: '/clientes-fornecedores',               icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
       { href: '/clientes-fornecedores/processamento', icon: ArrowsClockwiseIcon, label: 'Processamento CF' },
     ],

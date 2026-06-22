@@ -31,6 +31,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
 import { FaturamentoProcessamentoService } from './faturamento-processamento.service';
 import { FaturamentoQueryService } from './faturamento-query.service';
+import { FaturamentoCanceladosService } from './faturamento-cancelados.service';
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ export class FaturamentoController {
   constructor(
     private readonly processamento: FaturamentoProcessamentoService,
     private readonly query: FaturamentoQueryService,
+    private readonly cancelados: FaturamentoCanceladosService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -380,6 +382,21 @@ export class FaturamentoController {
     });
 
     return { empresaId: empresa.id, cnpj: empresa.cnpj, nome: empresa.nome, fonte, anoInicio, anoFim, anos };
+  }
+
+  /**
+   * Documentos fiscais CANCELADOS (re-parse on-demand do EFD ICMS, cache 1h).
+   * Dashboard de risco: taxa de cancelamento, extemporâneos, % do faturado.
+   */
+  @Get('cancelados')
+  @ApiOperation({ summary: 'Documentos fiscais cancelados (EFD ICMS) — análise de risco' })
+  @RequiresPermission('faturamento:visualizar')
+  async getCancelados(
+    @Query() q: ConsolidadoQueryDto,
+    @CurrentUser() user: { tenantId: string },
+  ) {
+    if (!q.empresaId) throw new BadRequestException('empresaId é obrigatório');
+    return this.cancelados.cancelados(user.tenantId, q.empresaId);
   }
 }
 

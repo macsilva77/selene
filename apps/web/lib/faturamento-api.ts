@@ -106,6 +106,54 @@ export interface FaturamentoLtm {
   vlFatLiquido:        number;        // bruto − impostos − devoluções
 }
 
+/* ─── Documentos cancelados (EFD ICMS) ───────────────────────────────────── */
+
+export interface DocCancelado {
+  competencia:  string;        // AAAA-MM
+  tipo:         'NFe' | 'SAT';
+  indOper:      '0' | '1';     // 0=entrada, 1=saída
+  modelo:       string;
+  serie:        string;
+  numDoc:       string;
+  chave:        string;
+  dtDoc:        string;        // DDMMAAAA
+  codPart:      string;
+  vlDoc:        number;
+  codSit:       string;        // '02' cancelado, '03' extemporâneo
+  extemporaneo: boolean;
+}
+
+export interface CanceladosPorAno {
+  ano:               number;
+  qtd:               number;
+  qtdSaidas:         number;
+  qtdExtemporaneos:  number;
+  taxaQtd:           number | null; // saídas canceladas / (válidas + canceladas)
+  taxaValor:         number | null;
+  valorFaturado:     number | null;
+}
+
+export interface CanceladosResumo {
+  qtd:              number;
+  qtdSaidas:        number;
+  qtdEntradas:      number;
+  qtdExtemporaneos: number;
+  qtdNFe:           number;
+  qtdSAT:           number;
+  valor:            number;
+}
+
+export interface CanceladosResposta {
+  empresaId:   string;
+  cnpj:        string;
+  nome:        string;
+  resumo:      CanceladosResumo;
+  porAno:      CanceladosPorAno[];
+  serieMensal: { competencia: string; qtd: number; valor: number }[];
+  totalDocs:   number;
+  docs:        DocCancelado[];
+}
+
 /* ─── Empresa ────────────────────────────────────────────────────────────── */
 
 export interface EmpresaFaturamento {
@@ -187,6 +235,12 @@ export const faturamentoApi = {
     return api.get('/faturamento/ltm', {
       params: { empresaId: params.empresaId, fonte: params.fonte ?? 'EFD_ICMS' },
     }).then(r => r.data);
+  },
+
+  /** Documentos fiscais cancelados (re-parse on-demand do EFD ICMS). */
+  cancelados(params: { empresaId: string }): Promise<CanceladosResposta> {
+    return api.get('/faturamento/cancelados', { params: { empresaId: params.empresaId } })
+      .then(r => r.data);
   },
 
   listarEmpresas(): Promise<EmpresaFaturamento[]> {
