@@ -269,28 +269,36 @@ export class AnaliseCreditoController {
     });
     if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
 
+    // A ECF é consolidada na matriz; o EFD ICMS é por estabelecimento (filial).
+    // Junta-se pela RAIZ do CNPJ (8 dígitos), somando todos os estabelecimentos,
+    // para comparar a receita company-wide (ECF) com as vendas de todas as filiais.
+    const raiz = cnpj.slice(0, 8);
     const [dreRows, efd] = await Promise.all([
       this.prisma.creditoDre.findMany({
         where:  { empresaId: empresa.id, linhaDre: 'receita_liquida' },
         select: { exercicio: true, valor: true },
       }),
-      // Faturamento é tabela distinta de creditoEmpresa; a junção é por (tenantId, cnpj),
-      // que é único em faturamento_competencias — logo _count = meses do ano.
+      // Agrupado por (ano, mes): cada linha soma as filiais daquele mês; depois
+      // dobramos por ano — meses = nº de meses cobertos (≤ 12), não nº de linhas.
       this.prisma.faturamentoCompetencia.groupBy({
-        by:     ['ano'],
-        where:  { tenantId, cnpj, fonte: 'EFD_ICMS' },
-        _sum:   { vlFaturamentoBruto: true, vlDevolucoes: true, vlTransferencias: true, vlRemessas: true },
-        _count: true,
+        by:    ['ano', 'mes'],
+        where: { tenantId, cnpj: { startsWith: raiz }, fonte: 'EFD_ICMS' },
+        _sum:  { vlFaturamentoBruto: true, vlDevolucoes: true, vlTransferencias: true, vlRemessas: true },
       }),
     ]);
 
     const recEcf = new Map(dreRows.map(d => [d.exercicio, Math.abs(Number(d.valor))]));
-    const efdMap = new Map(efd.map(r => [r.ano, {
-      // vendas de mercadoria, nunca negativo (ano com devoluções > saídas → 0)
-      vendas: Math.max(0, Number(r._sum.vlFaturamentoBruto ?? 0) - Number(r._sum.vlDevolucoes ?? 0)
-            - Number(r._sum.vlTransferencias ?? 0) - Number(r._sum.vlRemessas ?? 0)),
-      meses:  r._count,
-    }]));
+    const efdAcc = new Map<number, { vendas: number; meses: number }>();
+    for (const r of efd) {
+      const net = Number(r._sum.vlFaturamentoBruto ?? 0) - Number(r._sum.vlDevolucoes ?? 0)
+                - Number(r._sum.vlTransferencias ?? 0) - Number(r._sum.vlRemessas ?? 0);
+      const cur = efdAcc.get(r.ano) ?? { vendas: 0, meses: 0 };
+      cur.vendas += net;
+      cur.meses  += 1;
+      efdAcc.set(r.ano, cur);
+    }
+    // vendas de mercadoria, nunca negativo (ano com devoluções > saídas → 0)
+    const efdMap = new Map([...efdAcc].map(([ano, v]) => [ano, { vendas: Math.max(0, v.vendas), meses: v.meses }]));
 
     const anos = [...new Set([...recEcf.keys(), ...efdMap.keys()])].sort((a, b) => a - b);
     const resultado: CruzamentoAno[] = anos.map(ano => {
