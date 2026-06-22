@@ -62,33 +62,28 @@ export class FaturamentoCanceladosService {
 
     const t0 = Date.now();
     const docs: DocCancelado[] = [];
+    // Base da taxa vem do MESMO re-parse (saídas próprias válidas por ano), sem
+    // cruzar com faturamento_competencias — garante que cancelados e base saem do
+    // mesmo conjunto de arquivos (consistência total).
+    const faturadoPorAno = new Map<number, FaturadoAno>();
     for (const arq of arquivos) {
       if (!arq.caminhoBucket) continue;
       try {
-        const lista = await this.comRetry(async () => {
+        const res = await this.comRetry(async () => {
           const { stream } = await this.gcs.openStream(arq.caminhoBucket);
           return parseEfdIcmsCancelados(stream);
         });
-        docs.push(...lista);
+        docs.push(...res.docs);
+        const ano = Number.parseInt(res.competencia.slice(0, 4), 10);
+        if (ano) {
+          const cur = faturadoPorAno.get(ano) ?? { valor: 0, qtd: 0 };
+          cur.qtd += res.validasSaida;
+          faturadoPorAno.set(ano, cur);
+        }
       } catch (err) {
         this.logger.warn(`Falha ao ler ${arq.caminhoBucket}: ${String(err)}`);
       }
     }
-
-    // Base das taxas de cancelamento: por ano, somatório de documentos VÁLIDOS de
-    // saída (qtdDocumentos) e faturamento bruto. ⚠ usar _sum.qtdDocumentos — NÃO
-    // _count (que contaria competências/meses, inflando a taxa absurdamente).
-    const fatRows = await this.prisma.faturamentoCompetencia.groupBy({
-      by:    ['ano'],
-      where: { tenantId, empresaId, fonte: 'EFD_ICMS' },
-      _sum:  { vlFaturamentoBruto: true, qtdDocumentos: true },
-    });
-    const faturadoPorAno = new Map<number, FaturadoAno>(
-      fatRows.map(r => [r.ano, {
-        valor: Number(r._sum.vlFaturamentoBruto ?? 0),
-        qtd:   Number(r._sum.qtdDocumentos ?? 0),
-      }]),
-    );
 
     const agregado = agregarCancelados(docs, faturadoPorAno);
     const detalhe = [...docs].sort((a, b) => b.vlDoc - a.vlDoc).slice(0, MAX_DOCS_DETALHE);

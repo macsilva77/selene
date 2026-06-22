@@ -19,6 +19,8 @@ import { extrairCompetencia } from './efd-icms-ipi-faturamento.parser';
 
 // COD_SIT de cancelamento: 02=cancelado, 03=cancelado extemporâneo.
 const COD_SIT_CANCELADO = new Set(['02', '03']);
+// COD_SIT válido: 00=regular, 01=extemporâneo. Base da taxa de cancelamento.
+const COD_SIT_VALIDO = new Set(['00', '01']);
 
 const IDX_0000  = { DT_INI: 4 } as const;
 // |C100|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|DT_DOC|DT_E_S|VL_DOC|
@@ -40,6 +42,13 @@ export interface DocCancelado {
   vlDoc:         number;
   codSit:        string;          // '02' | '03'
   extemporaneo:  boolean;         // codSit === '03'
+}
+
+/** Resultado de um arquivo EFD: cancelados + base de válidos (mesma fonte → taxa consistente). */
+export interface CanceladosArquivo {
+  competencia:   string;          // AAAA-MM do arquivo
+  docs:          DocCancelado[];   // cancelados de emissão própria
+  validasSaida:  number;          // docs VÁLIDOS de saída própria (base da taxa)
 }
 
 /** C100 cancelado de EMISSÃO PRÓPRIA (IND_EMIT=0). Retorna null se não se aplica. */
@@ -84,10 +93,26 @@ function lerC800Cancelado(f: string[], competencia: string): DocCancelado | null
   };
 }
 
-/** Lê um EFD ICMS e retorna apenas os documentos cancelados de emissão própria. */
-export async function parseEfdIcmsCancelados(stream: Readable): Promise<DocCancelado[]> {
+/** É saída própria VÁLIDA? (base da taxa) — C100 IND_EMIT=0/IND_OPER=1 ou C800 SAT. */
+function ehValidaSaida(reg: string, f: string[]): boolean {
+  if (reg === 'C100') {
+    return (f[IDX_C100.IND_EMIT] ?? '') === '0'
+        && (f[IDX_C100.IND_OPER] ?? '') === '1'
+        && COD_SIT_VALIDO.has(f[IDX_C100.COD_SIT] ?? '');
+  }
+  if (reg === 'C800') return COD_SIT_VALIDO.has(f[IDX_C800.COD_SIT] ?? ''); // SAT = saída própria
+  return false;
+}
+
+/**
+ * Lê um EFD ICMS e retorna os cancelados de emissão própria + a contagem de
+ * saídas próprias VÁLIDAS (base da taxa), tudo da mesma leitura para garantir
+ * consistência (cancelados e base do mesmo conjunto de arquivos).
+ */
+export async function parseEfdIcmsCancelados(stream: Readable): Promise<CanceladosArquivo> {
   const docs: DocCancelado[] = [];
   let competencia = '';
+  let validasSaida = 0;
 
   for await (const raw of iterLinesStream(stream)) {
     const f = raw.split('|');
@@ -98,11 +123,13 @@ export async function parseEfdIcmsCancelados(stream: Readable): Promise<DocCance
     } else if (reg === 'C100') {
       const d = lerC100Cancelado(f, competencia);
       if (d) docs.push(d);
+      else if (ehValidaSaida('C100', f)) validasSaida += 1;
     } else if (reg === 'C800') {
       const d = lerC800Cancelado(f, competencia);
       if (d) docs.push(d);
+      else if (ehValidaSaida('C800', f)) validasSaida += 1;
     }
   }
 
-  return docs;
+  return { competencia, docs, validasSaida };
 }
