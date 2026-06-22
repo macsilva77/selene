@@ -438,7 +438,7 @@ export default function FaturamentoDashboardPage() {
                   {empresas.length === 0 && <option value="">Nenhuma empresa</option>}
                   {empresas.map(e => (
                     <option key={e.id} value={e.id}>
-                      {e.nomeFantasia ?? e.nome} — {maskCnpj(e.cnpj.padStart(14, '0'))}
+                      {maskCnpj(e.cnpj.padStart(14, '0'))} — {e.nome || e.nomeFantasia || 'Sem razão social'}
                     </option>
                   ))}
                 </select>
