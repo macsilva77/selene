@@ -276,7 +276,7 @@ export class AnaliseCreditoController {
       }),
       this.prisma.faturamentoCompetencia.groupBy({
         by:     ['ano'],
-        where:  { cnpj, fonte: 'EFD_ICMS' },
+        where:  { tenantId, cnpj, fonte: 'EFD_ICMS' },
         _sum:   { vlFaturamentoBruto: true, vlDevolucoes: true, vlTransferencias: true, vlRemessas: true },
         _count: true,
       }),
