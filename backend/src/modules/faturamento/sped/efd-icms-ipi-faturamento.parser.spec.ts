@@ -69,8 +69,8 @@ function linhaCupom(reg: 'C490' | 'C850', cfop: string, vlOpr: string, vlIcms: s
 }
 
 /** |C800|COD_MOD|COD_SIT|NUM_CFE|DT_DOC|VL_CFE|... — só conta como documento. */
-function linhaC800(vlCfe: string): string {
-  return `|C800|65|00|000001|01012024|${vlCfe}|0|0|0|0|`;
+function linhaC800(vlCfe: string, codSit = '00'): string {
+  return `|C800|65|${codSit}|000001|01012024|${vlCfe}|0|0|0|0|`;
 }
 
 /** |C405|DT_DOC|CRO|CRZ|NUM_COO_FIN|GT_FIN|VL_BRT| — só conta como documento. */
@@ -405,6 +405,16 @@ describe('parseEfdIcmsIpiFaturamento — cupom fiscal C490/C850', () => {
     ]));
     expect(r.qtdDocumentos).toBe(3);              // 2×C800 + 1×C405
     expect(r.vlFaturamentoBruto).toBeCloseTo(80, 2); // valor vem só do analítico C850
+  });
+
+  it('C800 cancelado (COD_SIT=02/03) não conta como documento', async () => {
+    const r = await parseEfdIcmsIpiFaturamento(stream([
+      linha0000('01012024', 'Posto Cancel', '66666666000166'),
+      linhaC800('50,00'),          // regular
+      linhaC800('30,00', '02'),     // cancelado
+      linhaC800('20,00', '03'),     // cancelado extemporâneo
+    ]));
+    expect(r.qtdDocumentos).toBe(1);
   });
 });
 

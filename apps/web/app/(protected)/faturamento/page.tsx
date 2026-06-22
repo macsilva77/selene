@@ -345,9 +345,11 @@ export default function FaturamentoDashboardPage() {
   // LTM (últimos 12 meses) + carga tributária — independe do range de anos
   useEffect(() => {
     if (!empresaId) { setLtm(null); return; }
+    let ativo = true;
     faturamentoApi.ltm({ empresaId, fonte })
-      .then(setLtm)
-      .catch(() => setLtm(null));
+      .then(r => { if (ativo) setLtm(r); })
+      .catch(() => { if (ativo) setLtm(null); });
+    return () => { ativo = false; };
   }, [empresaId, fonte]);
 
   useEffect(() => {

@@ -57,6 +57,8 @@ const IDX_C100 = { IND_OPER: 2, COD_SIT: 6, VL_DOC: 12, VL_IPI: 25, VL_PIS: 26, 
 const IDX_C190 = { CFOP: 3, VL_OPR: 5, VL_ICMS: 7 } as const;
 // C490 (ECF) e C850 (SAT) compartilham a mesma estrutura analítica do C190.
 const IDX_CUPOM = { CFOP: 3, VL_OPR: 5, VL_ICMS: 7 } as const;
+// C800 (CF-e SAT) — documento individual; COD_SIT 00=regular, 02/03=cancelado.
+const IDX_C800 = { COD_SIT: 3 } as const;
 
 // ─── Estado mutável durante o parse ──────────────────────────────────────────
 
@@ -151,7 +153,10 @@ export async function parseEfdIcmsIpiFaturamento(stream: Readable): Promise<Fato
     else if (reg === 'C100') processarC100(fields, s);
     else if (reg === 'C190') processarC190(fields, s);
     else if (reg === 'C490' || reg === 'C850') processarCupomAnalitico(fields, s);
-    else if (reg === 'C405' || reg === 'C800') s.qtdDocumentos += 1; // documento de cupom
+    else if (reg === 'C405') s.qtdDocumentos += 1; // Redução Z do ECF (total diário)
+    else if (reg === 'C800' && VALID_COD_SIT.has(fields[IDX_C800.COD_SIT] ?? '')) {
+      s.qtdDocumentos += 1; // CF-e SAT regular (cancelados 02/03 não contam)
+    }
   }
 
   const cfops: FatoCfop[] = [...s.cfopMap.entries()]

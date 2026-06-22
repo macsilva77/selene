@@ -47,12 +47,14 @@ export function CruzamentoReceita({ cnpj }: Readonly<{ cnpj: string }>) {
 
   useEffect(() => {
     if (!cnpj) return;
+    let ativo = true;
     setCarregando(true);
     setErro(false);
     analiseCreditoApi.cruzamentoReceita(cnpj)
-      .then(setDados)
-      .catch(() => setErro(true))
-      .finally(() => setCarregando(false));
+      .then(d => { if (ativo) setDados(d); })
+      .catch(() => { if (ativo) setErro(true); })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
   }, [cnpj]);
 
   if (carregando) {

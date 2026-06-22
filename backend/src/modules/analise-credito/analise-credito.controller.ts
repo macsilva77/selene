@@ -274,6 +274,8 @@ export class AnaliseCreditoController {
         where:  { empresaId: empresa.id, linhaDre: 'receita_liquida' },
         select: { exercicio: true, valor: true },
       }),
+      // Faturamento é tabela distinta de creditoEmpresa; a junção é por (tenantId, cnpj),
+      // que é único em faturamento_competencias — logo _count = meses do ano.
       this.prisma.faturamentoCompetencia.groupBy({
         by:     ['ano'],
         where:  { tenantId, cnpj, fonte: 'EFD_ICMS' },
@@ -284,8 +286,9 @@ export class AnaliseCreditoController {
 
     const recEcf = new Map(dreRows.map(d => [d.exercicio, Math.abs(Number(d.valor))]));
     const efdMap = new Map(efd.map(r => [r.ano, {
-      vendas: Number(r._sum.vlFaturamentoBruto ?? 0) - Number(r._sum.vlDevolucoes ?? 0)
-            - Number(r._sum.vlTransferencias ?? 0) - Number(r._sum.vlRemessas ?? 0),
+      // vendas de mercadoria, nunca negativo (ano com devoluções > saídas → 0)
+      vendas: Math.max(0, Number(r._sum.vlFaturamentoBruto ?? 0) - Number(r._sum.vlDevolucoes ?? 0)
+            - Number(r._sum.vlTransferencias ?? 0) - Number(r._sum.vlRemessas ?? 0)),
       meses:  r._count,
     }]));
 

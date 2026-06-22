@@ -233,6 +233,9 @@ export class FaturamentoQueryService {
     const cached = await this.cache.get<FaturamentoLtm>(ck);
     if (cached) return cached;
 
+    // LTM = janela dos 12 meses anteriores à última competência (contígua).
+    // Evita "esticar" o período quando há furos de competência: meses < 12 nesse
+    // caso reflete honestamente a cobertura, em vez de pegar 12 linhas espalhadas.
     const rows = await this.prisma.$queryRaw<{ ano: number; mes: number; bruto: number; icms: number; ipi: number; pis: number; cofins: number; dev: number; transf: number; rem: number }[]>(
       Prisma.sql`
         SELECT ano, mes,
@@ -241,8 +244,11 @@ export class FaturamentoQueryService {
           vl_transferencias::float8 AS transf, vl_remessas::float8 AS rem
         FROM faturamento_competencias
         WHERE tenant_id = ${params.tenantId} AND empresa_id = ${params.empresaId} AND fonte = ${fonte}
+          AND (ano * 12 + mes) > (
+            SELECT MAX(ano * 12 + mes) - 12 FROM faturamento_competencias
+            WHERE tenant_id = ${params.tenantId} AND empresa_id = ${params.empresaId} AND fonte = ${fonte}
+          )
         ORDER BY ano DESC, mes DESC
-        LIMIT 12
       `,
     );
 
