@@ -31,7 +31,7 @@ import {
 import { getSessionUser, clearSession } from '@/lib/session';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type NavItem = { href: string; icon: React.ComponentType<any>; label: string; soon?: boolean };
+type NavItem = { href?: string; icon: React.ComponentType<any>; label: string; soon?: boolean; children?: NavItem[] };
 type NavSection = { id: string; label: string; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -59,16 +59,16 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '#',                      icon: ReceiptIcon,             label: 'NFS-e', soon: true },
       { href: '#',                      icon: TruckIcon,               label: 'CT-e',  soon: true },
       { href: '/documentos-cancelados', icon: ProhibitIcon,            label: 'Documentos Fiscais Cancelados' },
-    ],
-  },
-  {
-    id: 'obrigacoes',
-    label: 'Obrigações Acessórias',
-    items: [
-      { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
-      { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
-      { href: '/obrigacoes-acessorias/efd-icms-ipi',      icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
-      { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
+      {
+        icon: FilesIcon,
+        label: 'Obrigações Acessórias',
+        children: [
+          { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
+          { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
+          { href: '/obrigacoes-acessorias/efd-icms-ipi',      icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
+          { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
+        ],
+      },
     ],
   },
   {
@@ -99,6 +99,7 @@ export function SeleneSidebar() {
   const router = useRouter();
   const [usuario, setUsuario] = useState<{ nome?: string } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [subCollapsed, setSubCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setUsuario(getSessionUser());
@@ -123,6 +124,86 @@ export function SeleneSidebar() {
   const toggleSection = (id: string) =>
     setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  const toggleSub = (id: string) =>
+    setSubCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  // Ativo considerando filhos (submenu)
+  const itemActive = (item: NavItem): boolean =>
+    (item.href ? isActive(item.href) : false) || (item.children?.some(itemActive) ?? false);
+
+  const renderNavItem = (item: NavItem, nested = false): React.ReactNode => {
+    const { href, icon: Icon, label, soon, children } = item;
+    const indent = nested ? '' : 'ml-1';
+
+    // Submenu (grupo aninhado, expansível)
+    if (children && children.length > 0) {
+      const open = !subCollapsed[label];
+      const active = children.some(itemActive);
+      return (
+        <div key={label}>
+          <button
+            type="button"
+            onClick={() => toggleSub(label)}
+            className={[
+              'w-full flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-colors ml-1',
+              active
+                ? 'text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground/55 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+            ].join(' ')}
+          >
+            <Icon size={15} weight={active ? 'fill' : 'regular'} />
+            <span className="truncate">{label}</span>
+            <CaretDownIcon
+              size={10}
+              className={`ml-auto shrink-0 transition-transform duration-200 ${open ? '' : '-rotate-90'}`}
+            />
+          </button>
+          {open && (
+            <div className="mt-0.5 space-y-0.5 ml-4 border-l border-sidebar-border/60 pl-1">
+              {children.map((c) => renderNavItem(c, true))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Item em construção (desativado, com selo)
+    if (soon) {
+      return (
+        <div
+          key={label}
+          title="Em construção"
+          aria-disabled="true"
+          className={`flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium ${indent} text-sidebar-foreground/35 cursor-not-allowed select-none`}
+        >
+          <Icon size={15} weight="regular" />
+          <span className="truncate">{label}</span>
+          <span className="ml-auto shrink-0 rounded-sm bg-sidebar-foreground/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/45">
+            Construção
+          </span>
+        </div>
+      );
+    }
+
+    // Item normal (link)
+    const active = href ? isActive(href) : false;
+    return (
+      <Link
+        key={href}
+        href={href ?? '#'}
+        className={[
+          `flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-colors ${indent}`,
+          active
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground/55 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+        ].join(' ')}
+      >
+        <Icon size={15} weight={active ? 'fill' : 'regular'} />
+        <span className="truncate">{label}</span>
+      </Link>
+    );
+  };
+
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col bg-sidebar border-r border-sidebar-border text-sidebar-foreground">
 
@@ -136,7 +217,7 @@ export function SeleneSidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2">
         {NAV_SECTIONS.map((section) => {
           const isOpen = !collapsed[section.id];
-          const hasActive = section.items.some((i) => isActive(i.href));
+          const hasActive = section.items.some(itemActive);
           return (
             <div key={section.id} className="mb-2">
               {/* Section header — clicável para colapsar */}
@@ -160,40 +241,7 @@ export function SeleneSidebar() {
               {/* Items */}
               {isOpen && (
                 <div className="mt-0.5 space-y-0.5">
-                  {section.items.map(({ href, icon: Icon, label, soon }) => {
-                    if (soon) {
-                      return (
-                        <div
-                          key={label}
-                          title="Em construção"
-                          aria-disabled="true"
-                          className="flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium ml-1 text-sidebar-foreground/35 cursor-not-allowed select-none"
-                        >
-                          <Icon size={15} weight="regular" />
-                          <span className="truncate">{label}</span>
-                          <span className="ml-auto shrink-0 rounded-sm bg-sidebar-foreground/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/45">
-                            Construção
-                          </span>
-                        </div>
-                      );
-                    }
-                    const active = isActive(href);
-                    return (
-                      <Link
-                        key={href}
-                        href={href}
-                        className={[
-                          'flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium transition-colors ml-1',
-                          active
-                            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                            : 'text-sidebar-foreground/55 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
-                        ].join(' ')}
-                      >
-                        <Icon size={15} weight={active ? 'fill' : 'regular'} />
-                        <span className="truncate">{label}</span>
-                      </Link>
-                    );
-                  })}
+                  {section.items.map((item) => renderNavItem(item))}
                 </div>
               )}
             </div>
