@@ -7,7 +7,8 @@ import { CaretRightIcon, MagnifyingGlassIcon, XIcon } from '@phosphor-icons/reac
 
 // ── Mapa de rotas → breadcrumb ─────────────────────────────────────────────────
 const ROUTE_MAP: Record<string, { label: string; section: string }> = {
-  '/dfe/documentos':                          { label: 'NF-e',                        section: 'Documentos Eletrônicos' },
+  '/dfe/documentos':                          { label: 'NF-e',                        section: 'Documentos' },
+  '/documentos-cancelados':                   { label: 'Documentos Fiscais Cancelados', section: 'Documentos' },
   '/obrigacoes-acessorias/efd-icms-ipi':      { label: 'EFD ICMS/IPI',                section: 'Obrigações Acessórias'  },
   '/obrigacoes-acessorias/ecd':               { label: 'ECD',                         section: 'Obrigações Acessórias'  },
   '/obrigacoes-acessorias/ecf':               { label: 'ECF',                         section: 'Obrigações Acessórias'  },
@@ -28,7 +29,8 @@ const ROUTE_MAP: Record<string, { label: string; section: string }> = {
 
 // ── Lista plana para pesquisa rápida ───────────────────────────────────────────
 const ALL_NAV_ITEMS = [
-  { href: '/dfe/documentos',                          label: 'NF-e',                     group: 'Documentos Eletrônicos' },
+  { href: '/dfe/documentos',                          label: 'NF-e',                     group: 'Documentos' },
+  { href: '/documentos-cancelados',                   label: 'Documentos Fiscais Cancelados', group: 'Documentos' },
   { href: '/obrigacoes-acessorias/efd-icms-ipi',      label: 'EFD ICMS/IPI',             group: 'Obrigações Acessórias'  },
   { href: '/obrigacoes-acessorias/ecd',               label: 'ECD',                      group: 'Obrigações Acessórias'  },
   { href: '/obrigacoes-acessorias/ecf',               label: 'ECF',                      group: 'Obrigações Acessórias'  },

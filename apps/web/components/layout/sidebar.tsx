@@ -62,6 +62,16 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    id: 'obrigacoes',
+    label: 'Obrigações Acessórias',
+    items: [
+      { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
+      { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
+      { href: '/obrigacoes-acessorias/efd-icms-ipi',      icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
+      { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
+    ],
+  },
+  {
     id: 'analise-credito',
     label: 'Análise de Crédito',
     items: [
@@ -80,16 +90,6 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/faturamento',                         icon: ChartBarIcon,        label: 'Faturamento' },
       { href: '/clientes-fornecedores',               icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
       { href: '/clientes-fornecedores/processamento', icon: ArrowsClockwiseIcon, label: 'Processamento CF' },
-    ],
-  },
-  {
-    id: 'obrigacoes',
-    label: 'Obrigações Acessórias',
-    items: [
-      { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
-      { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
-      { href: '/obrigacoes-acessorias/efd-icms-ipi',      icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
-      { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
     ],
   },
 ];
