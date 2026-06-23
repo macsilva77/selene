@@ -26,11 +26,12 @@ import {
   StorefrontIcon,
   ProhibitIcon,
   FlowArrowIcon,
+  GaugeIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type NavItem = { href: string; icon: React.ComponentType<any>; label: string };
+type NavItem = { href: string; icon: React.ComponentType<any>; label: string; soon?: boolean };
 type NavSection = { id: string; label: string; items: NavItem[] };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -52,15 +53,19 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     id: 'documentos',
-    label: 'Documentos Eletrônicos',
+    label: 'Documentos',
     items: [
-      { href: '/dfe/documentos', icon: FileMagnifyingGlassIcon, label: 'NF-e' },
+      { href: '/dfe/documentos',        icon: FileMagnifyingGlassIcon, label: 'NF-e' },
+      { href: '#',                      icon: ReceiptIcon,             label: 'NFS-e', soon: true },
+      { href: '#',                      icon: TruckIcon,               label: 'CT-e',  soon: true },
+      { href: '/documentos-cancelados', icon: ProhibitIcon,            label: 'Documentos Fiscais Cancelados' },
     ],
   },
   {
     id: 'analise-credito',
     label: 'Análise de Crédito',
     items: [
+      { href: '/visao-geral',                    icon: GaugeIcon,     label: 'Visão Geral' },
       { href: '/analise-credito',                icon: ChartLineIcon, label: 'Dashboard' },
       { href: '/analise-credito/demonstracoes',  icon: FilesIcon,     label: 'Demonstrações Financeiras' },
       { href: '/analise-credito/regras',         icon: SlidersIcon,   label: 'Regras de Crédito' },
@@ -73,7 +78,6 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/cadeia-suprimento',                   icon: FlowArrowIcon,       label: 'Cadeia de Suprimento' },
       { href: '/faturamento',                         icon: ChartBarIcon,        label: 'Faturamento' },
-      { href: '/documentos-cancelados',               icon: ProhibitIcon,        label: 'Documentos Cancelados' },
       { href: '/clientes-fornecedores',               icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
       { href: '/clientes-fornecedores/processamento', icon: ArrowsClockwiseIcon, label: 'Processamento CF' },
     ],
@@ -84,8 +88,8 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/obrigacoes-acessorias/ecd',               icon: ReceiptIcon, label: 'ECD' },
       { href: '/obrigacoes-acessorias/ecf',               icon: ReceiptIcon, label: 'ECF' },
-      { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
       { href: '/obrigacoes-acessorias/efd-icms-ipi',      icon: ReceiptIcon, label: 'EFD ICMS/IPI' },
+      { href: '/obrigacoes-acessorias/efd-contribuicoes', icon: ReceiptIcon, label: 'EFD Contribuições' },
     ],
   },
 ];
@@ -156,7 +160,23 @@ export function SeleneSidebar() {
               {/* Items */}
               {isOpen && (
                 <div className="mt-0.5 space-y-0.5">
-                  {section.items.map(({ href, icon: Icon, label }) => {
+                  {section.items.map(({ href, icon: Icon, label, soon }) => {
+                    if (soon) {
+                      return (
+                        <div
+                          key={label}
+                          title="Em construção"
+                          aria-disabled="true"
+                          className="flex items-center gap-2.5 rounded-md px-3 py-[7px] text-sm font-medium ml-1 text-sidebar-foreground/35 cursor-not-allowed select-none"
+                        >
+                          <Icon size={15} weight="regular" />
+                          <span className="truncate">{label}</span>
+                          <span className="ml-auto shrink-0 rounded-sm bg-sidebar-foreground/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sidebar-foreground/45">
+                            Construção
+                          </span>
+                        </div>
+                      );
+                    }
                     const active = isActive(href);
                     return (
                       <Link
