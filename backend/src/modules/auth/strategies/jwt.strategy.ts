@@ -30,6 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     role: string;
     tenantId: string;
     jti?: string;
+    iat?: number;
   }) {
     // Rejeita token revogado via logout
     if (payload.jti) {
@@ -39,11 +40,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     const user = await this.prisma.usuario.findFirst({
       where: { id: payload.sub, ativo: true },
-      select: { id: true, email: true, role: true, tenantId: true, ativo: true },
+      select: { id: true, email: true, role: true, tenantId: true, ativo: true, senhaAlteradaEm: true },
     });
 
     if (!user) {
       throw new UnauthorizedException('Usuário não encontrado ou inativo');
+    }
+
+    // Revoga tokens emitidos antes da última troca de senha (reset). iat em
+    // segundos; senhaAlteradaEm em ms. Tokens novos (login pós-reset) têm
+    // iat posterior e passam normalmente.
+    if (user.senhaAlteradaEm && payload.iat != null
+        && payload.iat * 1000 < user.senhaAlteradaEm.getTime()) {
+      throw new UnauthorizedException('Sessão expirada por redefinição de senha');
     }
 
     return { sub: user.id, email: user.email, role: user.role, tenantId: user.tenantId, jti: payload.jti };

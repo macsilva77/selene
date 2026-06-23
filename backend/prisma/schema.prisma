@@ -77,6 +77,7 @@ model Usuario {
   tenantId               String                  @map("tenant_id")
   resetToken             String?                 @map("reset_token")
   resetTokenExpiry       DateTime?               @map("reset_token_expiry")
+  senhaAlteradaEm        DateTime?               @map("senha_alterada_em")
   cpf                    String?
   telefone               String?
   cep                    String?

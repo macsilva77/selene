@@ -43,6 +43,10 @@ export class PasswordResetService {
         ativo: true,
         resetToken: null,
         resetTokenExpiry: null,
+        // Invalida quaisquer access/refresh tokens emitidos antes da troca de
+        // senha (cenário de conta comprometida): o JwtStrategy rejeita tokens
+        // com iat anterior a este instante.
+        senhaAlteradaEm: new Date(),
       },
     });
 
@@ -50,19 +54,31 @@ export class PasswordResetService {
   }
 
   async esqueceuSenha(email: string, tenantSlug?: string) {
+    // Resposta de tempo constante: dispara o processamento em background e
+    // retorna a mesma mensagem imediatamente, independentemente de o e-mail
+    // existir ou não. Evita enumeração de usuários por timing (a busca no
+    // banco + envio de e-mail só ocorrem quando o usuário existe e não devem
+    // refletir no tempo de resposta).
+    void this.processarResetSenha(email, tenantSlug).catch((err: Error) =>
+      this.logger.warn(`Falha no fluxo de reset para ${email}: ${err.message}`),
+    );
+
+    return { message: 'Se o e-mail existir, você receberá um link em breve.' };
+  }
+
+  private async processarResetSenha(email: string, tenantSlug?: string): Promise<void> {
     const where: { email: string; tenant?: { slug: string } } = { email };
     if (tenantSlug) where.tenant = { slug: tenantSlug };
 
+    // Sem tenantSlug, só prossegue se o e-mail identifica um único usuário
+    // (evita disparar reset ambíguo entre organizações).
     if (!tenantSlug) {
       const matches = await this.prisma.usuario.count({ where });
-      if (matches !== 1) {
-        return { message: 'Se o e-mail existir, você receberá um link em breve.' };
-      }
+      if (matches !== 1) return;
     }
 
     const user = await this.prisma.usuario.findFirst({ where });
-
-    if (!user) return { message: 'Se o e-mail existir, você receberá um link em breve.' };
+    if (!user) return;
 
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -81,7 +97,5 @@ export class PasswordResetService {
     } catch {
       this.logger.warn(`Falha ao enviar e-mail de reset para ${email}`);
     }
-
-    return { message: 'Se o e-mail existir, você receberá um link em breve.' };
   }
 }
