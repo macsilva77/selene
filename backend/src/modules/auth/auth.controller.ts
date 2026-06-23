@@ -210,6 +210,7 @@ export class AuthController {
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @ApiOperation({ summary: 'Solicitar link de redefinição de senha' })
   esqueceuSenha(@Body() dto: ForgotPasswordDto) {
     return this.passwordService.esqueceuSenha(dto.email, dto.tenantSlug);
@@ -218,6 +219,7 @@ export class AuthController {
   @Public()
   @Post('set-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Definir senha via token de primeiro acesso' })
   definirSenha(@Body() dto: SetPasswordDto) {
     return this.passwordService.definirSenha(dto);

@@ -56,7 +56,7 @@ export class AuthenticationService {
           },
         }),
       ]);
-      throw new UnauthorizedException('E-mail não cadastrado no sistema.');
+      throw new UnauthorizedException('E-mail ou senha inválidos.');
     }
 
     if (!user.ativo) {
@@ -86,7 +86,7 @@ export class AuthenticationService {
           },
         }),
       ]);
-      throw new UnauthorizedException('Senha incorreta. Verifique e tente novamente.');
+      throw new UnauthorizedException('E-mail ou senha inválidos.');
     }
 
     await this.blacklistService.clearLoginFailures(dto.email, dto.tenantSlug);
