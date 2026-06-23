@@ -263,26 +263,40 @@ export default function VisaoGeralPage() {
   const saude = empresaSel?.ultimaClassificacao ? calcularSaude(empresaSel.ultimaClassificacao) : null;
   const cls   = empresaSel?.ultimaClassificacao ?? null;
 
-  const ebitdaMedioMes = ebitda !== null ? ebitda / 12 : null;
+  // Custo fixo operacional do ECF = lucro bruto − EBITDA (despesas operacionais, excl. depreciação).
+  const opexFixoAnual = lucroBruto !== null && ebitda !== null ? lucroBruto - ebitda : null;
 
   const dadosMensal = useMemo(() => {
     const porMes = new Map(anual?.mensal.map(m => [m.mes, m]) ?? []);
-    return Array.from({ length: 12 }, (_, i) => {
+    const base = Array.from({ length: 12 }, (_, i) => {
       const m = porMes.get(i + 1);
       const receita = m?.vlFaturamentoBruto ?? 0;
       const impostos = (m?.vlIcms ?? 0) + (m?.vlIpi ?? 0) + (m?.vlPis ?? 0) + (m?.vlCofins ?? 0);
       const compras = m?.vlComprasBruto ?? 0;
+      const recLiq = Math.max(0, receita - impostos);
       return {
         label: MESES[i],
         receita,
-        ebitdaEst: margemEbitda !== null ? receita * margemEbitda : 0,
         impostos,
+        recLiq,
         margemFiscal: receita > 0 ? (receita - compras - impostos) / receita : 0,
       };
     });
-  }, [anual, margemEbitda]);
+    // EBITDA inferido (bottom-up): parte variável = lucro bruto do mês (recLiq × margem bruta ECF);
+    // parte fixa = opex do ECF ÷ meses com movimento (constante). Logo NÃO é proporcional à receita.
+    const ativos = base.filter(b => b.receita > 0).length || 1;
+    const fixoMes = opexFixoAnual !== null ? opexFixoAnual / ativos : null;
+    return base.map(b => ({
+      ...b,
+      ebitdaEst: b.receita > 0 && margemBruta !== null && fixoMes !== null
+        ? b.recLiq * margemBruta - fixoMes
+        : 0,
+    }));
+  }, [anual, margemBruta, opexFixoAnual]);
 
   const temMensal = dadosMensal.some(d => d.receita > 0);
+  const mesesComMovimento = dadosMensal.filter(d => d.receita > 0).length || 1;
+  const ebitdaMedioMes = ebitda !== null ? ebitda / mesesComMovimento : null;
 
   // Variação da margem operacional fiscal: 1º semestre × 2º semestre
   const semestre = useMemo(() => {
@@ -311,8 +325,8 @@ export default function VisaoGeralPage() {
   );
 
   const CFG_MENSAL: ChartConfig = {
-    receita:   { label: 'Receita',          color: COR_RECEITA },
-    ebitdaEst: { label: 'EBITDA estimado',   color: COR_EBITDA },
+    receita:   { label: 'Receita',         color: COR_RECEITA },
+    ebitdaEst: { label: 'EBITDA inferido',  color: COR_EBITDA },
   };
   const CFG_FISCAL: ChartConfig = {
     impostos:     { label: 'Impostos',              color: COR_IMPOSTO },
@@ -430,7 +444,7 @@ export default function VisaoGeralPage() {
             Receita mensal <span className="font-normal text-muted-foreground">(EFD · {exercicio ?? '—'})</span>
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Receita = mercadorias + serviços (EFD ICMS/IPI + Contribuições). EBITDA estimado = margem EBITDA do ECF aplicada à receita do mês <em>(estimativa)</em>; linha cinza = EBITDA médio mensal do último ECF.
+            Receita = mercadorias + serviços (EFD ICMS/IPI + Contribuições). <strong>EBITDA inferido</strong> = lucro bruto do mês (receita líq. × margem bruta do ECF) − custo fixo mensal (despesas operacionais do ECF ÷ meses com movimento) <em>(estimativa bottom-up)</em>; linha cinza = EBITDA médio por mês. Custo fixo não encolhe em meses fracos.
           </p>
         </CardHeader>
         <CardContent className="pt-0">
@@ -459,6 +473,36 @@ export default function VisaoGeralPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Texto explicativo do cálculo */}
+      <details className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-medium text-foreground/90 flex items-center gap-1.5 select-none">
+          <InfoIcon size={15} className="text-muted-foreground" /> Como o EBITDA mensal é calculado
+        </summary>
+        <div className="mt-3 space-y-2 text-muted-foreground">
+          <p>
+            A contabilidade (ECF) fecha o EBITDA <strong>anualmente</strong>. Aqui ele é <strong>inferido mês a mês</strong>,
+            combinando o movimento fiscal mensal (EFD) com a estrutura de custo do último ECF — sem misturar contas que não pertencem ao mês.
+          </p>
+          <p>
+            <strong>1. Parte variável (do EFD, varia a cada mês):</strong> receita líquida do mês = receita
+            (mercadorias no EFD ICMS/IPI + serviços no EFD Contribuições) − impostos sobre vendas (ICMS+IPI+PIS+COFINS).
+            O lucro bruto do mês = receita líquida × <strong>margem bruta do ECF</strong>.
+          </p>
+          <p>
+            <strong>2. Parte fixa (do ECF, constante):</strong> as despesas operacionais = <strong>lucro bruto − EBITDA</strong> (anual, do ECF),
+            divididas pelos <strong>meses com movimento</strong>. Esse custo fixo é o mesmo todo mês.
+          </p>
+          <p className="font-mono text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground/80">
+            EBITDA do mês = (receita líq. do mês × margem bruta ECF) − (despesas fixas ÷ meses com movimento)
+          </p>
+          <p>
+            Como o custo fixo <strong>não encolhe</strong> em meses fracos, o EBITDA pode ficar <strong>negativo</strong> nesses meses — isso é proposital
+            e mostra quando a operação não cobre a estrutura. A soma dos meses reconcilia com o EBITDA anual do ECF (a menos da
+            diferença natural entre a receita declarada no EFD e no ECF). É uma <strong>estimativa de gestão</strong>, não substitui a apuração contábil.
+          </p>
+        </div>
+      </details>
 
       {/* Insight de variação semestral da margem (rodapé estilo mockup) */}
       {!carregando && semestre && (
