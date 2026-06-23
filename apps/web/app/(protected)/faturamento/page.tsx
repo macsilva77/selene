@@ -22,7 +22,7 @@ import {
   type EmpresaFaturamento,
 } from '@/lib/faturamento-api';
 
-type MensalPonto = { label: string; vlFaturamentoBruto: number; vlComprasBruto: number };
+type MensalPonto = { label: string; mes: number; ano: number; vlFaturamentoBruto: number; vlComprasBruto: number };
 
 /* ─── Formatação ─────────────────────────────────────────────────────────── */
 
@@ -114,8 +114,33 @@ const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov'
 function anualParaMensalPontos(r: { ano: number; mensal: { mes: number; vlFaturamentoBruto: number; vlComprasBruto: number }[] }): MensalPonto[] {
   return r.mensal.map(m => ({
     label:              `${MESES[m.mes - 1] ?? m.mes}/${String(r.ano).slice(2)}`,
+    mes:                m.mes,
+    ano:                r.ano,
     vlFaturamentoBruto: m.vlFaturamentoBruto,
     vlComprasBruto:     m.vlComprasBruto,
+  }));
+}
+
+/* ─── Pivot sazonal: agrupa por mês, uma série por ano ───────────────────── */
+
+const ANO_CORES = ['#3B5BDB', '#37B24D', '#F59F00', '#E03131', '#1098AD', '#7950F2', '#F06595', '#0CA678', '#4263EB', '#FA5252'];
+
+type SazonalRow = { mes: string } & Record<string, number | string>;
+
+function pivotSazonal(
+  pontos: MensalPonto[],
+  metric: 'vlFaturamentoBruto' | 'vlComprasBruto',
+): SazonalRow[] {
+  const porMes = new Map<number, Record<string, number>>();
+  for (const p of pontos) {
+    const linha = porMes.get(p.mes) ?? {};
+    const chave = String(p.ano);
+    linha[chave] = (linha[chave] ?? 0) + p[metric];
+    porMes.set(p.mes, linha);
+  }
+  return Array.from({ length: 12 }, (_, i) => i + 1).map(mes => ({
+    mes: MESES[mes - 1] ?? String(mes),
+    ...(porMes.get(mes) ?? {}),
   }));
 }
 
@@ -189,6 +214,47 @@ function PainelComparado({
           <Line yAxisId="right" type="monotone" dataKey="vlDevolucoes" name="vlDevolucoes" stroke="#E03131" strokeWidth={2} dot={{ r: 4, fill: '#E03131' }} activeDot={{ r: 5 }} />
         )}
       </ComposedChart>
+    </ChartContainer>
+  );
+}
+
+/* ─── Painel sazonal: barras agrupadas por mês, uma série por ano ────────── */
+
+function PainelSazonal({
+  pontos,
+  anos,
+  metric,
+}: Readonly<{
+  pontos: MensalPonto[];
+  anos: number[];
+  metric: 'vlFaturamentoBruto' | 'vlComprasBruto';
+}>) {
+  if (pontos.length === 0) return <EmptyChart />;
+
+  const data = pivotSazonal(pontos, metric);
+  const config: ChartConfig = Object.fromEntries(
+    anos.map((ano, i) => [String(ano), { label: String(ano), color: ANO_CORES[i % ANO_CORES.length] }]),
+  );
+
+  return (
+    <ChartContainer config={config} className="h-72 w-full">
+      <BarChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+        <XAxis dataKey="mes" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+        <YAxis tickFormatter={yTickMilhoes} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} width={90} />
+        <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => config[k]?.label ?? k} />
+        {anos.map((ano, i) => (
+          <Bar
+            key={ano}
+            dataKey={String(ano)}
+            name={String(ano)}
+            fill={ANO_CORES[i % ANO_CORES.length]}
+            radius={[2, 2, 0, 0]}
+            maxBarSize={22}
+          />
+        ))}
+      </BarChart>
     </ChartContainer>
   );
 }
@@ -313,7 +379,7 @@ export default function FaturamentoDashboardPage() {
   const [carregando, setCarregando]         = useState(false);
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
   const [loadingProcessar, setLoadingProcessar] = useState(false);
-  const [viewMode, setViewMode]             = useState<'anual' | 'mensal'>('anual');
+  const [viewMode, setViewMode]             = useState<'anual' | 'mensal' | 'sazonal'>('anual');
   const [dadosMensal, setDadosMensal]       = useState<MensalPonto[] | null>(null);
   const [carregandoMensal, setCarregandoMensal] = useState(false);
   const [ltm, setLtm]                       = useState<FaturamentoLtm | null>(null);
@@ -353,7 +419,7 @@ export default function FaturamentoDashboardPage() {
   }, [empresaId, fonte]);
 
   useEffect(() => {
-    if (viewMode !== 'mensal' || !dados) return;
+    if ((viewMode !== 'mensal' && viewMode !== 'sazonal') || !dados) return;
     setCarregandoMensal(true);
     const anos = Array.from({ length: anoFim - anoInicio + 1 }, (_, i) => anoInicio + i);
     Promise.all(anos.map(ano => faturamentoApi.anual({ cnpj: dados.cnpj, ano, fonte })))
@@ -536,7 +602,7 @@ export default function FaturamentoDashboardPage() {
       {/* Toggle Anual / Mensal */}
       {(dados || carregando) && (
         <div className="flex gap-1 rounded-lg border border-input bg-muted p-0.5 w-fit">
-          {(['anual', 'mensal'] as const).map(m => (
+          {(['anual', 'mensal', 'sazonal'] as const).map(m => (
             <button
               key={m}
               type="button"
@@ -547,7 +613,11 @@ export default function FaturamentoDashboardPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {m === 'anual' ? 'Anual' : anoInicio === anoFim ? `Mensal (${anoFim})` : `Mensal (${anoInicio}–${anoFim})`}
+              {m === 'anual'
+                ? 'Anual'
+                : m === 'sazonal'
+                  ? 'Sazonal'
+                  : anoInicio === anoFim ? `Mensal (${anoFim})` : `Mensal (${anoInicio}–${anoFim})`}
             </button>
           ))}
         </div>
@@ -620,7 +690,7 @@ export default function FaturamentoDashboardPage() {
             </div>
           )}
         </>
-      ) : (
+      ) : viewMode === 'mensal' ? (
         <>
           {/* Painéis mensais — Fat. Bruto + Compras lado a lado */}
           {carregandoMensal ? (
@@ -668,6 +738,42 @@ export default function FaturamentoDashboardPage() {
                 />
               </CardContent>
             </Card>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Painéis sazonais — comparação do mesmo mês entre anos */}
+          {carregandoMensal ? (
+            <div className="grid grid-cols-1 gap-5"><PanelSkeleton /><PanelSkeleton /></div>
+          ) : dadosMensal && (
+            <>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Faturamento Bruto por mês — comparativo {anoInicio}–{anoFim}</CardTitle>
+                  <p className="text-xs text-muted-foreground">Cada barra é um ano; meses lado a lado para comparar a sazonalidade.</p>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <PainelSazonal
+                    pontos={dadosMensal}
+                    anos={Array.from({ length: anoFim - anoInicio + 1 }, (_, i) => anoInicio + i)}
+                    metric="vlFaturamentoBruto"
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Compras por mês — comparativo {anoInicio}–{anoFim}</CardTitle>
+                  <p className="text-xs text-muted-foreground">Cada barra é um ano; meses lado a lado para comparar a sazonalidade.</p>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <PainelSazonal
+                    pontos={dadosMensal}
+                    anos={Array.from({ length: anoFim - anoInicio + 1 }, (_, i) => anoInicio + i)}
+                    metric="vlComprasBruto"
+                  />
+                </CardContent>
+              </Card>
+            </>
           )}
         </>
       )}
