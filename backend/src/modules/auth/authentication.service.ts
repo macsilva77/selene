@@ -30,6 +30,12 @@ export class AuthenticationService {
       );
     }
 
+    if (await this.blacklistService.isIpLocked(ip)) {
+      throw new UnauthorizedException(
+        'Muitas tentativas a partir deste endereço. Tente novamente em 15 minutos.',
+      );
+    }
+
     const user = await this.prisma.usuario.findFirst({
       where: {
         email: dto.email,
@@ -45,6 +51,7 @@ export class AuthenticationService {
     if (!user) {
       await Promise.all([
         this.blacklistService.trackFailedLogin(dto.email, dto.tenantSlug),
+        this.blacklistService.trackFailedLoginIp(ip),
         this.prisma.auditLog.create({
           data: {
             entidadeTipo: 'Usuario',
@@ -73,6 +80,7 @@ export class AuthenticationService {
     if (!senhaValida) {
       await Promise.all([
         this.blacklistService.trackFailedLogin(dto.email, dto.tenantSlug),
+        this.blacklistService.trackFailedLoginIp(ip),
         this.prisma.auditLog.create({
           data: {
             tenantId:     user.tenantId,

@@ -24,6 +24,8 @@ const mockBlacklist = {
   isBlacklisted: jest.fn().mockResolvedValue(false),
   trackFailedLogin: jest.fn().mockResolvedValue(undefined),
   isLoginLocked: jest.fn().mockResolvedValue(false),
+  trackFailedLoginIp: jest.fn().mockResolvedValue(undefined),
+  isIpLocked: jest.fn().mockResolvedValue(false),
   clearLoginFailures: jest.fn().mockResolvedValue(undefined),
 };
 
