@@ -69,6 +69,7 @@ function yTickMilhoes(v: number): string {
 }
 
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const ANO_CORRENTE = new Date().getFullYear();
 
 /* ─── Regime tributário ──────────────────────────────────────────────────── */
 
@@ -203,8 +204,14 @@ export default function VisaoGeralPage() {
   const [exercicio, setExercicio] = useState<number | null>(null);
   const [dre, setDre]             = useState<Record<string, string | null> | null>(null);
   const [alertas, setAlertas]     = useState<Alerta[]>([]);
-  const [anual, setAnual]         = useState<FaturamentoAnual | null>(null);
   const [kpisAnuais, setKpisAnuais] = useState<KpiAnual[]>([]);
+
+  // Mensal (EFD) — ano desacoplado do exercício do ECF (o EFD pode estar em outro ano)
+  const [anoMensal, setAnoMensal]   = useState<number | null>(null);
+  const [anosMensal, setAnosMensal] = useState<number[]>([]);
+  const [anualCache, setAnualCache] = useState<Record<number, FaturamentoAnual | null>>({});
+
+  const anual = anoMensal !== null ? (anualCache[anoMensal] ?? null) : null;
 
   const empresaSel = useMemo(() => empresas.find(e => e.cnpj === cnpj) ?? null, [empresas, cnpj]);
 
@@ -222,23 +229,39 @@ export default function VisaoGeralPage() {
   const buscar = useCallback(async () => {
     if (!cnpj) return;
     setCarregando(true);
-    setDre(null); setAlertas([]); setAnual(null); setKpisAnuais([]);
+    setDre(null); setAlertas([]); setKpisAnuais([]); setAnualCache({}); setAnoMensal(null); setAnosMensal([]);
     try {
       const exers = await analiseCreditoApi.exercicios(cnpj).catch(() => [] as number[]);
       const exer = exers.length ? Math.max(...exers) : null;
       setExercicio(exer);
 
-      const [rFin, rAlertas, rAnual, rKpis] = await Promise.allSettled([
+      // Anos candidatos p/ o gráfico mensal — o EFD pode não coincidir com o exercício do ECF
+      const base = exer ?? ANO_CORRENTE;
+      const candidatos = [...new Set([base, base - 1, base - 2, ANO_CORRENTE, ANO_CORRENTE - 1])]
+        .filter(a => a >= 2018 && a <= ANO_CORRENTE + 1)
+        .sort((a, b) => b - a);
+
+      const [rFin, rAlertas, rKpis, ...rAnuais] = await Promise.allSettled([
         exer ? analiseCreditoApi.financeiro(cnpj, exer) : Promise.resolve(null),
         exer ? analiseCreditoApi.alertas(cnpj, exer)    : Promise.resolve([] as Alerta[]),
-        exer ? faturamentoApi.anual({ cnpj, ano: exer, fonte: 'AMBOS' }) : Promise.resolve(null),
         analiseCreditoApi.kpisAnuais(cnpj),
+        ...candidatos.map(ano => faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS' })),
       ]);
 
       setDre(rFin.status === 'fulfilled' && rFin.value ? rFin.value.dre : null);
       setAlertas(rAlertas.status === 'fulfilled' ? rAlertas.value : []);
-      setAnual(rAnual.status === 'fulfilled' ? rAnual.value : null);
       setKpisAnuais(rKpis.status === 'fulfilled' ? rKpis.value : []);
+
+      const cache: Record<number, FaturamentoAnual | null> = {};
+      candidatos.forEach((ano, i) => {
+        const r = rAnuais[i];
+        cache[ano] = r && r.status === 'fulfilled' ? r.value : null;
+      });
+      setAnualCache(cache);
+      setAnosMensal(candidatos);
+      // Default: ano mais recente com receita; senão o exercício/base
+      const comDados = candidatos.find(a => (cache[a]?.mensal ?? []).some(m => m.vlFaturamentoBruto > 0));
+      setAnoMensal(comDados ?? base);
     } catch {
       toastError('Erro ao carregar a visão geral da empresa.');
     } finally {
@@ -246,6 +269,18 @@ export default function VisaoGeralPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cnpj]);
+
+  // Troca de ano do gráfico mensal (busca sob demanda + cache)
+  const trocarAnoMensal = useCallback(async (ano: number) => {
+    setAnoMensal(ano);
+    if (anualCache[ano] !== undefined) return;
+    try {
+      const r = await faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS' });
+      setAnualCache(prev => ({ ...prev, [ano]: r }));
+    } catch {
+      setAnualCache(prev => ({ ...prev, [ano]: null }));
+    }
+  }, [cnpj, anualCache]);
 
   useEffect(() => { if (cnpj) buscar(); }, [cnpj, buscar]);
 
@@ -265,6 +300,8 @@ export default function VisaoGeralPage() {
 
   // Custo fixo operacional do ECF = lucro bruto − EBITDA (despesas operacionais, excl. depreciação).
   const opexFixoAnual = lucroBruto !== null && ebitda !== null ? lucroBruto - ebitda : null;
+  // EBITDA inferido só é possível com margem bruta do ECF (ausente no Lucro Presumido simplificado).
+  const temEbitdaInferido = margemBruta !== null && opexFixoAnual !== null;
 
   const dadosMensal = useMemo(() => {
     const porMes = new Map(anual?.mensal.map(m => [m.mes, m]) ?? []);
@@ -412,7 +449,7 @@ export default function VisaoGeralPage() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <KpiCard label="Faturamento" value={fmtMilhoes(receitaLiquida)} sub={exercicio ? `Receita líquida · ECF ${exercicio}` : 'Sem ECF'} accent={COR_RECEITA} />
           <KpiCard label="EBITDA" value={fmtMilhoes(ebitda)} sub={margemEbitda !== null ? `Margem EBITDA ${fmtPct(margemEbitda)}` : 'Sem dados'} accent={COR_EBITDA} />
-          <KpiCard label="Margem bruta" value={fmtPct(margemBruta)} sub={lucroBruto !== null ? `Lucro bruto ${fmtMilhoes(lucroBruto)}` : 'Sem dados'} accent="#1098AD" />
+          <KpiCard label="Margem bruta" value={fmtPct(margemBruta)} sub={lucroBruto !== null ? `Lucro bruto ${fmtMilhoes(lucroBruto)}` : (empresaSel?.regimeTributario === 'lucro_presumido' ? 'ECF presumido não detalha CMV' : 'Sem dados')} accent="#1098AD" />
           <KpiCard label="Margem líq." value={fmtPct(margemLiquida)} sub={lucroLiquido !== null ? `Lucro líquido ${fmtMilhoes(lucroLiquido)}` : 'Sem dados'} accent={margemLiquida !== null && margemLiquida < 0 ? COR_SAUDE.vermelho : COR_SAUDE.amarelo} />
           {saude && cls ? (
             <KpiCard
@@ -440,11 +477,28 @@ export default function VisaoGeralPage() {
       {/* Receita mensal + EBITDA estimado */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold">
-            Receita mensal <span className="font-normal text-muted-foreground">(EFD · {exercicio ?? '—'})</span>
-          </CardTitle>
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle className="text-sm font-semibold">
+              Receita mensal <span className="font-normal text-muted-foreground">(EFD · {anoMensal ?? '—'})</span>
+            </CardTitle>
+            {anosMensal.length > 0 && (
+              <select
+                aria-label="Ano do gráfico mensal"
+                className="rounded-md border border-input bg-background px-2 py-1 text-xs no-print"
+                value={anoMensal ?? ''}
+                onChange={e => trocarAnoMensal(Number(e.target.value))}
+              >
+                {anosMensal.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
-            Receita = mercadorias + serviços (EFD ICMS/IPI + Contribuições). <strong>EBITDA inferido</strong> = lucro bruto do mês (receita líq. × margem bruta do ECF) − custo fixo mensal (despesas operacionais do ECF ÷ meses com movimento) <em>(estimativa bottom-up)</em>; linha cinza = EBITDA médio por mês. Custo fixo não encolhe em meses fracos.
+            Receita = mercadorias + serviços (EFD ICMS/IPI + Contribuições).{' '}
+            {temEbitdaInferido ? (
+              <><strong>EBITDA inferido</strong> = lucro bruto do mês (receita líq. × margem bruta do ECF) − custo fixo mensal (despesas operacionais do ECF ÷ meses com movimento) <em>(estimativa bottom-up)</em>; linha cinza = EBITDA médio por mês. Custo fixo não encolhe em meses fracos.</>
+            ) : (
+              <>O ECF de {exercicio ?? 'do exercício'} não detalha custo/lucro bruto (comum no Lucro Presumido), então o EBITDA mensal inferido não é exibido — apenas a receita.</>
+            )}
           </p>
         </CardHeader>
         <CardContent className="pt-0">
@@ -459,16 +513,19 @@ export default function VisaoGeralPage() {
                 <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => CFG_MENSAL[k]?.label ?? k} />
                 <Bar dataKey="receita" name="receita" fill={COR_RECEITA} radius={[3,3,0,0]} maxBarSize={26} />
-                <Line type="monotone" dataKey="ebitdaEst" name="ebitdaEst" stroke={COR_EBITDA} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                {ebitdaMedioMes !== null && ebitdaMedioMes > 0 && (
+                {temEbitdaInferido && (
+                  <Line type="monotone" dataKey="ebitdaEst" name="ebitdaEst" stroke={COR_EBITDA} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                )}
+                {temEbitdaInferido && ebitdaMedioMes !== null && ebitdaMedioMes > 0 && (
                   <ReferenceLine y={ebitdaMedioMes} stroke={COR_REF} strokeDasharray="5 4" strokeWidth={1.5}
                     label={{ value: 'EBITDA médio/mês', position: 'insideTopRight', fontSize: 10, fill: COR_REF }} />
                 )}
               </ComposedChart>
             </ChartContainer>
           ) : (
-            <div className="h-72 flex items-center justify-center text-center text-sm text-muted-foreground border border-dashed border-border rounded-md px-6">
-              Sem movimentação EFD processada para {exercicio ?? 'o exercício'}. Processe o EFD ICMS/IPI + Contribuições em Faturamento.
+            <div className="h-40 flex items-center justify-center text-center text-sm text-muted-foreground border border-dashed border-border rounded-md px-6">
+              Sem movimentação EFD em {anoMensal ?? 'neste ano'}.{' '}
+              {anosMensal.length > 1 ? 'Tente outro ano no seletor acima.' : 'Processe o EFD ICMS/IPI + Contribuições em Faturamento.'}
             </div>
           )}
         </CardContent>
@@ -544,7 +601,7 @@ export default function VisaoGeralPage() {
                 </ComposedChart>
               </ChartContainer>
             ) : (
-              <div className="h-64 flex items-center justify-center text-sm text-muted-foreground border border-dashed border-border rounded-md">Sem dados mensais.</div>
+              <div className="h-40 flex items-center justify-center text-sm text-muted-foreground border border-dashed border-border rounded-md">Sem dados mensais em {anoMensal ?? 'neste ano'}.</div>
             )}
           </CardContent>
         </Card>
