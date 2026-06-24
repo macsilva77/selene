@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Legend, ReferenceLine,
+  ComposedChart, BarChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts';
 import {
   ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig,
@@ -319,21 +319,37 @@ export default function VisaoGeralPage() {
         margemFiscal: receita > 0 ? (receita - compras - impostos) / receita : 0,
       };
     });
-    // EBITDA inferido (bottom-up): parte variável = lucro bruto do mês (recLiq × margem bruta ECF);
-    // parte fixa = opex do ECF ÷ meses com movimento (constante). Logo NÃO é proporcional à receita.
     const ativos = base.filter(b => b.receita > 0).length || 1;
+    const somaRecLiq = base.reduce((s, b) => s + (b.receita > 0 ? b.recLiq : 0), 0);
+    // EBITDA inferido (bottom-up, Lucro Real): parte variável = lucro bruto do mês (recLiq × margem bruta ECF);
+    // parte fixa = opex do ECF ÷ meses com movimento (constante). NÃO é proporcional à receita.
     const fixoMes = opexFixoAnual !== null ? opexFixoAnual / ativos : null;
-    return base.map(b => ({
-      ...b,
-      ebitdaEst: b.receita > 0 && margemBruta !== null && fixoMes !== null
+    // Banda de incerteza (Lucro Presumido, sem CMV): faixa entre "tudo fixo" (piso) e "tudo variável" (teto).
+    // Os dois extremos somam o mesmo EBITDA; a verdade está dentro da faixa.
+    const custoFixoBanda = margemEbitda !== null ? (somaRecLiq * (1 - margemEbitda)) / ativos : null;
+    return base.map(b => {
+      const ebitdaEst = b.receita > 0 && margemBruta !== null && fixoMes !== null
         ? b.recLiq * margemBruta - fixoMes
-        : 0,
-    }));
-  }, [anual, margemBruta, opexFixoAnual]);
+        : 0;
+      let ebitdaBanda: [number, number] | undefined;
+      if (b.receita > 0 && margemEbitda !== null && custoFixoBanda !== null) {
+        const teto = b.recLiq * margemEbitda;     // tudo variável
+        const piso = b.recLiq - custoFixoBanda;   // tudo fixo
+        ebitdaBanda = [Math.min(piso, teto), Math.max(piso, teto)];
+      }
+      return { ...b, ebitdaEst, ebitdaBanda };
+    });
+  }, [anual, margemBruta, margemEbitda, opexFixoAnual]);
 
   const temMensal = dadosMensal.some(d => d.receita > 0);
   const mesesComMovimento = dadosMensal.filter(d => d.receita > 0).length || 1;
   const ebitdaMedioMes = ebitda !== null ? ebitda / mesesComMovimento : null;
+
+  // Faixa de EBITDA (presumido): quando não há margem bruta mas há EBITDA/margem EBITDA.
+  const temBanda = !temEbitdaInferido && margemEbitda !== null;
+  // Empresa tem EFD em algum ano candidato? Se não, colapsamos a visão mensal.
+  const temAlgumEfd = anosMensal.some(a => (anualCache[a]?.mensal ?? []).some(m => m.vlFaturamentoBruto > 0));
+  const mostrarMensal = carregando || temAlgumEfd;
 
   // Variação da margem operacional fiscal: 1º semestre × 2º semestre
   const semestre = useMemo(() => {
@@ -362,8 +378,9 @@ export default function VisaoGeralPage() {
   );
 
   const CFG_MENSAL: ChartConfig = {
-    receita:   { label: 'Receita',         color: COR_RECEITA },
-    ebitdaEst: { label: 'EBITDA inferido',  color: COR_EBITDA },
+    receita:     { label: 'Receita',         color: COR_RECEITA },
+    ebitdaEst:   { label: 'EBITDA inferido',  color: COR_EBITDA },
+    ebitdaBanda: { label: 'EBITDA (faixa)',   color: COR_EBITDA },
   };
   const CFG_FISCAL: ChartConfig = {
     impostos:     { label: 'Impostos',              color: COR_IMPOSTO },
@@ -474,6 +491,9 @@ export default function VisaoGeralPage() {
         </div>
       )}
 
+      {/* Visão mensal (EFD) — colapsa quando não há EFD em nenhum ano */}
+      {mostrarMensal && (<>
+
       {/* Receita mensal + EBITDA estimado */}
       <Card>
         <CardHeader className="pb-2">
@@ -496,8 +516,10 @@ export default function VisaoGeralPage() {
             Receita = mercadorias + serviços (EFD ICMS/IPI + Contribuições).{' '}
             {temEbitdaInferido ? (
               <><strong>EBITDA inferido</strong> = lucro bruto do mês (receita líq. × margem bruta do ECF) − custo fixo mensal (despesas operacionais do ECF ÷ meses com movimento) <em>(estimativa bottom-up)</em>; linha cinza = EBITDA médio por mês. Custo fixo não encolhe em meses fracos.</>
+            ) : temBanda ? (
+              <><strong>EBITDA inferido (faixa)</strong> — o ECF de {exercicio ?? 'do exercício'} não detalha custos (comum no Lucro Presumido), então não dá pra cravar a divisão fixo/variável. A faixa verde vai do cenário <em>tudo custo fixo</em> (piso, despenca em meses fracos) ao <em>tudo variável</em> (teto); o EBITDA real do mês está <strong>dentro</strong> dela, e os extremos somam o mesmo total anual.</>
             ) : (
-              <>O ECF de {exercicio ?? 'do exercício'} não detalha custo/lucro bruto (comum no Lucro Presumido), então o EBITDA mensal inferido não é exibido — apenas a receita.</>
+              <>O ECF de {exercicio ?? 'do exercício'} não traz EBITDA/margem para inferir a visão mensal — exibindo apenas a receita.</>
             )}
           </p>
         </CardHeader>
@@ -510,9 +532,12 @@ export default function VisaoGeralPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={yTickMilhoes} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} width={70} />
-                <ChartTooltip content={<ChartTooltipContent formatter={(v) => fmtBrl(Number(v))} labelFormatter={String} />} />
+                <ChartTooltip content={<ChartTooltipContent formatter={(v) => Array.isArray(v) ? `${fmtBrl(Number((v as number[])[0]))} – ${fmtBrl(Number((v as number[])[1]))}` : fmtBrl(Number(v))} labelFormatter={String} />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={(k) => CFG_MENSAL[k]?.label ?? k} />
                 <Bar dataKey="receita" name="receita" fill={COR_RECEITA} radius={[3,3,0,0]} maxBarSize={26} />
+                {temBanda && (
+                  <Area dataKey="ebitdaBanda" name="ebitdaBanda" stroke={COR_EBITDA} strokeOpacity={0.5} strokeWidth={1} fill={COR_EBITDA} fillOpacity={0.15} connectNulls />
+                )}
                 {temEbitdaInferido && (
                   <Line type="monotone" dataKey="ebitdaEst" name="ebitdaEst" stroke={COR_EBITDA} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                 )}
@@ -579,8 +604,19 @@ export default function VisaoGeralPage() {
         </div>
       )}
 
-      {/* Impostos + margem fiscal + evolução anual */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      </>)}
+
+      {/* Sem EFD em nenhum ano: foca no anual (ECF) */}
+      {!mostrarMensal && (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground flex items-start gap-2.5">
+          <InfoIcon size={16} className="mt-0.5 shrink-0" />
+          <p>Sem EFD ICMS/IPI processado para esta empresa — a visão mensal fica indisponível. Abaixo, o panorama anual da escrituração (ECF).</p>
+        </div>
+      )}
+
+      {/* Impostos (mensal) + evolução anual (ECF) */}
+      <div className={`grid grid-cols-1 gap-5 ${mostrarMensal ? 'lg:grid-cols-2' : ''}`}>
+        {mostrarMensal && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold">Impostos e margem operacional fiscal <span className="font-normal text-muted-foreground">(mensal)</span></CardTitle>
@@ -605,6 +641,7 @@ export default function VisaoGeralPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-2">
