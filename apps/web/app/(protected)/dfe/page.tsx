@@ -29,6 +29,7 @@ import { DataTable } from '@/components/ui/table';
 import { Modal } from '@/components/ui/modal';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
+import { useEmpresaSelecionada } from '@/lib/empresa-selecionada';
 
 /* ─────────────────────────────────────────────────────────────────── */
 /* Types                                                               */
@@ -770,6 +771,7 @@ export default function DfePage() {
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { toasts, success, error: toastError, dismiss } = useToast();
+  const { selecionarPorCnpj } = useEmpresaSelecionada();
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -1082,7 +1084,11 @@ export default function DfePage() {
             isLoading={loading}
             keyExtractor={(row) => row.id}
             emptyMessage={busca || filtroStatus !== 'todos' ? 'Nenhuma configuração encontrada.' : 'Nenhuma configuração DFe. Clique em "Nova Configuração" para começar.'}
-            onRowClick={(row) => { setSelectedId(selectedId === row.id ? null : row.id); }}
+            onRowClick={(row) => {
+              setSelectedId(selectedId === row.id ? null : row.id);
+              // Continuidade: ao selecionar uma empresa no NF-e, mantém o CNPJ ao navegar
+              selecionarPorCnpj(row.cnpj, row.nomeFantasia || row.nome);
+            }}
             rowClassName={(row) => selectedId === row.id ? 'bg-primary/5' : ''}
           />
         </div>

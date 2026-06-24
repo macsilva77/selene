@@ -23,6 +23,7 @@ import {
   type DrillDownRow,
   type TipoParticipante,
 } from '@/lib/clientes-fornecedores-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -310,6 +311,7 @@ function TabelaDrillDown({ rows }: { rows: DrillDownRow[] }) {
 
 export function ClientesFornecedoresDashboard() {
   const { toasts, error: toastError, success: toastSuccess, dismiss } = useToast();
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
 
   /* ── Empresas ── */
   const [empresas, setEmpresas]           = useState<EmpresaComSped[]>([]);
@@ -424,6 +426,17 @@ export function ClientesFornecedoresDashboard() {
       setCarregandoComp(false);
     }
   }, [toastError]);
+
+  // Continuidade: pré-seleciona a empresa global quando a lista carrega
+  useEffect(() => {
+    if (cnpj || empresas.length === 0) return;
+    const match = empresaGlobal ? empresas.find(e => mesmoCnpj(e.cnpj, empresaGlobal.cnpj)) : undefined;
+    if (match) {
+      setCnpj(match.cnpj);
+      void carregarCompetencias(match.cnpj);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresas]);
 
   const reprocessarSped = useCallback(async () => {
     if (reprocessando) return;
@@ -636,6 +649,7 @@ export function ClientesFornecedoresDashboard() {
                             className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj ? 'bg-primary/5 font-medium' : ''}`}
                             onClick={() => {
                               setCnpj(emp.cnpj);
+                              selecionarPorCnpj(emp.cnpj, emp.razaoSocial);
                               setEmpresaSearch('');
                               setEmpresaOpen(false);
                               void carregarCompetencias(emp.cnpj);

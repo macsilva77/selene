@@ -19,6 +19,7 @@ import {
   clientesFornecedoresApi,
   type RankingParticipanteRow,
 } from '@/lib/clientes-fornecedores-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 
 /* ─── Paleta ─────────────────────────────────────────────────────────────── */
 
@@ -173,6 +174,8 @@ function ListaConcentracao({
 export default function CadeiaSuprimentoPage() {
   const { toasts, error: toastError, dismiss } = useToast();
 
+  const { empresa: empresaGlobal, selecionar } = useEmpresaSelecionada();
+
   const [empresas, setEmpresas]   = useState<EmpresaFaturamento[]>([]);
   const [empresaId, setEmpresaId] = useState('');
   const [ano, setAno]             = useState(ANO_CORRENTE);
@@ -193,7 +196,12 @@ export default function CadeiaSuprimentoPage() {
     faturamentoApi.listarEmpresas()
       .then(list => {
         setEmpresas(list);
-        if (list.length > 0 && list[0]) setEmpresaId(list[0].id);
+        // Continuidade: prefere a empresa global (por id ou cnpj); senão, a primeira
+        const match = empresaGlobal
+          ? list.find(e => (empresaGlobal.id && e.id === empresaGlobal.id) || mesmoCnpj(e.cnpj, empresaGlobal.cnpj))
+          : undefined;
+        const alvo = match ?? list[0];
+        if (alvo) setEmpresaId(alvo.id);
       })
       .catch(() => toastError('Não foi possível carregar as empresas.'))
       .finally(() => setLoadingEmpresas(false));
@@ -293,7 +301,12 @@ export default function CadeiaSuprimentoPage() {
                   id="sel-empresa"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={empresaId}
-                  onChange={e => setEmpresaId(e.target.value)}
+                  onChange={e => {
+                    const id = e.target.value;
+                    setEmpresaId(id);
+                    const emp = empresas.find(x => x.id === id);
+                    if (emp) selecionar({ id: emp.id, cnpj: emp.cnpj, nome: emp.nome ?? emp.nomeFantasia ?? null });
+                  }}
                 >
                   {empresas.length === 0 && <option value="">Nenhuma empresa</option>}
                   {empresas.map(e => (

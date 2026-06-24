@@ -25,6 +25,7 @@ import {
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 /* ─────────────────────────────────────────────────────────────────── */
@@ -1493,6 +1494,7 @@ export default function DfeDocumentosPage() {
   const [etiquetasModalDocs, setEtiquetasModalDocs] = useState<DfeDocumento[] | null>(null);
   const [historicoDoc, setHistoricoDoc] = useState<DfeDocumento | null>(null);
   const { toasts, success: toastSuccess, error: toastError, dismiss } = useToast();
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
 
   useEffect(() => {
     api.get('/dfe/status').then((res) => {
@@ -1500,12 +1502,25 @@ export default function DfeDocumentosPage() {
       const items = data.map((c) => ({ id: c.id, cnpj: c.cnpj, nome: c.nome, nomeFantasia: c.nomeFantasia }));
       setConfigs(items);
       configsRef.current = items;
+      // Continuidade: pré-seleciona a empresa global, se houver config correspondente
+      if (empresaGlobal) {
+        const match = items.find((c) => mesmoCnpj(c.cnpj, empresaGlobal.cnpj));
+        if (match) setFilters((f) => (f.configId ? f : { ...f, configId: match.id }));
+      }
     }).catch(() => {});
     api.get('/etiquetas').then((res) => {
       const data = res.data as Etiqueta[];
       setEtiquetasLista(data);
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Continuidade: ao escolher uma empresa no filtro, propaga para o estado global
+  useEffect(() => {
+    if (!filters.configId) return;
+    const c = configs.find((x) => x.id === filters.configId);
+    if (c) selecionarPorCnpj(c.cnpj, c.nomeFantasia || c.nome);
+  }, [filters.configId, configs, selecionarPorCnpj]);
 
   const buscar = useCallback(async (f: Filters, p: number, t: TabId) => {
     setLoading(true);
