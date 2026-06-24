@@ -9,6 +9,7 @@ import {
   type EmpresaResumo,
   type DemonstracaoRow,
 } from '@/lib/analise-credito-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 
 type Aba = 'balanco' | 'dre';
 
@@ -87,6 +88,8 @@ function emptyMessage(cnpj: string, exercicio: number | null): string {
 }
 
 export function DemonstracoesFinanceiras() {
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
+
   const [empresas, setEmpresas]           = useState<EmpresaResumo[]>([]);
   const [cnpj, setCnpj]                   = useState('');
   const [exercicios, setExercicios]       = useState<number[]>([]);
@@ -111,8 +114,12 @@ export function DemonstracoesFinanceiras() {
   useEffect(() => {
     analiseCreditoApi.listarEmpresas().then(data => {
       setEmpresas(data);
-      if (data.length > 0) setCnpj(data[0].cnpj);
+      // Continuidade: prefere a empresa global; senão, a primeira da lista
+      const match = empresaGlobal ? data.find(e => mesmoCnpj(e.cnpj, empresaGlobal.cnpj)) : undefined;
+      const alvo = match ?? data[0];
+      if (alvo) setCnpj(alvo.cnpj);
     }).catch(() => setErro('Erro ao carregar empresas'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -201,7 +208,14 @@ export function DemonstracoesFinanceiras() {
           <label className="block text-xs text-slate-500 mb-1">Empresa</label>
           <select
             value={cnpj}
-            onChange={e => setCnpj(e.target.value)}
+            onChange={e => {
+              const novo = e.target.value;
+              setCnpj(novo);
+              if (novo) {
+                const emp = empresas.find(x => x.cnpj === novo);
+                selecionarPorCnpj(novo, emp?.razaoSocial ?? null);
+              }
+            }}
             aria-label="Selecionar empresa"
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >

@@ -18,6 +18,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast, ToastContainer } from '@/components/ui/toast';
 import { indicadoresEcfApi, type EcfIndicador, type EmpresaComEcf } from '@/lib/indicadores-ecf-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 
 function formatarCnpj(cnpj: string): string {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
@@ -284,8 +285,19 @@ export function IndicadoresEcfDashboard() {
   const empresaRef = useRef<HTMLDivElement>(null);
   const [reprocessando, setReprocessando] = useState(false);
 
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
+
   const carregarEmpresas = useCallback(() => {
-    indicadoresEcfApi.empresas().then(setEmpresas).catch(() => {});
+    indicadoresEcfApi.empresas().then(list => {
+      setEmpresas(list);
+      // Continuidade: pré-seleciona a empresa global, se ainda não houver seleção
+      setCnpj(prev => {
+        if (prev) return prev;
+        const match = empresaGlobal ? list.find(e => mesmoCnpj(e.cnpj, empresaGlobal.cnpj)) : undefined;
+        return match ? match.cnpj : '';
+      });
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { carregarEmpresas(); }, [carregarEmpresas]);
@@ -396,6 +408,7 @@ export function IndicadoresEcfDashboard() {
                       className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj ? 'bg-primary/5 font-medium' : ''}`}
                       onClick={() => {
                         setCnpj(emp.cnpj);
+                        selecionarPorCnpj(emp.cnpj, emp.razaoSocial);
                         setDados(null);
                         setEmpresaSearch('');
                         setEmpresaOpen(false);

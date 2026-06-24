@@ -22,6 +22,7 @@ import {
   type KpiAnual,
 } from '@/lib/analise-credito-api';
 import { faturamentoApi, type FaturamentoAnual } from '@/lib/faturamento-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 
 /* ─── Paleta ─────────────────────────────────────────────────────────────── */
 
@@ -195,6 +196,8 @@ function KpiCard({
 export default function VisaoGeralPage() {
   const { toasts, error: toastError, dismiss } = useToast();
 
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
+
   const [empresas, setEmpresas]   = useState<EmpresaResumo[]>([]);
   const [cnpj, setCnpj]           = useState('');
   const [loadingEmpresas, setLoadingEmpresas] = useState(true);
@@ -219,7 +222,10 @@ export default function VisaoGeralPage() {
     analiseCreditoApi.listarEmpresas()
       .then(list => {
         setEmpresas(list);
-        if (list.length > 0 && list[0]) setCnpj(list[0].cnpj);
+        // Continuidade: prefere a empresa global; senão, a primeira da lista
+        const match = empresaGlobal ? list.find(e => mesmoCnpj(e.cnpj, empresaGlobal.cnpj)) : undefined;
+        const alvo = match ?? list[0];
+        if (alvo) setCnpj(alvo.cnpj);
       })
       .catch(() => toastError('Não foi possível carregar as empresas.'))
       .finally(() => setLoadingEmpresas(false));
@@ -430,7 +436,14 @@ export default function VisaoGeralPage() {
               id="sel-empresa"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={cnpj}
-              onChange={e => setCnpj(e.target.value)}
+              onChange={e => {
+                const novo = e.target.value;
+                setCnpj(novo);
+                if (novo) {
+                  const emp = empresas.find(x => x.cnpj === novo);
+                  selecionarPorCnpj(novo, emp?.razaoSocial ?? null);
+                }
+              }}
             >
               {empresas.length === 0 && <option value="">Nenhuma empresa com ECF processada</option>}
               {empresas.map(e => (

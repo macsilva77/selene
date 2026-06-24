@@ -18,6 +18,7 @@ import {
   type ResumoFinanceiro,
   type KpiAnual,
 } from '@/lib/analise-credito-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 import { VisaoGeral }       from './visao-geral';
 import { KpisAnuais }       from './kpis-anuais';
 import { EstruturaCapital } from './estrutura-capital';
@@ -37,12 +38,10 @@ type Tab = 'visao' | 'estrutura' | 'evolucao' | 'cruzamento' | 'alertas';
 export function AnaliseCreditoDashboard() {
   const { toasts, error: toastError, dismiss } = useToast();
 
-  const LS_KEY = 'selene:analise-credito:cnpj';
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
 
   const [empresas, setEmpresas]               = useState<EmpresaResumo[]>([]);
-  const [cnpjSelecionado, setCnpjSelecionado] = useState<string>(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem('selene:analise-credito:cnpj') ?? '') : ''
-  );
+  const [cnpjSelecionado, setCnpjSelecionado] = useState<string>('');
   const [tab, setTab]                         = useState<Tab>('visao');
   const [carregando, setCarregando]           = useState(false);
   const [calculando, setCalculando]           = useState(false);
@@ -61,12 +60,12 @@ export function AnaliseCreditoDashboard() {
     analiseCreditoApi.listarEmpresas()
       .then(lista => {
         setEmpresas(lista);
-        // Invalida o CNPJ salvo se ele não existir mais na lista
-        const salvo = localStorage.getItem(LS_KEY);
-        if (salvo && !lista.some(e => e.cnpj === salvo)) {
-          setCnpjSelecionado('');
-          localStorage.removeItem(LS_KEY);
-        }
+        // Pré-seleciona a empresa global (continuidade entre telas), se existir na lista
+        setCnpjSelecionado(prev => {
+          if (prev && lista.some(e => e.cnpj === prev)) return prev;
+          const match = empresaGlobal ? lista.find(e => mesmoCnpj(e.cnpj, empresaGlobal.cnpj)) : undefined;
+          return match ? match.cnpj : '';
+        });
       })
       .catch(() => toastError('Erro ao carregar empresas'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -192,8 +191,10 @@ export function AnaliseCreditoDashboard() {
                 const cnpj = e.target.value;
                 setCnpjSelecionado(cnpj);
                 setExercicioFiltro(undefined);
-                if (cnpj) localStorage.setItem(LS_KEY, cnpj);
-                else localStorage.removeItem(LS_KEY);
+                if (cnpj) {
+                  const emp = empresas.find(x => x.cnpj === cnpj);
+                  selecionarPorCnpj(cnpj, emp?.razaoSocial ?? null);
+                }
               }}
             >
               <option value="">Selecione uma empresa…</option>

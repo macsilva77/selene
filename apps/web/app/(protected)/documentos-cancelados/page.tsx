@@ -14,6 +14,7 @@ import {
   type CanceladosResposta,
   type EmpresaFaturamento,
 } from '@/lib/faturamento-api';
+import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -47,6 +48,8 @@ function Kpi({ label, value, sub, tone }: Readonly<{ label: string; value: strin
 export default function DocumentosCanceladosPage() {
   const { toasts, error: toastError, dismiss } = useToast();
 
+  const { empresa: empresaGlobal, selecionar } = useEmpresaSelecionada();
+
   const [empresas, setEmpresas]   = useState<EmpresaFaturamento[]>([]);
   const [empresaId, setEmpresaId] = useState('');
   const [dados, setDados]         = useState<CanceladosResposta | null>(null);
@@ -58,7 +61,15 @@ export default function DocumentosCanceladosPage() {
 
   useEffect(() => {
     faturamentoApi.listarEmpresas()
-      .then(list => { setEmpresas(list); if (list[0]) setEmpresaId(list[0].id); })
+      .then(list => {
+        setEmpresas(list);
+        // Continuidade: prefere a empresa global (por id ou cnpj); senão, a primeira
+        const match = empresaGlobal
+          ? list.find(e => (empresaGlobal.id && e.id === empresaGlobal.id) || mesmoCnpj(e.cnpj, empresaGlobal.cnpj))
+          : undefined;
+        const alvo = match ?? list[0];
+        if (alvo) setEmpresaId(alvo.id);
+      })
       .catch(() => toastError('Não foi possível carregar as empresas.'));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -142,7 +153,12 @@ export default function DocumentosCanceladosPage() {
               id="sel-emp"
               className="w-full max-w-xl rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={empresaId}
-              onChange={e => setEmpresaId(e.target.value)}
+              onChange={e => {
+                const id = e.target.value;
+                setEmpresaId(id);
+                const emp = empresas.find(x => x.id === id);
+                if (emp) selecionar({ id: emp.id, cnpj: emp.cnpj, nome: emp.nome ?? emp.nomeFantasia ?? null });
+              }}
             >
               {empresas.length === 0 && <option value="">Nenhuma empresa</option>}
               {empresas.map(e => (

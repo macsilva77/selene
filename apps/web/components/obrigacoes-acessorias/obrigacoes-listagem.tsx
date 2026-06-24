@@ -30,6 +30,7 @@ import {
   type FinalidadeObrigacao,
   type ObrigacaoAcessoria,
 } from '@/lib/obrigacoes-api';
+import { useEmpresaSelecionada } from '@/lib/empresa-selecionada';
 
 /* ─── Props ──────────────────────────────────────────────────────────────── */
 interface Props {
@@ -49,6 +50,7 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   const pathname    = usePathname();
   const searchParams = useSearchParams();
   const { toasts, success, error: toastError, dismiss } = useToast();
+  const { empresa: empresaGlobal, selecionarPorCnpj } = useEmpresaSelecionada();
 
   // ── Lista de empresas para o combobox de CNPJ ──
   const [empresas, setEmpresas] = useState<{ id: string; cnpj: string; nome: string; nomeFantasia?: string }[]>([]);
@@ -79,7 +81,8 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
   }, []);
 
   // ── Estado dos filtros (sincronizados com URL) ──
-  const [cnpj,        setCnpj]       = useState(searchParams.get('cnpj') ?? '');
+  // Continuidade: usa o cnpj da URL; na ausência dele, a empresa global selecionada
+  const [cnpj,        setCnpj]       = useState(() => searchParams.get('cnpj') ?? empresaGlobal?.cnpj ?? '');
   const [dataInicial, setDataInicial] = useState(searchParams.get('dataInicial') ?? '');
   const [dataFinal,   setDataFinal]   = useState(searchParams.get('dataFinal') ?? '');
   const [finalidade,  setFinalidade]  = useState<FinalidadeObrigacao | ''>(
@@ -244,7 +247,13 @@ export function ObrigacoesListagem({ tipoObrigacao, titulo, showInscricaoEstadua
                     return (
                       <button type="button" key={emp.id}
                         className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${cnpj === emp.cnpj.replace(/\D/g, '') ? 'bg-primary/5 font-medium' : ''}`}
-                        onClick={() => { setCnpj(emp.cnpj.replace(/\D/g, '')); setCnpjSearch(''); setCnpjOpen(false); }}>
+                        onClick={() => {
+                          const dig = emp.cnpj.replace(/\D/g, '');
+                          setCnpj(dig);
+                          selecionarPorCnpj(dig, nome ?? null, emp.id);
+                          setCnpjSearch('');
+                          setCnpjOpen(false);
+                        }}>
                         <span className="font-mono text-xs text-muted-foreground shrink-0">{formatarCnpj(emp.cnpj)}</span>
                         {nome && <span className="text-foreground truncate">{nome}</span>}
                       </button>
