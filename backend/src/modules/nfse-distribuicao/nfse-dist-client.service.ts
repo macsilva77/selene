@@ -255,8 +255,9 @@ export class NfseDistClientService {
         res.on('end', () => {
           const corpo = Buffer.concat(chunks).toString('utf8');
           const sc = res.statusCode ?? 0;
-          if (sc >= 500) return reject(new Error(`ADN HTTP ${sc}: ${corpo.substring(0, 500)}`));
-          if (sc >= 400) return reject(new Error(`ADN HTTP ${sc} (sem retry): ${corpo.substring(0, 500)}`));
+          const alvo = `${parsed.pathname}${parsed.search}`;
+          if (sc >= 500) return reject(new Error(`ADN HTTP ${sc} em ${alvo}: ${corpo.substring(0, 500)}`));
+          if (sc >= 400) return reject(new Error(`ADN HTTP ${sc} (sem retry) em ${alvo}: ${corpo.substring(0, 500)}`));
           resolve(corpo);
         });
       });

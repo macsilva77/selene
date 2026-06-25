@@ -236,17 +236,18 @@ export interface LoteDistribuicaoNSUResponse {
   DataHoraProcessamento?: string;
 }
 
-// ─── Endpoint base do ADN (recepção/distribuição ao contribuinte) ────────────
-// IMPORTANTE: a API é servida no HOST RAIZ — os endpoints são /DFe/{NSU} e
-// /NFSe/{chave}/Eventos direto (confirmado no "Try it out" do Swagger oficial).
-// O "/contribuintes/docs/index.html" do portal é só a documentação, NÃO a base.
+// ─── Endpoint base do ADN — módulo Contribuintes (recepção/distribuição) ─────
+// A API é servida sob o prefixo "/contribuintes" (mesmo prefixo da doc Swagger
+// em /contribuintes/docs). Os endpoints completos são:
+//   GET {base}/DFe/{NSU}          e   GET {base}/NFSe/{chave}/Eventos
+// Confirmado por diagnóstico: sem o prefixo o ADN retorna HTTP 404.
 // Pode ser sobrescrito por NfseConfig.baseUrl por CNPJ.
 
 export const NFSE_ADN_BASE = {
   /** Produção restrita (homologação/testes) — tpAmb=2 */
-  producaoRestrita: 'https://adn.producaorestrita.nfse.gov.br',
+  producaoRestrita: 'https://adn.producaorestrita.nfse.gov.br/contribuintes',
   /** Produção — tpAmb=1 */
-  producao: 'https://adn.nfse.gov.br',
+  producao: 'https://adn.nfse.gov.br/contribuintes',
 } as const;
 
 /** Base URL padrão do ADN conforme o ambiente (tpAmb). */
