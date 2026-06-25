@@ -256,6 +256,9 @@ export class NfseDistClientService {
           const corpo = Buffer.concat(chunks).toString('utf8');
           const sc = res.statusCode ?? 0;
           const alvo = `${parsed.pathname}${parsed.search}`;
+          // O ADN responde 404 com corpo JSON (StatusProcessamento=NENHUM_DOCUMENTO_LOCALIZADO,
+          // Codigo E2220) quando não há documentos a partir do NSU — é FIM DE FILA, não erro.
+          if (sc === 404 && corpo.includes('StatusProcessamento')) return resolve(corpo);
           if (sc >= 500) return reject(new Error(`ADN HTTP ${sc} em ${alvo}: ${corpo.substring(0, 500)}`));
           if (sc >= 400) return reject(new Error(`ADN HTTP ${sc} (sem retry) em ${alvo}: ${corpo.substring(0, 500)}`));
           resolve(corpo);
