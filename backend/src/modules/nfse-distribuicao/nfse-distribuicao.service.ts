@@ -82,6 +82,8 @@ export class NfseDistribuicaoService {
         if (res.status === 'REJEICAO') {
           erro = res.erros.join('; ') || 'Distribuição rejeitada pelo ADN';
           this.logger.warn(`Distribuição NFS-e rejeitada (config=${configId}): ${erro}`);
+          // Backoff: não martelar o ADN após rejeição
+          proximaConsulta = new Date(Date.now() + NFSE_DIST.INTERVALO_MIN_RECHECK_MS);
           break;
         }
 
@@ -111,6 +113,10 @@ export class NfseDistribuicaoService {
       erro = (err as Error).message;
       statusFinal = 'ERRO';
       this.logger.error(`Erro no ciclo NFS-e (config=${configId}): ${erro}`);
+      // Backoff antes de nova tentativa: 1h para rate limit (429) / consumo indevido,
+      // 15 min para os demais erros — evita martelar o ADN a cada ciclo do cron.
+      const backoffMs = /\b429\b/.test(erro) ? NFSE_DIST.INTERVALO_MIN_RECHECK_MS : 15 * 60 * 1000;
+      proximaConsulta = new Date(Date.now() + backoffMs);
     } finally {
       await this.controle.liberarLockEAtualizar(ctrl.id, lock.lockId, {
         ultimoNsu,
