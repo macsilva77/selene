@@ -42,6 +42,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/auditoria',    icon: ClipboardTextIcon,   label: 'Auditoria' },
       { href: '/certificados', icon: CertificateIcon,     label: 'Certificados A1' },
       { href: '/dfe',          icon: CloudArrowDownIcon,  label: 'DFe' },
+      { href: '/nfse',         icon: CloudArrowDownIcon,  label: 'DFe NFS-e' },
       { href: '/empresas',     icon: BuildingsIcon,       label: 'Empresas' },
       { href: '/etiquetas',    icon: TagIcon,             label: 'Etiquetas' },
       { href: '/fornecedores', icon: TruckIcon,           label: 'Fornecedores' },
@@ -56,7 +57,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Documentos',
     items: [
       { href: '/dfe/documentos',        icon: FileMagnifyingGlassIcon, label: 'NF-e' },
-      { href: '/nfse',                  icon: ReceiptIcon,             label: 'NFS-e' },
+      { href: '/nfse/documentos',       icon: ReceiptIcon,             label: 'NFS-e' },
       { href: '#',                      icon: TruckIcon,               label: 'CT-e',  soon: true },
       { href: '/documentos-cancelados', icon: ProhibitIcon,            label: 'Documentos Fiscais Cancelados' },
       {
@@ -114,10 +115,10 @@ export function SeleneSidebar() {
     ? usuario.nome.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
     : 'U';
 
-  // /dfe must be exact to avoid matching /dfe/documentos (which has its own item)
+  // /dfe e /nfse devem ser exatos para não casar com /dfe/documentos e /nfse/documentos
   const isActive = (href: string) => {
     if (pathname === href) return true;
-    if (href === '/dfe') return false;
+    if (href === '/dfe' || href === '/nfse') return false;
     return pathname.startsWith(href + '/');
   };
 

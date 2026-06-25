@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import {
   ArrowClockwiseIcon,
@@ -9,9 +10,10 @@ import {
   FunnelIcon,
   CheckCircleIcon,
   ProhibitIcon,
-  CaretRightIcon,
   FilePdfIcon,
   TagIcon,
+  DotsThreeVerticalIcon,
+  EyeIcon,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
@@ -503,6 +505,79 @@ function DetalheDrawer({ docId, onClose }: Readonly<{ docId: string; onClose: ()
   );
 }
 
+/* ───────────────────────────── Ações (dropdown) ───────────────────────────── */
+
+function AcoesDropdown({
+  onDetalhe,
+  onEtiquetas,
+  onDanfse,
+}: Readonly<{ onDetalhe: () => void; onEtiquetas: () => void; onDanfse: () => void }>) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: Math.max(8, r.right - 200) });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const item = (label: string, icon: React.ReactNode, fn: () => void) => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setOpen(false);
+        fn();
+      }}
+      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
+    >
+      {icon} {label}
+    </button>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        title="Ações"
+        className="rounded-md p-1 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <DotsThreeVerticalIcon size={18} />
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[90]" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+            <div className="fixed z-[100] w-52 rounded-xl border bg-card shadow-lg py-1" style={{ top: pos.top, left: pos.left }}>
+              {item('Ver detalhe', <EyeIcon size={15} />, onDetalhe)}
+              {item('Etiquetas', <TagIcon size={15} />, onEtiquetas)}
+              {item('Baixar DANFSe', <FilePdfIcon size={15} />, onDanfse)}
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 /* ───────────────────────────── Página ───────────────────────────── */
 
 export default function DocumentosNfsePage() {
@@ -582,6 +657,22 @@ export default function DocumentosNfsePage() {
     setPage(1);
   };
 
+  const baixarDanfse = async (doc: NfseDoc) => {
+    try {
+      const res = await api.get(`/nfse/documentos/${doc.id}/danfse`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `danfse-${doc.chaveAcesso}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toastError('Não foi possível obter o DANFSe no ADN.');
+    }
+  };
+
   const totalPaginas = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
@@ -633,7 +724,7 @@ export default function DocumentosNfsePage() {
                 <TableHead className="text-right">ISSQN</TableHead>
                 <TableHead className="text-right">Líquido</TableHead>
                 <TableHead>Situação</TableHead>
-                <TableHead></TableHead>
+                <TableHead>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -659,7 +750,13 @@ export default function DocumentosNfsePage() {
                         <Badge className="bg-emerald-50 text-emerald-700"><CheckCircleIcon size={12} className="mr-1" /> Ativa</Badge>
                       )}
                     </TableCell>
-                    <TableCell><CaretRightIcon size={16} className="text-muted-foreground" /></TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <AcoesDropdown
+                        onDetalhe={() => setDetalheId(d.id)}
+                        onEtiquetas={() => setEtiquetaDoc(d)}
+                        onDanfse={() => void baixarDanfse(d)}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))
               )}
