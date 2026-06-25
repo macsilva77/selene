@@ -11,6 +11,7 @@ import {
   ProhibitIcon,
   CaretRightIcon,
   FilePdfIcon,
+  TagIcon,
 } from '@phosphor-icons/react';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
@@ -27,6 +28,12 @@ import {
 /* ───────────────────────────── Types ───────────────────────────── */
 
 type Papel = 'PRESTADOR' | 'TOMADOR' | 'INTERMEDIARIO';
+
+interface Etiqueta {
+  id: string;
+  nome: string;
+  cor: string;
+}
 
 interface NfseDoc {
   id: string;
@@ -49,6 +56,7 @@ interface NfseDoc {
   tribIssqn: number | null;
   tpRetIssqn: number | null;
   cancelada: boolean;
+  etiquetas: Etiqueta[];
 }
 
 interface NfseEvento {
@@ -68,29 +76,38 @@ interface NfseDocDetalhe extends NfseDoc {
   valorBcIssqn: string | null;
 }
 
-interface Empresa {
-  id: string;
-  cnpj: string;
-  nome: string;
-}
-
 interface Filtros {
   cnpj: string;
-  papel: '' | Papel;
+  prestadorDoc: string;
   chaveAcesso: string;
+  numero: string;
   competenciaInicio: string;
   competenciaFim: string;
   cancelada: '' | 'true' | 'false';
+  municipio: string;
 }
 
 const FILTROS_VAZIOS: Filtros = {
   cnpj: '',
-  papel: '',
+  prestadorDoc: '',
   chaveAcesso: '',
+  numero: '',
   competenciaInicio: '',
   competenciaFim: '',
   cancelada: '',
+  municipio: '',
 };
+
+interface MunicipioAtendido {
+  codigo: string;
+  total: number;
+}
+
+const ABAS: { id: Papel; label: string }[] = [
+  { id: 'TOMADOR', label: 'Recebidas' },
+  { id: 'PRESTADOR', label: 'Emitidas' },
+  { id: 'INTERMEDIARIO', label: 'Intermediário' },
+];
 
 const LIMIT = 30;
 
@@ -118,8 +135,19 @@ function fmtMoney(v: string | null): string {
   const n = Number(v);
   return Number.isNaN(n) ? '—' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
-function fmtChave(v: string): string {
-  return (v ?? '').replace(/(.{4})/g, '$1 ').trim();
+/** Chave de 50 dígitos por blocos lógicos: município(7) amb(1) tipo(1) inscrição(14) número(13) AAAA-MM(6) cód(9)+DV(1). */
+function fmtChave50(v: string): string {
+  const d = (v ?? '').replace(/\D/g, '');
+  if (d.length !== 50) return d.replace(/(.{4})/g, '$1 ').trim();
+  return [d.slice(0, 7), d.slice(7, 8), d.slice(8, 9), d.slice(9, 23), d.slice(23, 36), d.slice(36, 40), d.slice(40, 50)].join(' ');
+}
+function etiquetaTextColor(hex: string): string {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) return '#111827';
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? '#111827' : '#ffffff';
 }
 
 const PAPEL_LABEL: Record<Papel, string> = {
@@ -157,18 +185,144 @@ function Secao({ titulo, children }: Readonly<{ titulo: string; children: React.
   );
 }
 
+/* ───────────────────────────── Etiquetas ───────────────────────────── */
+
+function EtiquetasBadges({ etiquetas, onClick }: Readonly<{ etiquetas: Etiqueta[]; onClick: () => void }>) {
+  const MAX = 2;
+  const visible = etiquetas.slice(0, MAX);
+  const extra = etiquetas.length - MAX;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="flex items-center gap-1 flex-wrap group"
+      title={etiquetas.length === 0 ? 'Adicionar etiqueta' : etiquetas.map((e) => e.nome).join(', ')}
+    >
+      {visible.map((e) => (
+        <span
+          key={e.id}
+          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap leading-tight"
+          style={{ backgroundColor: e.cor, color: etiquetaTextColor(e.cor) }}
+        >
+          {e.nome}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+          +{extra}
+        </span>
+      )}
+      {etiquetas.length === 0 && (
+        <span className="inline-flex items-center gap-0.5 rounded-full border border-dashed px-1.5 py-0.5 text-[10px] text-muted-foreground group-hover:border-primary group-hover:text-primary transition-colors">
+          <TagIcon size={9} /> +
+        </span>
+      )}
+    </button>
+  );
+}
+
+function EtiquetasModal({
+  doc,
+  disponiveis,
+  onClose,
+  onSuccess,
+}: Readonly<{
+  doc: NfseDoc;
+  disponiveis: Etiqueta[];
+  onClose: () => void;
+  onSuccess: () => void;
+}>) {
+  const atuais = new Set(doc.etiquetas.map((e) => e.id));
+  const [sel, setSel] = useState<Set<string>>(new Set(atuais));
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (id: string) =>
+    setSel((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const salvar = async () => {
+    setSaving(true);
+    try {
+      const adicionar = [...sel].filter((id) => !atuais.has(id));
+      const remover = [...atuais].filter((id) => !sel.has(id));
+      await api.post('/nfse/documentos/etiquetas', { documentoIds: [doc.id], adicionar, remover });
+      onSuccess();
+      onClose();
+    } catch {
+      /* toast tratado no chamador via recarregar */
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="text-lg font-semibold">Etiquetas</h2>
+          <button onClick={onClose} className="rounded-md p-1 hover:bg-muted">
+            <XIcon size={18} />
+          </button>
+        </div>
+        <div className="max-h-80 overflow-auto px-5 py-3 flex flex-col gap-1">
+          {disponiveis.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">
+              Nenhuma etiqueta criada.{' '}
+              <a href="/etiquetas" className="text-primary underline">Criar etiquetas</a>.
+            </p>
+          ) : (
+            disponiveis.map((e) => (
+              <label key={e.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
+                <input type="checkbox" checked={sel.has(e.id)} onChange={() => toggle(e.id)} />
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                  style={{ backgroundColor: e.cor, color: etiquetaTextColor(e.cor) }}
+                >
+                  {e.nome}
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <button onClick={onClose} className="rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+            Cancelar
+          </button>
+          <button
+            onClick={salvar}
+            disabled={saving}
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            {saving ? 'Salvando…' : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────────── Filtros ───────────────────────────── */
 
 function FiltersBar({
   filtros,
   setFiltros,
   empresas,
+  municipios,
   onAplicar,
   onLimpar,
 }: Readonly<{
   filtros: Filtros;
   setFiltros: React.Dispatch<React.SetStateAction<Filtros>>;
-  empresas: Empresa[];
+  empresas: { id: string; cnpj: string; nome: string }[];
+  municipios: MunicipioAtendido[];
   onAplicar: () => void;
   onLimpar: () => void;
 }>) {
@@ -180,50 +334,38 @@ function FiltersBar({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Empresa (CNPJ)
-          <select
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            value={filtros.cnpj}
-            onChange={(e) => set('cnpj', e.target.value)}
-          >
+          Empresa (CNPJ titular)
+          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.cnpj} onChange={(e) => set('cnpj', e.target.value)}>
             <option value="">Todas</option>
             {empresas.map((emp) => (
-              <option key={emp.id} value={emp.cnpj}>
-                {maskCnpj(emp.cnpj)} — {emp.nome}
-              </option>
+              <option key={emp.id} value={emp.cnpj}>{maskCnpj(emp.cnpj)} — {emp.nome}</option>
             ))}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Papel
-          <select
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            value={filtros.papel}
-            onChange={(e) => set('papel', e.target.value as Filtros['papel'])}
-          >
-            <option value="">Todos</option>
-            <option value="PRESTADOR">Prestador</option>
-            <option value="TOMADOR">Tomador</option>
-            <option value="INTERMEDIARIO">Intermediário</option>
-          </select>
+          CNPJ Prestador
+          <input className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.prestadorDoc} onChange={(e) => set('prestadorDoc', e.target.value.replace(/\D/g, ''))} placeholder="14 dígitos" maxLength={14} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Chave de acesso
-          <input
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            value={filtros.chaveAcesso}
-            onChange={(e) => set('chaveAcesso', e.target.value.replace(/\D/g, ''))}
-            placeholder="50 dígitos"
-            maxLength={50}
-          />
+          <input className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.chaveAcesso} onChange={(e) => set('chaveAcesso', e.target.value.replace(/\D/g, ''))} placeholder="50 dígitos" maxLength={50} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Nº NFS-e
+          <input className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.numero} onChange={(e) => set('numero', e.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Município (incidência ISS)
+          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.municipio} onChange={(e) => set('municipio', e.target.value)}>
+            <option value="">Todos os municípios atendidos</option>
+            {municipios.map((m) => (
+              <option key={m.codigo} value={m.codigo}>{m.codigo} ({m.total})</option>
+            ))}
+          </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Situação
-          <select
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            value={filtros.cancelada}
-            onChange={(e) => set('cancelada', e.target.value as Filtros['cancelada'])}
-          >
+          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.cancelada} onChange={(e) => set('cancelada', e.target.value as Filtros['cancelada'])}>
             <option value="">Todas</option>
             <option value="false">Ativas</option>
             <option value="true">Canceladas</option>
@@ -231,30 +373,16 @@ function FiltersBar({
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Competência início
-          <input
-            type="date"
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            value={filtros.competenciaInicio}
-            onChange={(e) => set('competenciaInicio', e.target.value)}
-          />
+          <input type="date" className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.competenciaInicio} onChange={(e) => set('competenciaInicio', e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Competência fim
-          <input
-            type="date"
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            value={filtros.competenciaFim}
-            onChange={(e) => set('competenciaFim', e.target.value)}
-          />
+          <input type="date" className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.competenciaFim} onChange={(e) => set('competenciaFim', e.target.value)} />
         </label>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={onAplicar} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition">
-          Aplicar filtros
-        </button>
-        <button onClick={onLimpar} className="rounded-lg border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-          Limpar
-        </button>
+        <button onClick={onAplicar} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition">Aplicar filtros</button>
+        <button onClick={onLimpar} className="rounded-lg border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors">Limpar</button>
       </div>
     </div>
   );
@@ -271,11 +399,7 @@ function DetalheDrawer({ docId, onClose }: Readonly<{ docId: string; onClose: ()
 
   useEffect(() => {
     setLoading(true);
-    api
-      .get(`/nfse/documentos/${docId}`)
-      .then((res) => setDoc(res.data as NfseDocDetalhe))
-      .catch(() => setDoc(null))
-      .finally(() => setLoading(false));
+    api.get(`/nfse/documentos/${docId}`).then((res) => setDoc(res.data as NfseDocDetalhe)).catch(() => setDoc(null)).finally(() => setLoading(false));
   }, [docId]);
 
   const baixarDanfse = async () => {
@@ -300,65 +424,45 @@ function DetalheDrawer({ docId, onClose }: Readonly<{ docId: string; onClose: ()
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <div
-        className="h-full w-full max-w-xl overflow-y-auto bg-card shadow-xl border-l border-border"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="h-full w-full max-w-xl overflow-y-auto bg-card shadow-xl border-l border-border" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-lg font-semibold">NFS-e recebida</h2>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-muted">
-            <XIcon size={18} />
-          </button>
+          <button onClick={onClose} className="rounded-md p-1 hover:bg-muted"><XIcon size={18} /></button>
         </div>
-
         {loading && <p className="px-5 py-6 text-sm text-muted-foreground">Carregando…</p>}
         {!loading && !doc && <p className="px-5 py-6 text-sm text-red-600">Não foi possível carregar a NFS-e.</p>}
-
         {doc && (
           <div className="flex flex-col gap-4 px-5 py-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge className={PAPEL_CLASS[doc.papelTitular]}>{PAPEL_LABEL[doc.papelTitular]}</Badge>
-              {doc.cancelada ? (
-                <Badge className="bg-red-50 text-red-700">Cancelada</Badge>
-              ) : (
-                <Badge className="bg-emerald-50 text-emerald-700">Ativa</Badge>
-              )}
-              <button
-                onClick={() => void baixarDanfse()}
-                disabled={baixando}
-                className="ml-auto flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors"
-              >
+              {doc.cancelada ? <Badge className="bg-red-50 text-red-700">Cancelada</Badge> : <Badge className="bg-emerald-50 text-emerald-700">Ativa</Badge>}
+              {doc.etiquetas.map((e) => (
+                <span key={e.id} className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: e.cor, color: etiquetaTextColor(e.cor) }}>{e.nome}</span>
+              ))}
+              <button onClick={() => void baixarDanfse()} disabled={baixando} className="ml-auto flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors">
                 <FilePdfIcon size={16} /> {baixando ? 'Gerando…' : 'DANFSe'}
               </button>
             </div>
             {danfseErro && <p className="text-xs text-red-600">{danfseErro}</p>}
-
-            <Campo label="Chave de acesso">
-              <span className="font-mono text-xs break-all">{fmtChave(doc.chaveAcesso)}</span>
-            </Campo>
-
+            <Campo label="Chave de acesso"><span className="font-mono text-xs break-all">{fmtChave50(doc.chaveAcesso)}</span></Campo>
             <div className="grid grid-cols-2 gap-3">
               <Campo label="Número">{doc.numero ?? '—'}</Campo>
               <Campo label="Competência">{fmtCompet(doc.competencia)}</Campo>
               <Campo label="Processamento">{fmtDate(doc.dhProcessamento)}</Campo>
               <Campo label="Mun. incidência (IBGE)">{doc.codMunIncidencia ?? '—'}</Campo>
             </div>
-
             <Secao titulo="Prestador">
               <Campo label="Documento">{maskCnpj(doc.prestadorDoc)}</Campo>
               <Campo label="Nome">{doc.prestadorNome ?? '—'}</Campo>
             </Secao>
-
             <Secao titulo="Tomador">
               <Campo label="Documento">{maskCnpj(doc.tomadorDoc)}</Campo>
               <Campo label="Nome">{doc.tomadorNome ?? '—'}</Campo>
             </Secao>
-
             <Secao titulo="Serviço">
               <Campo label="Cód. tributação nacional">{doc.codTribNac ?? '—'}</Campo>
               <Campo label="Descrição">{doc.descricaoServico ?? '—'}</Campo>
             </Secao>
-
             <Secao titulo="Valores (ISSQN)">
               <div className="grid grid-cols-2 gap-3">
                 <Campo label="Serviço">{fmtMoney(doc.valorServico)}</Campo>
@@ -366,12 +470,9 @@ function DetalheDrawer({ docId, onClose }: Readonly<{ docId: string; onClose: ()
                 <Campo label="Alíquota">{doc.aliquotaIssqn ? `${doc.aliquotaIssqn}%` : '—'}</Campo>
                 <Campo label="ISSQN">{fmtMoney(doc.valorIssqn)}</Campo>
                 <Campo label="Líquido">{fmtMoney(doc.valorLiquido)}</Campo>
-                <Campo label="Retenção ISSQN">
-                  {doc.tpRetIssqn === 2 ? 'Retido (tomador)' : doc.tpRetIssqn === 3 ? 'Retido (interm.)' : 'Não retido'}
-                </Campo>
+                <Campo label="Retenção ISSQN">{doc.tpRetIssqn === 2 ? 'Retido (tomador)' : doc.tpRetIssqn === 3 ? 'Retido (interm.)' : 'Não retido'}</Campo>
               </div>
             </Secao>
-
             <Secao titulo={`Eventos (${doc.eventos.length})`}>
               {doc.eventos.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nenhum evento vinculado.</p>
@@ -389,17 +490,10 @@ function DetalheDrawer({ docId, onClose }: Readonly<{ docId: string; onClose: ()
                 </ul>
               )}
             </Secao>
-
             {doc.xml && (
               <div>
-                <button onClick={() => setShowXml((s) => !s)} className="text-sm font-medium text-primary hover:underline">
-                  {showXml ? 'Ocultar XML' : 'Ver XML'}
-                </button>
-                {showXml && (
-                  <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-tight">
-                    {doc.xml}
-                  </pre>
-                )}
+                <button onClick={() => setShowXml((s) => !s)} className="text-sm font-medium text-primary hover:underline">{showXml ? 'Ocultar XML' : 'Ver XML'}</button>
+                {showXml && <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-tight">{doc.xml}</pre>}
               </div>
             )}
           </div>
@@ -412,18 +506,22 @@ function DetalheDrawer({ docId, onClose }: Readonly<{ docId: string; onClose: ()
 /* ───────────────────────────── Página ───────────────────────────── */
 
 export default function DocumentosNfsePage() {
-  const { toasts, error: toastError, dismiss } = useToast();
+  const { toasts, success, error: toastError, dismiss } = useToast();
   const { empresa } = useEmpresaSelecionada();
 
   const [docs, setDocs] = useState<NfseDoc[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [aba, setAba] = useState<Papel>('TOMADOR');
 
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
   const [filtrosAplicados, setFiltrosAplicados] = useState<Filtros>(FILTROS_VAZIOS);
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [empresas, setEmpresas] = useState<{ id: string; cnpj: string; nome: string }[]>([]);
+  const [municipios, setMunicipios] = useState<MunicipioAtendido[]>([]);
+  const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [detalheId, setDetalheId] = useState<string | null>(null);
+  const [etiquetaDoc, setEtiquetaDoc] = useState<NfseDoc | null>(null);
 
   useEffect(() => {
     if (empresa?.cnpj && !filtros.cnpj) {
@@ -434,32 +532,37 @@ export default function DocumentosNfsePage() {
   }, [empresa?.cnpj]);
 
   useEffect(() => {
-    api
-      .get('/empresas?limit=100')
-      .then((res) => setEmpresas(((res.data?.data ?? res.data ?? []) as Empresa[]).filter((e) => e.cnpj)))
-      .catch(() => {});
+    api.get('/empresas?limit=100').then((res) => setEmpresas(((res.data?.data ?? res.data ?? []) as { id: string; cnpj: string; nome: string }[]).filter((e) => e.cnpj))).catch(() => {});
+    api.get('/etiquetas').then((res) => {
+      const lst = (res.data?.data ?? res.data ?? []) as Etiqueta[];
+      setEtiquetas(lst.map((e) => ({ id: e.id, nome: e.nome, cor: e.cor })));
+    }).catch(() => {});
+    api.get('/nfse/municipios').then((res) => setMunicipios((res.data ?? []) as MunicipioAtendido[])).catch(() => {});
   }, []);
 
   const carregarDocs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT), papel: aba });
       const f = filtrosAplicados;
       if (f.cnpj) params.set('cnpj', f.cnpj.replace(/\D/g, ''));
-      if (f.papel) params.set('papel', f.papel);
+      if (f.prestadorDoc) params.set('prestadorDoc', f.prestadorDoc);
       if (f.chaveAcesso) params.set('chaveAcesso', f.chaveAcesso);
       if (f.competenciaInicio) params.set('competenciaInicio', f.competenciaInicio);
       if (f.competenciaFim) params.set('competenciaFim', f.competenciaFim);
       if (f.cancelada) params.set('cancelada', f.cancelada);
+      if (f.municipio) params.set('municipio', f.municipio);
       const res = await api.get(`/nfse/documentos?${params.toString()}`);
-      setDocs((res.data?.itens ?? []) as NfseDoc[]);
+      let itens = (res.data?.itens ?? []) as NfseDoc[];
+      if (f.numero) itens = itens.filter((d) => (d.numero ?? '').includes(f.numero));
+      setDocs(itens);
       setTotal((res.data?.total ?? 0) as number);
     } catch {
       toastError('Erro ao carregar NFS-e recebidas');
     } finally {
       setLoading(false);
     }
-  }, [page, filtrosAplicados, toastError]);
+  }, [page, aba, filtrosAplicados, toastError]);
 
   useEffect(() => {
     void carregarDocs();
@@ -474,6 +577,10 @@ export default function DocumentosNfsePage() {
     setFiltrosAplicados(FILTROS_VAZIOS);
     setPage(1);
   };
+  const trocarAba = (p: Papel) => {
+    setAba(p);
+    setPage(1);
+  };
 
   const totalPaginas = Math.max(1, Math.ceil(total / LIMIT));
 
@@ -483,54 +590,46 @@ export default function DocumentosNfsePage() {
 
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-2xl font-semibold">NFS-e recebidas</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Documentos fiscais de serviço distribuídos pelo Ambiente de Dados Nacional (ADN)
-          </p>
+          <h1 className="text-2xl font-semibold">Documentos Fiscais Capturados</h1>
+          <p className="text-sm text-muted-foreground mt-1">NFS-e recebidas via distribuição do ADN</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => void carregarDocs()}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors"
-          >
+          <button onClick={() => void carregarDocs()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors">
             <ArrowClockwiseIcon size={16} /> Atualizar
           </button>
-          <Link
-            href="/nfse"
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
-          >
+          <Link href="/nfse" className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
             <GearIcon size={16} /> Configurações
           </Link>
         </div>
       </div>
 
-      <FiltersBar
-        filtros={filtros}
-        setFiltros={setFiltros}
-        empresas={empresas}
-        onAplicar={aplicarFiltros}
-        onLimpar={limparFiltros}
-      />
+      <FiltersBar filtros={filtros} setFiltros={setFiltros} empresas={empresas} municipios={municipios} onAplicar={aplicarFiltros} onLimpar={limparFiltros} />
 
       <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden flex flex-col min-h-0">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border text-sm">
-          <span className="font-medium">
-            {total.toLocaleString('pt-BR')} NFS-e{total === 1 ? '' : 's'}
-          </span>
+        {/* Abas por papel */}
+        <div className="flex items-center gap-1 border-b border-border px-3">
+          {ABAS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => trocarAba(t.id)}
+              className={`px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${aba === t.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+          <span className="ml-auto text-sm text-muted-foreground pr-2">{total.toLocaleString('pt-BR')} registro(s)</span>
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Papel</TableHead>
+                <TableHead>Etiquetas</TableHead>
                 <TableHead>Nº</TableHead>
-                <TableHead>Chave</TableHead>
                 <TableHead>Prestador</TableHead>
                 <TableHead>Tomador</TableHead>
+                <TableHead>Chave NFS-e (50)</TableHead>
                 <TableHead>Competência</TableHead>
-                <TableHead>Serviço</TableHead>
                 <TableHead className="text-right">ISSQN</TableHead>
                 <TableHead className="text-right">Líquido</TableHead>
                 <TableHead>Situação</TableHead>
@@ -539,52 +638,28 @@ export default function DocumentosNfsePage() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center text-sm text-muted-foreground py-8">
-                    Carregando…
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">Carregando…</TableCell></TableRow>
               ) : docs.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center text-sm text-muted-foreground py-8">
-                    Nenhuma NFS-e recebida com os filtros atuais.
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">Nenhuma NFS-e nesta aba com os filtros atuais.</TableCell></TableRow>
               ) : (
                 docs.map((d) => (
                   <TableRow key={d.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetalheId(d.id)}>
-                    <TableCell>
-                      <Badge className={PAPEL_CLASS[d.papelTitular]}>{PAPEL_LABEL[d.papelTitular]}</Badge>
-                    </TableCell>
+                    <TableCell><EtiquetasBadges etiquetas={d.etiquetas} onClick={() => setEtiquetaDoc(d)} /></TableCell>
                     <TableCell className="text-right tabular-nums">{d.numero ?? '—'}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">…{d.chaveAcesso.slice(-12)}</TableCell>
-                    <TableCell className="max-w-[180px] truncate" title={d.prestadorNome ?? ''}>
-                      {d.prestadorNome ?? maskCnpj(d.prestadorDoc)}
-                    </TableCell>
-                    <TableCell className="max-w-[180px] truncate" title={d.tomadorNome ?? ''}>
-                      {d.tomadorNome ?? maskCnpj(d.tomadorDoc)}
-                    </TableCell>
+                    <TableCell className="max-w-[180px] truncate" title={d.prestadorNome ?? ''}>{d.prestadorNome ?? maskCnpj(d.prestadorDoc)}</TableCell>
+                    <TableCell className="max-w-[180px] truncate" title={d.tomadorNome ?? ''}>{d.tomadorNome ?? maskCnpj(d.tomadorDoc)}</TableCell>
+                    <TableCell className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">{fmtChave50(d.chaveAcesso)}</TableCell>
                     <TableCell>{fmtCompet(d.competencia)}</TableCell>
-                    <TableCell className="max-w-[160px] truncate" title={d.descricaoServico ?? ''}>
-                      {d.codTribNac ? `${d.codTribNac} ` : ''}
-                      {d.descricaoServico ?? '—'}
-                    </TableCell>
                     <TableCell className="text-right tabular-nums">{fmtMoney(d.valorIssqn)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtMoney(d.valorLiquido)}</TableCell>
                     <TableCell>
                       {d.cancelada ? (
-                        <Badge className="bg-red-50 text-red-700">
-                          <ProhibitIcon size={12} className="mr-1" /> Cancelada
-                        </Badge>
+                        <Badge className="bg-red-50 text-red-700"><ProhibitIcon size={12} className="mr-1" /> Cancelada</Badge>
                       ) : (
-                        <Badge className="bg-emerald-50 text-emerald-700">
-                          <CheckCircleIcon size={12} className="mr-1" /> Ativa
-                        </Badge>
+                        <Badge className="bg-emerald-50 text-emerald-700"><CheckCircleIcon size={12} className="mr-1" /> Ativa</Badge>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <CaretRightIcon size={16} className="text-muted-foreground" />
-                    </TableCell>
+                    <TableCell><CaretRightIcon size={16} className="text-muted-foreground" /></TableCell>
                   </TableRow>
                 ))
               )}
@@ -595,17 +670,24 @@ export default function DocumentosNfsePage() {
         <div className="flex items-center justify-between px-5 py-3 border-t border-border text-sm">
           <span className="text-muted-foreground">Página {page} de {totalPaginas}</span>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">
-              Anterior
-            </button>
-            <button onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))} disabled={page >= totalPaginas || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">
-              Próxima
-            </button>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">Anterior</button>
+            <button onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))} disabled={page >= totalPaginas || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">Próxima</button>
           </div>
         </div>
       </div>
 
       {detalheId && <DetalheDrawer docId={detalheId} onClose={() => setDetalheId(null)} />}
+      {etiquetaDoc && (
+        <EtiquetasModal
+          doc={etiquetaDoc}
+          disponiveis={etiquetas}
+          onClose={() => setEtiquetaDoc(null)}
+          onSuccess={() => {
+            success('Etiquetas atualizadas.');
+            void carregarDocs();
+          }}
+        />
+      )}
     </div>
   );
 }

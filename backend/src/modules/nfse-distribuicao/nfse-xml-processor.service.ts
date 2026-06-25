@@ -61,10 +61,29 @@ export class NfseXmlProcessorService {
 
     if (conteudo.tipo === 'NFSE') {
       const id = await this.persistirNfse(conteudo, tenantId, cnpjTitular, xmlBuffer, xmlHash);
+      if (id) await this.aplicarEtiquetaPadrao(id, tenantId);
       return id ? { id, tipo: 'NFSE' } : null;
     }
     const id = await this.persistirEvento(conteudo, tenantId, xmlBuffer, xmlHash);
     return id ? { id, tipo: 'EVENTO' } : null;
+  }
+
+  /** Aplica a etiqueta padrão do tenant à NFS-e recém-criada (best-effort). */
+  private async aplicarEtiquetaPadrao(documentoId: string, tenantId: string): Promise<void> {
+    try {
+      const padrao = await this.prisma.etiqueta.findFirst({
+        where: { tenantId, padrao: true, deletadoEm: null },
+        select: { id: true },
+      });
+      if (padrao) {
+        await this.prisma.nfseDocumentoEtiqueta.createMany({
+          data: [{ documentoId, etiquetaId: padrao.id }],
+          skipDuplicates: true,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Falha ao aplicar etiqueta padrão à NFS-e ${documentoId}: ${(err as Error).message}`);
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────────────

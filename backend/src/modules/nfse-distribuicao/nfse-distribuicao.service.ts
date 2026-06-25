@@ -17,6 +17,7 @@ import {
   NFSE_WORKER_DEFAULTS,
 } from './nfse.types';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
+import { AssociarDocumentosDto } from '../etiquetas/dto/associar-documentos.dto';
 
 /**
  * Orquestra a recepção de NFS-e pela distribuição do ADN.
@@ -214,6 +215,7 @@ export class NfseDistribuicaoService {
       competenciaInicio?: string;
       competenciaFim?: string;
       cancelada?: boolean;
+      municipio?: string;
     },
   ) {
     const page = Math.max(1, filtros.page ?? 1);
@@ -226,6 +228,7 @@ export class NfseDistribuicaoService {
       ...(filtros.prestadorDoc ? { prestadorDoc: filtros.prestadorDoc } : {}),
       ...(filtros.tomadorDoc ? { tomadorDoc: filtros.tomadorDoc } : {}),
       ...(filtros.chaveAcesso ? { chaveAcesso: filtros.chaveAcesso } : {}),
+      ...(filtros.municipio ? { codMunIncidencia: filtros.municipio } : {}),
       ...(filtros.cancelada !== undefined ? { cancelada: filtros.cancelada } : {}),
       ...(filtros.competenciaInicio || filtros.competenciaFim
         ? {
@@ -251,11 +254,16 @@ export class NfseDistribuicaoService {
           prestadorDoc: true, prestadorNome: true, tomadorDoc: true, tomadorNome: true,
           codTribNac: true, descricaoServico: true, valorServico: true, valorIssqn: true,
           valorLiquido: true, tribIssqn: true, tpRetIssqn: true, cancelada: true,
+          etiquetas: { select: { etiqueta: { select: { id: true, nome: true, cor: true } } } },
         },
       }),
     ]);
 
-    return { total, page, limit, itens };
+    const itensComEtiquetas = itens.map((d) => ({
+      ...d,
+      etiquetas: (d.etiquetas ?? []).map((e) => e.etiqueta),
+    }));
+    return { total, page, limit, itens: itensComEtiquetas };
   }
 
   /** Baixa o PDF do DANFSe de uma NFS-e recebida, via ADN (mTLS). */
@@ -281,16 +289,97 @@ export class NfseDistribuicaoService {
     return { pdf, nomeArquivo: `danfse-${doc.chaveAcesso}.pdf` };
   }
 
-  /** Detalhe de uma NFS-e (inclui XML decodificado e eventos). */
+  /** Detalhe de uma NFS-e (inclui XML decodificado, eventos e etiquetas). */
   async obterDocumento(tenantId: string, id: string) {
     const doc = await this.prisma.nfseDocumento.findFirst({
       where: { id, tenantId },
-      include: { eventos: { orderBy: { dhProcessamento: 'asc' } } },
+      include: {
+        eventos: { orderBy: { dhProcessamento: 'asc' } },
+        etiquetas: { select: { etiqueta: { select: { id: true, nome: true, cor: true } } } },
+      },
     });
     if (!doc) throw new NotFoundException('NFS-e não encontrada.');
 
-    const { xmlOriginal, ...resto } = doc;
-    return { ...resto, xml: xmlOriginal ? xmlOriginal.toString('utf8') : null };
+    const { xmlOriginal, etiquetas, ...resto } = doc;
+    return {
+      ...resto,
+      etiquetas: etiquetas.map((e) => e.etiqueta),
+      xml: xmlOriginal ? xmlOriginal.toString('utf8') : null,
+    };
+  }
+
+  /** Municípios de incidência presentes nas NFS-e recebidas (com contagem). */
+  async listarMunicipios(tenantId: string) {
+    const grupos = await this.prisma.nfseDocumento.groupBy({
+      by: ['codMunIncidencia'],
+      where: { tenantId, codMunIncidencia: { not: null } },
+      _count: { _all: true },
+    });
+    return grupos
+      .map((g) => ({ codigo: g.codMunIncidencia as string, total: g._count._all }))
+      .sort((a, b) => b.total - a.total);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Etiquetas (reusa as etiquetas do tenant; associação/histórico próprios)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /** Associa/desassocia etiquetas a uma ou mais NFS-e, registrando histórico. */
+  async associarEtiquetas(tenantId: string, usuarioId: string | undefined, dto: AssociarDocumentosDto) {
+    const adicionar = dto.adicionar ?? [];
+    const remover = dto.remover ?? [];
+
+    const docs = await this.prisma.nfseDocumento.findMany({
+      where: { id: { in: dto.documentoIds }, tenantId },
+      select: { id: true },
+    });
+    const ids = docs.map((d) => d.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const documentoId of ids) {
+        const snap = async () =>
+          (
+            await tx.nfseDocumentoEtiqueta.findMany({
+              where: { documentoId },
+              select: { etiqueta: { select: { id: true, nome: true, cor: true } } },
+            })
+          ).map((e) => e.etiqueta);
+
+        const antes = await snap();
+        if (remover.length) {
+          await tx.nfseDocumentoEtiqueta.deleteMany({ where: { documentoId, etiquetaId: { in: remover } } });
+        }
+        if (adicionar.length) {
+          await tx.nfseDocumentoEtiqueta.createMany({
+            data: adicionar.map((etiquetaId) => ({ documentoId, etiquetaId })),
+            skipDuplicates: true,
+          });
+        }
+        const depois = await snap();
+
+        if (JSON.stringify(antes) !== JSON.stringify(depois)) {
+          await tx.nfseEtiquetaHistorico.create({
+            data: { documentoId, usuarioId, etiquetasAntes: antes, etiquetasDepois: depois },
+          });
+        }
+      }
+    });
+
+    return { atualizados: ids.length };
+  }
+
+  /** Histórico de alterações de etiquetas de uma NFS-e. */
+  async listarEtiquetaHistorico(tenantId: string, documentoId: string) {
+    const doc = await this.prisma.nfseDocumento.findFirst({
+      where: { id: documentoId, tenantId },
+      select: { id: true },
+    });
+    if (!doc) throw new NotFoundException('NFS-e não encontrada.');
+    return this.prisma.nfseEtiquetaHistorico.findMany({
+      where: { documentoId },
+      include: { usuario: { select: { id: true, nome: true } } },
+      orderBy: { criadoEm: 'desc' },
+    });
   }
 
   /** Executa o ciclo para todas as configs ativas cuja proximaConsulta já venceu. */

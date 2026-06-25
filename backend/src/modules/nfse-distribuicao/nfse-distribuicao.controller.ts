@@ -21,6 +21,7 @@ import { RequiresPermission } from '../../common/decorators/permissions.decorato
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NfseDistribuicaoService } from './nfse-distribuicao.service';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
+import { AssociarDocumentosDto } from '../etiquetas/dto/associar-documentos.dto';
 
 class ListarDocumentosQuery {
   @IsOptional() @IsString() page?: string;
@@ -33,6 +34,7 @@ class ListarDocumentosQuery {
   @IsOptional() @IsString() competenciaInicio?: string;
   @IsOptional() @IsString() competenciaFim?: string;
   @IsOptional() @IsString() cancelada?: string;
+  @IsOptional() @IsString() municipio?: string;
 }
 
 @ApiTags('NFS-e Distribuição')
@@ -102,7 +104,16 @@ export class NfseDistribuicaoController {
       competenciaInicio: q.competenciaInicio,
       competenciaFim: q.competenciaFim,
       cancelada: q.cancelada === undefined ? undefined : q.cancelada === 'true',
+      municipio: q.municipio,
     });
+  }
+
+  /** GET /nfse/municipios — municípios de incidência atendidos (com contagem). */
+  @Get('municipios')
+  @RequiresPermission('nfse.view')
+  @ApiOperation({ summary: 'Municípios atendidos nas NFS-e recebidas' })
+  municipios(@CurrentUser('tenantId') tenantId: string) {
+    return this.service.listarMunicipios(tenantId);
   }
 
   /** GET /nfse/documentos/:id — detalhe da NFS-e (com XML e eventos). */
@@ -114,6 +125,29 @@ export class NfseDistribuicaoController {
     @CurrentUser('tenantId') tenantId: string,
   ) {
     return this.service.obterDocumento(tenantId, id);
+  }
+
+  /** POST /nfse/documentos/etiquetas — associa/desassocia etiquetas a NFS-e. */
+  @Post('documentos/etiquetas')
+  @RequiresPermission('etiquetas.edit')
+  @ApiOperation({ summary: 'Associar/desassociar etiquetas a NFS-e' })
+  associarEtiquetas(
+    @Body() dto: AssociarDocumentosDto,
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('sub') usuarioId: string,
+  ) {
+    return this.service.associarEtiquetas(tenantId, usuarioId, dto);
+  }
+
+  /** GET /nfse/documentos/:id/etiqueta-historico — histórico de etiquetas. */
+  @Get('documentos/:id/etiqueta-historico')
+  @RequiresPermission('nfse.view')
+  @ApiOperation({ summary: 'Histórico de etiquetas de uma NFS-e' })
+  etiquetaHistorico(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    return this.service.listarEtiquetaHistorico(tenantId, id);
   }
 
   /** GET /nfse/documentos/:id/danfse — baixa o PDF do DANFSe (proxy do ADN). */

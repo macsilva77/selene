@@ -117,6 +117,7 @@ model Usuario {
   certificadoConvitesCriados  CertificadoConvite[]        @relation("ConviteCertCriadoPor")
   dfeConfigsCriados           DfeConfig[]                 @relation("DfeConfigCriadoPor")
   etiquetaHistorico           EtiquetaHistorico[]
+  nfseEtiquetaHistorico       NfseEtiquetaHistorico[]
 
   @@unique([tenantId, email])
   @@map("usuarios")
@@ -1370,8 +1371,9 @@ model Etiqueta {
   criadoEm     DateTime  @default(now()) @map("criado_em")
   atualizadoEm DateTime  @updatedAt @map("atualizado_em")
 
-  tenant     Tenant                 @relation(fields: [tenantId], references: [id])
-  documentos DfeDocumentoEtiqueta[]
+  tenant         Tenant                  @relation(fields: [tenantId], references: [id])
+  documentos     DfeDocumentoEtiqueta[]
+  nfseDocumentos NfseDocumentoEtiqueta[]
 
   @@index([tenantId, deletadoEm])
   @@map("etiquetas")
@@ -2093,7 +2095,9 @@ model NfseDocumento {
   erroProcessamento String?   @map("erro_processamento")
   criadoEm          DateTime  @default(now()) @map("criado_em")
 
-  eventos NfseEvento[]
+  eventos           NfseEvento[]
+  etiquetas         NfseDocumentoEtiqueta[]
+  etiquetaHistorico NfseEtiquetaHistorico[]
 
   /// Idempotência: mesma chave de acesso nunca duplicada por tenant
   @@unique([tenantId, chaveAcesso])
@@ -2145,6 +2149,39 @@ model NfseEvento {
   @@index([tenantId, tipoEvento])
   @@index([documentoId])
   @@map("nfse_eventos")
+}
+
+/// Junção entre NfseDocumento e Etiqueta (reusa as etiquetas do tenant).
+model NfseDocumentoEtiqueta {
+  id          String   @id @default(uuid())
+  documentoId String   @map("documento_id")
+  etiquetaId  String   @map("etiqueta_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  documento NfseDocumento @relation(fields: [documentoId], references: [id])
+  etiqueta  Etiqueta      @relation(fields: [etiquetaId], references: [id])
+
+  @@unique([documentoId, etiquetaId])
+  @@index([etiquetaId])
+  @@map("nfse_documento_etiquetas")
+}
+
+/// Histórico imutável de alterações de etiquetas em NFS-e.
+model NfseEtiquetaHistorico {
+  id              String   @id @default(uuid())
+  documentoId     String   @map("documento_id")
+  usuarioId       String?  @map("usuario_id")
+  /// Snapshot das etiquetas antes da alteração (array de {id, nome, cor})
+  etiquetasAntes  Json     @map("etiquetas_antes")
+  /// Snapshot das etiquetas depois da alteração (array de {id, nome, cor})
+  etiquetasDepois Json     @map("etiquetas_depois")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  documento NfseDocumento @relation(fields: [documentoId], references: [id])
+  usuario   Usuario?      @relation(fields: [usuarioId], references: [id])
+
+  @@index([documentoId, criadoEm])
+  @@map("nfse_etiqueta_historico")
 }
 
 /// Configuração de recepção NFS-e por CNPJ/tenant (distribuição via ADN).
