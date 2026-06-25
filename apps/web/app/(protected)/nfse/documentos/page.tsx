@@ -623,9 +623,9 @@ export default function DocumentosNfsePage() {
         <div className="flex-1 min-h-0 overflow-auto">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Etiquetas</TableHead>
-                <TableHead>Nº</TableHead>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead><span className="flex items-center gap-1"><TagIcon size={11} />Etiquetas</span></TableHead>
+                <TableHead className="text-right">Nº</TableHead>
                 <TableHead>Prestador</TableHead>
                 <TableHead>Tomador</TableHead>
                 <TableHead>Chave NFS-e (50)</TableHead>
@@ -644,14 +644,14 @@ export default function DocumentosNfsePage() {
               ) : (
                 docs.map((d) => (
                   <TableRow key={d.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetalheId(d.id)}>
-                    <TableCell><EtiquetasBadges etiquetas={d.etiquetas} onClick={() => setEtiquetaDoc(d)} /></TableCell>
-                    <TableCell className="text-right tabular-nums">{d.numero ?? '—'}</TableCell>
-                    <TableCell className="max-w-[180px] truncate" title={d.prestadorNome ?? ''}>{d.prestadorNome ?? maskCnpj(d.prestadorDoc)}</TableCell>
-                    <TableCell className="max-w-[180px] truncate" title={d.tomadorNome ?? ''}>{d.tomadorNome ?? maskCnpj(d.tomadorDoc)}</TableCell>
-                    <TableCell className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">{fmtChave50(d.chaveAcesso)}</TableCell>
-                    <TableCell>{fmtCompet(d.competencia)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtMoney(d.valorIssqn)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtMoney(d.valorLiquido)}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}><EtiquetasBadges etiquetas={d.etiquetas} onClick={() => setEtiquetaDoc(d)} /></TableCell>
+                    <TableCell className="text-right text-xs font-medium">{d.numero ?? '—'}</TableCell>
+                    <TableCell className="max-w-[180px] truncate text-xs" title={d.prestadorNome ?? ''}>{d.prestadorNome ?? maskCnpj(d.prestadorDoc)}</TableCell>
+                    <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground" title={d.tomadorNome ?? ''}>{d.tomadorNome ?? maskCnpj(d.tomadorDoc)}</TableCell>
+                    <TableCell><span className="font-mono text-xs text-muted-foreground tracking-tight whitespace-nowrap" title={d.chaveAcesso}>{fmtChave50(d.chaveAcesso)}</span></TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtCompet(d.competencia)}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums whitespace-nowrap">{fmtMoney(d.valorIssqn)}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums font-medium whitespace-nowrap">{fmtMoney(d.valorLiquido)}</TableCell>
                     <TableCell>
                       {d.cancelada ? (
                         <Badge className="bg-red-50 text-red-700"><ProhibitIcon size={12} className="mr-1" /> Cancelada</Badge>
