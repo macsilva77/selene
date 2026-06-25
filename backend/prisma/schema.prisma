@@ -1998,3 +1998,211 @@ model PgdasDeclaracao {
   @@index([tenantId, empresaId])
   @@map("pgdas_declaracoes")
 }
+
+// ── Recepção NFS-e (modelo Nacional — SNNFS-e / ADN) ─────────────────────────
+// Leiaute v1.01 — Schemas em documentacaoNfse/Schemas/1.01 (TCNFSe / tiposComplexos).
+// A distribuição é via API REST do ADN (NSU) — diferente do SOAP da NF-e.
+// Esta camada modela o CONTEÚDO recebido (independe do transporte).
+
+/// Relação do CNPJ monitorado (titular) com a NFS-e recebida.
+enum NfsePapelTitular {
+  PRESTADOR
+  TOMADOR
+  INTERMEDIARIO
+}
+
+/// NFS-e recebida pela distribuição do ADN (modelo Nacional).
+model NfseDocumento {
+  id           String           @id @default(uuid())
+  tenantId     String           @map("tenant_id")
+  /// CNPJ (14 dígitos) do contribuinte monitorado que consta na nota
+  cnpjTitular  String           @map("cnpj_titular")
+  /// Papel do titular na nota (prestador, tomador ou intermediário)
+  papelTitular NfsePapelTitular @map("papel_titular")
+
+  /// Chave de acesso — 50 dígitos, sem o prefixo "NFS" (chave natural, vide TSIdNFSe)
+  chaveAcesso      String    @map("chave_acesso") @db.VarChar(50)
+  /// Número sequencial da NFS-e (nNFSe)
+  numero           String?
+  /// Ambiente gerador: 1=Prefeitura, 2=Sistema Nacional (ambGer)
+  ambGerador       Int?      @map("amb_gerador")
+  /// Código IBGE do município emissor (extraído da chave)
+  codMunEmissor    String?   @map("cod_mun_emissor") @db.VarChar(7)
+  /// Código IBGE do município de incidência do ISSQN (cLocIncid)
+  codMunIncidencia String?   @map("cod_mun_incidencia") @db.VarChar(7)
+  /// Data/hora de processamento/validação da NFS-e (dhProc, UTC)
+  dhProcessamento  DateTime? @map("dh_processamento")
+  /// Competência da prestação (dCompet da DPS)
+  competencia      DateTime? @map("competencia") @db.Date
+
+  // ── Prestador (emit / DPS prest) ──
+  prestadorDoc        String? @map("prestador_doc")
+  prestadorNome       String? @map("prestador_nome")
+  prestadorIm         String? @map("prestador_im")
+  /// Situação Simples Nacional: 1=Não optante, 2=MEI, 3=ME/EPP (opSimpNac)
+  prestadorOpSimpNac  Int?    @map("prestador_op_simp_nac")
+  /// Regime especial de tributação (regEspTrib)
+  prestadorRegEspTrib Int?    @map("prestador_reg_esp_trib")
+
+  // ── Tomador (DPS toma) e Intermediário (DPS interm) ──
+  tomadorDoc        String? @map("tomador_doc")
+  tomadorNome       String? @map("tomador_nome")
+  intermediarioDoc  String? @map("intermediario_doc")
+  intermediarioNome String? @map("intermediario_nome")
+
+  // ── Serviço (DPS serv/cServ) ──
+  /// Código de tributação nacional do ISSQN — 6 dígitos (cTribNac)
+  codTribNac       String? @map("cod_trib_nac") @db.VarChar(6)
+  /// Código de tributação municipal (cTribMun)
+  codTribMun       String? @map("cod_trib_mun")
+  /// Descrição do serviço prestado (xDescServ)
+  descricaoServico String? @map("descricao_servico") @db.Text
+  /// Código NBS (cNBS)
+  codNbs           String? @map("cod_nbs")
+
+  // ── Valores e ISSQN (valores / DPS trib/tribMun) ──
+  valorServico  Decimal? @map("valor_servico")   @db.Decimal(15, 2)
+  valorBcIssqn  Decimal? @map("valor_bc_issqn")  @db.Decimal(15, 2)
+  aliquotaIssqn Decimal? @map("aliquota_issqn")  @db.Decimal(5, 2)
+  valorIssqn    Decimal? @map("valor_issqn")     @db.Decimal(15, 2)
+  valorTotalRet Decimal? @map("valor_total_ret") @db.Decimal(15, 2)
+  valorLiquido  Decimal? @map("valor_liquido")   @db.Decimal(15, 2)
+  /// Incidência ISSQN: 1=Tributável, 2=Imunidade, 3=Exportação, 4=Não incidência (tribISSQN)
+  tribIssqn     Int?     @map("trib_issqn")
+  /// Retenção ISSQN: 1=Não retido, 2=Retido tomador, 3=Retido intermediário (tpRetISSQN)
+  tpRetIssqn    Int?     @map("tp_ret_issqn")
+
+  // ── DPS embutida ──
+  chaveDps  String? @map("chave_dps") @db.VarChar(45)
+  numeroDps String? @map("numero_dps")
+  serieDps  String? @map("serie_dps")
+
+  // ── XML ──
+  /// XML original — null quando armazenado no GCS (ver xmlStoragePath)
+  xmlOriginal    Bytes?  @map("xml_original")
+  xmlStoragePath String? @map("xml_storage_path") @db.VarChar(500)
+  /// SHA-256 do XML para validação de integridade
+  xmlHash        String  @map("xml_hash")
+
+  /// Cancelada por evento de cancelamento/substituição
+  cancelada Boolean @default(false)
+
+  // ── Controle de processamento ──
+  processado        Boolean   @default(false)
+  processadoEm      DateTime? @map("processado_em")
+  erroProcessamento String?   @map("erro_processamento")
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+
+  eventos NfseEvento[]
+
+  /// Idempotência: mesma chave de acesso nunca duplicada por tenant
+  @@unique([tenantId, chaveAcesso])
+  @@index([tenantId, cnpjTitular])
+  @@index([tenantId, prestadorDoc])
+  @@index([tenantId, tomadorDoc])
+  @@index([tenantId, competencia])
+  @@index([tenantId, codMunIncidencia])
+  @@index([tenantId, processado])
+  @@map("nfse_documentos")
+}
+
+/// Evento de NFS-e recebido (cancelamento, substituição, manifestação do tomador, etc.).
+model NfseEvento {
+  id          String  @id @default(uuid())
+  tenantId    String  @map("tenant_id")
+  /// FK opcional — o evento pode chegar antes da própria NFS-e
+  documentoId String? @map("documento_id")
+
+  /// Chave da NFS-e vinculada — 50 dígitos (chNFSe)
+  chaveNfse       String  @map("chave_nfse") @db.VarChar(50)
+  /// Código do tipo de evento (ex: e101101 cancelamento, e203206 rejeição tomador)
+  tipoEvento      String  @map("tipo_evento")
+  descricaoEvento String? @map("descricao_evento")
+  /// Sequencial do evento (nSeqEvento)
+  nSeqEvento      Int?    @map("n_seq_evento")
+  /// Ambiente gerador: 1=Prefeitura, 2=Sefin Nacional, 3=ADN (ambGer)
+  ambGerador      Int?    @map("amb_gerador")
+
+  dhProcessamento DateTime? @map("dh_processamento")
+  /// Documento do autor do evento (CPF agente / CNPJ manifestante), só dígitos
+  autorDoc        String?   @map("autor_doc")
+  motivoCodigo    String?   @map("motivo_codigo")
+  motivoTexto     String?   @map("motivo_texto") @db.Text
+  /// Chave da NFS-e substituta (eventos de substituição)
+  chaveSubstituta String?   @map("chave_substituta") @db.VarChar(50)
+
+  xmlOriginal    Bytes?  @map("xml_original")
+  xmlStoragePath String? @map("xml_storage_path") @db.VarChar(500)
+  xmlHash        String  @map("xml_hash")
+
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  documento NfseDocumento? @relation(fields: [documentoId], references: [id])
+
+  /// Idempotência: mesmo evento (chave+tipo+seq) não duplica por tenant
+  @@unique([tenantId, chaveNfse, tipoEvento, nSeqEvento])
+  @@index([tenantId, chaveNfse])
+  @@index([tenantId, tipoEvento])
+  @@index([documentoId])
+  @@map("nfse_eventos")
+}
+
+/// Configuração de recepção NFS-e por CNPJ/tenant (distribuição via ADN).
+model NfseConfig {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  /// CNPJ monitorado, 14 dígitos sem máscara
+  cnpj     String
+  /// 1 = produção, 2 = homologação (TipoAmbiente do ADN)
+  tpAmb    Int    @default(2) @map("tp_amb")
+  /// URL base do ADN para o ambiente (produção restrita / produção)
+  baseUrl  String @map("base_url")
+  /// Certificado A1/A3 usado no mTLS (referência a CertificadoDigital.id)
+  certificadoId    String  @map("certificado_id")
+  ativo            Boolean @default(true)
+  /// Horário de captura "HH:MM"
+  horarioCaptura   String  @default("00:00") @map("horario_captura")
+  /// Intervalo em minutos entre execuções
+  intervaloMinutos Int     @default(60) @map("intervalo_minutos")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+  criadoPorId  String?  @map("criado_por_id")
+
+  controle NfseNsuControle?
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId, ativo])
+  @@map("nfse_configs")
+}
+
+/// Controle de NSU com lock distribuído por CNPJ (distribuição NFS-e).
+model NfseNsuControle {
+  id       String @id @default(uuid())
+  configId String @unique @map("config_id")
+  tenantId String @map("tenant_id")
+  cnpj     String
+  /// Último NSU processado com sucesso (int64 do ADN, armazenado como string)
+  ultimoNsu       String    @default("0") @map("ultimo_nsu")
+  ultimaConsulta  DateTime? @map("ultima_consulta")
+  proximaConsulta DateTime? @map("proxima_consulta")
+  // — lock distribuído —
+  emProcessamento Boolean   @default(false) @map("em_processamento")
+  lockId          String?   @map("lock_id")
+  lockAte         DateTime? @map("lock_ate")
+  lockProcessoId  String?   @map("lock_processo_id")
+  // — estatísticas —
+  totalDocBaixados  Int       @default(0) @map("total_doc_baixados")
+  totalCiclos       Int       @default(0) @map("total_ciclos")
+  totalErros        Int       @default(0) @map("total_erros")
+  ultimoErro        String?   @map("ultimo_erro")
+  ultimoErroEm      DateTime? @map("ultimo_erro_em")
+  errosConsecutivos Int       @default(0) @map("erros_consecutivos")
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  config NfseConfig @relation(fields: [configId], references: [id])
+
+  @@unique([tenantId, cnpj])
+  @@index([proximaConsulta, emProcessamento])
+  @@map("nfse_nsu_controles")
+}

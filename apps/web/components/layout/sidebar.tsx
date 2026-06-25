@@ -56,7 +56,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Documentos',
     items: [
       { href: '/dfe/documentos',        icon: FileMagnifyingGlassIcon, label: 'NF-e' },
-      { href: '#',                      icon: ReceiptIcon,             label: 'NFS-e', soon: true },
+      { href: '/nfse',                  icon: ReceiptIcon,             label: 'NFS-e' },
       { href: '#',                      icon: TruckIcon,               label: 'CT-e',  soon: true },
       { href: '/documentos-cancelados', icon: ProhibitIcon,            label: 'Documentos Fiscais Cancelados' },
       {

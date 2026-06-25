@@ -29,6 +29,7 @@ import { UnidadesOrganizacionaisModule } from './modules/unidades-organizacionai
 import { EmpresasModule } from './modules/empresas/empresas.module';
 import { CertificadosModule } from './modules/certificados/certificados.module';
 import { DfeDistribuicaoModule } from './modules/dfe-distribuicao/dfe-distribuicao.module';
+import { NfseDistribuicaoModule } from './modules/nfse-distribuicao/nfse-distribuicao.module';
 import { EtiquetasModule } from './modules/etiquetas/etiquetas.module';
 import { SpedModule } from './modules/sped/sped.module';
 import { ObrigacoesAcessoriasModule } from './modules/obrigacoes-acessorias/obrigacoes-acessorias.module';
@@ -119,6 +120,7 @@ import { SimplesNacionalModule } from './modules/simples-nacional/simples-nacion
     EmpresasModule,
     CertificadosModule,
     DfeDistribuicaoModule,
+    NfseDistribuicaoModule,
     EtiquetasModule,
     SpedModule,
     ObrigacoesAcessoriasModule,
