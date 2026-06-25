@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,6 +11,7 @@ import {
   Post,
   Query,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -18,6 +20,7 @@ import { IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequiresPermission } from '../../common/decorators/permissions.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NfseDistribuicaoService } from './nfse-distribuicao.service';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
@@ -43,6 +46,28 @@ class ListarDocumentosQuery {
 @Controller('nfse')
 export class NfseDistribuicaoController {
   constructor(private readonly service: NfseDistribuicaoService) {}
+
+  /**
+   * POST /nfse/cron/executar — dispara o ciclo de recepção de todas as configs
+   * pendentes. Uso interno pelo Cloud Scheduler (garante execução mesmo com o
+   * Cloud Run dormindo). Protegido por segredo de header (NFSE_CRON_SECRET).
+   */
+  @Public()
+  @Post('cron/executar')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Disparar recepção NFS-e (Cloud Scheduler — interno)' })
+  async cronExecutar(@Headers('x-cron-secret') secret?: string) {
+    const esperado = process.env.NFSE_CRON_SECRET;
+    if (!esperado || secret !== esperado) {
+      throw new UnauthorizedException('Token de cron inválido.');
+    }
+    const resumos = await this.service.executarPendentes();
+    return {
+      ok: true,
+      configs: resumos.length,
+      documentos: resumos.reduce((s, r) => s + r.documentosBaixados, 0),
+    };
+  }
 
   /** POST /nfse/configurar — cria/atualiza a recepção de um CNPJ. */
   @Post('configurar')
