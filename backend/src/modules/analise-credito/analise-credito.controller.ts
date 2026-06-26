@@ -6,6 +6,7 @@ import { Prisma, AuditAcao } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { DIVIDA_FINANCEIRA_CP, DIVIDA_FINANCEIRA_LP } from './infrastructure/referencial-codigos';
 import { classificarCruzamento, CruzamentoAno } from './cruzamento-receita';
+import { simularRegimes, type Atividade, type Regime } from './simulacao-tributaria';
 import { P01Service }        from './p01/p01.service';
 import { P02DreService }     from './p02/p02-dre.service';
 import { P02BalancoService } from './p02/p02-balanco.service';
@@ -310,6 +311,120 @@ export class AnaliseCreditoController {
       return { ano, receitaEcf, vendasEfd, mesesEfd, ratio, flag };
     });
     return { cnpj, razaoSocial: empresa.razaoSocial, anos: resultado };
+  }
+
+  /**
+   * Simulação tributária Simples × Presumido × Real para o exercício.
+   * Monta a entrada a partir da receita bruta (ECF, fallback EFD), do lucro
+   * contábil (LAIR, quando há ECF de Lucro Real) e da atividade (CNAE + EFD),
+   * e devolve a carga federal de cada regime com memória de cálculo.
+   */
+  @Get('empresas/:cnpj/simulacao-tributaria')
+  async simulacaoTributaria(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('cnpj') cnpj: string,
+    @Query('exercicio') exercicioStr?: string,
+  ) {
+    this.validarCnpj(cnpj);
+    const empresa = await this.prisma.creditoEmpresa.findUnique({
+      where: { tenantId_cnpj: { tenantId, cnpj } },
+    });
+    if (!empresa) throw new NotFoundException(`Empresa CNPJ ${cnpj} não encontrada`);
+
+    const exercicio = this.parseExercicio(exercicioStr);
+    if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
+
+    const LINHAS = ['receita_bruta', 'receita_liquida', 'lucro_liquido', 'ir_csll', 'ebit'];
+    const raiz = cnpj.slice(0, 8);
+    const [dreRows, efd] = await Promise.all([
+      this.prisma.creditoDre.findMany({
+        where:  { empresaId: empresa.id, exercicio, linhaDre: { in: LINHAS } },
+        select: { linhaDre: true, valor: true },
+      }),
+      this.prisma.faturamentoCompetencia.groupBy({
+        by:    ['ano'],
+        where: { tenantId, cnpj: { startsWith: raiz }, fonte: 'EFD_ICMS', ano: exercicio },
+        _sum:  { vlFaturamentoBruto: true, vlDevolucoes: true, vlTransferencias: true, vlRemessas: true },
+      }),
+    ]);
+
+    const dre: Record<string, number> = {};
+    for (const r of dreRows) dre[r.linhaDre] = Math.abs(Number(r.valor));
+
+    // Fallback ECF quando o "calcular" ainda não materializou a DRE no banco.
+    if (dreRows.length === 0) {
+      try {
+        const dreEcf = await this.dreService.montar(empresa.id, exercicio, empresa.regimeTributario);
+        if (dreEcf.validacaoOk) {
+          for (const row of dreEcf.linhas) {
+            if (LINHAS.includes(row.linhaDre)) dre[row.linhaDre] = Math.abs(Number(row.valor));
+          }
+        }
+      } catch { /* ECF ausente — segue com EFD */ }
+    }
+
+    const efdBruto = Number(efd[0]?._sum.vlFaturamentoBruto ?? 0);
+    const efdVendasLiq = Math.max(
+      0,
+      efdBruto
+        - Number(efd[0]?._sum.vlDevolucoes ?? 0)
+        - Number(efd[0]?._sum.vlTransferencias ?? 0)
+        - Number(efd[0]?._sum.vlRemessas ?? 0),
+    );
+
+    // Receita bruta: ECF (mais fiel) → senão receita líquida → senão faturamento EFD.
+    const receitaBruta = dre.receita_bruta || dre.receita_liquida || efdBruto;
+    if (!receitaBruta) {
+      return {
+        cnpj, razaoSocial: empresa.razaoSocial, exercicio,
+        regimeAtual: empresa.regimeTributario ?? null, processando: true,
+        mensagem: 'Sem receita apurada (ECF/EFD) para este exercício.',
+        simulacao: null,
+      };
+    }
+
+    const atividade = this.inferirAtividade(empresa.cnaePrincipal, efdVendasLiq, receitaBruta);
+    const regimeAtual = this.mapRegime(empresa.regimeTributario);
+
+    // LAIR contábil só quando há ECF de Lucro Real (lucro líquido + IR/CSLL de volta).
+    const lairContabil =
+      empresa.regimeTributario === 'lucro_real' && dre.lucro_liquido !== undefined && dre.ir_csll !== undefined
+        ? dre.lucro_liquido + dre.ir_csll
+        : null;
+    // Margem-proxy p/ estimar Lucro Real quando não há ECF: EBIT/receita; senão presunção.
+    const margemProxy =
+      lairContabil !== null
+        ? null
+        : dre.ebit
+          ? Math.max(0, dre.ebit) / receitaBruta
+          : atividade === 'servico' ? 0.32 : 0.08;
+
+    const simulacao = simularRegimes({ receitaBruta, lairContabil, margemProxy, atividade, regimeAtual });
+
+    return {
+      cnpj, razaoSocial: empresa.razaoSocial, exercicio,
+      regimeAtual: empresa.regimeTributario ?? null,
+      cnaePrincipal: empresa.cnaePrincipal ?? null,
+      fonteReceita: dre.receita_bruta ? 'ECF (receita bruta)' : dre.receita_liquida ? 'ECF (receita líquida)' : 'EFD (faturamento)',
+      processando: false,
+      simulacao,
+    };
+  }
+
+  /** Atividade predominante p/ presunção/anexo: CNAE → indústria/comércio; EFD sem mercadoria → serviço. */
+  private inferirAtividade(cnae: string | null, vendasMercadoria: number, receita: number): Atividade {
+    const div = cnae ? Number(cnae.slice(0, 2)) : NaN;
+    if (div >= 5 && div <= 33) return 'industria';
+    if (div >= 45 && div <= 47) return 'comercio';
+    // Sem CNAE conclusivo: usa o EFD — quase sem venda de mercadoria ⇒ serviço.
+    if (receita > 0 && vendasMercadoria < receita * 0.05) return 'servico';
+    return 'comercio';
+  }
+
+  /** Normaliza o regime cadastral para o tipo da simulação (arbitrado/imune → null). */
+  private mapRegime(r: string | null): Regime | null {
+    if (r === 'lucro_real' || r === 'lucro_presumido' || r === 'simples_nacional') return r;
+    return null;
   }
 
   @Get('empresas/:cnpj/indicadores')

@@ -25,6 +25,7 @@ import {
 } from '@/lib/analise-credito-api';
 import { faturamentoApi, type FaturamentoAnual } from '@/lib/faturamento-api';
 import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
+import { PlanejamentoTributario } from '@/components/visao-geral/planejamento-tributario';
 
 /* ─── Paleta ─────────────────────────────────────────────────────────────── */
 
@@ -578,6 +579,15 @@ export default function VisaoGeralPage() {
           </Card>
         );
       })()}
+
+      {/* Planejamento Tributário — simulação Simples × Presumido × Real + memória de cálculo */}
+      {!carregando && cnpj && exercicio && (
+        <PlanejamentoTributario
+          cnpj={cnpj}
+          exercicio={exercicio}
+          regimeAtualLabel={empresaSel ? labelRegime(empresaSel.regimeTributario) : null}
+        />
+      )}
 
       {/* Visão mensal (EFD) — colapsa quando não há EFD em nenhum ano */}
       {mostrarMensal && (<>

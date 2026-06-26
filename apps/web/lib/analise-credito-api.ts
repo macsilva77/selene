@@ -146,6 +146,60 @@ export interface CruzamentoReceita {
   anos:        CruzamentoAno[];
 }
 
+/* ─── Simulação Tributária ─────────────────────────────────────────────────── */
+
+export type Atividade = 'comercio' | 'industria' | 'servico';
+export type Regime = 'simples_nacional' | 'lucro_presumido' | 'lucro_real';
+
+export interface PassoMemoria {
+  rotulo:   string;
+  formula?: string;
+  valor:    number;
+  tipo?:    'moeda' | 'percentual' | 'fator';
+}
+
+export interface TributoLinha {
+  sigla:    string;
+  nome:     string;
+  valor:    number;
+  partilha?: number;
+  memoria:  PassoMemoria[];
+}
+
+export interface RegimeSimulado {
+  regime:          Regime;
+  rotulo:          string;
+  elegivel:        boolean;
+  totalFederal:    number | null;
+  totalUnificado?: number | null;
+  cargaEfetiva:    number | null;
+  tributos:        TributoLinha[];
+  estimado:        boolean;
+  observacoes:     string[];
+}
+
+export interface Simulacao {
+  receitaBruta:    number;
+  atividade:       Atividade;
+  regimeAtual:     Regime | null;
+  regimes:         RegimeSimulado[];
+  recomendado:     Regime | null;
+  economiaVsAtual: number | null;
+  premissas:       string[];
+}
+
+export interface SimulacaoTributaria {
+  cnpj:            string;
+  razaoSocial:     string;
+  exercicio:       number;
+  regimeAtual:     string | null;
+  cnaePrincipal?:  string | null;
+  fonteReceita?:   string;
+  processando:     boolean;
+  mensagem?:       string;
+  simulacao:       Simulacao | null;
+}
+
 /* ─── API calls ──────────────────────────────────────────────────────────── */
 
 export const analiseCreditoApi = {
@@ -200,6 +254,12 @@ export const analiseCreditoApi = {
   /** Cruzamento Receita ECF × Faturamento EFD por ano (qualidade de dado / risco) */
   cruzamentoReceita: (cnpj: string) =>
     api.get<CruzamentoReceita>(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/cruzamento-receita`).then(r => r.data),
+
+  /** Simulação tributária Simples × Presumido × Real (com memória de cálculo) */
+  simulacaoTributaria: (cnpj: string, exercicio: number): Promise<SimulacaoTributaria> =>
+    api.get(`/analise-credito/empresas/${encodeURIComponent(cnpj)}/simulacao-tributaria`, {
+      params: { exercicio },
+    }).then(r => r.data),
 
   /**
    * Lê ECF Parquet → calcula indicadores, DRE, estrutura → salva → roda alertas.
