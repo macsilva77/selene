@@ -16,6 +16,7 @@ import {
   TagIcon,
   DotsThreeVerticalIcon,
   EyeIcon,
+  MapPinIcon,
 } from '@phosphor-icons/react';
 
 const inputCls =
@@ -109,6 +110,7 @@ const FILTROS_VAZIOS: Filtros = {
 interface MunicipioAtendido {
   codigo: string;
   nome: string | null;
+  uf: string;
   total: number;
 }
 
@@ -669,6 +671,66 @@ function AcoesDropdown({
   );
 }
 
+/* ───────────────────────────── Municípios atendidos (popup) ───────────────────────────── */
+
+function MunicipiosPopup({
+  municipios,
+  onClose,
+}: Readonly<{ municipios: MunicipioAtendido[]; onClose: () => void }>) {
+  const porUf: Record<string, MunicipioAtendido[]> = {};
+  for (const m of municipios) (porUf[m.uf || '—'] ??= []).push(m);
+  const ufs = Object.keys(porUf).sort();
+  const totalNotas = municipios.reduce((s, m) => s + m.total, 0);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[80vh] rounded-xl border border-border bg-card shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold">Municípios atendidos pela captura</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {municipios.length} municípios em {ufs.length} {ufs.length === 1 ? 'estado' : 'estados'} · {totalNotas.toLocaleString('pt-BR')} notas capturadas
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 hover:bg-muted">
+            <XIcon size={18} />
+          </button>
+        </div>
+        <div className="overflow-auto px-5 py-3 flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2 leading-relaxed">
+            Estes são os municípios integrados ao <strong>Sistema Nacional NFS-e</strong> dos quais já recebemos
+            notas. A captura é <strong>nacional</strong> — qualquer município integrado aparece aqui automaticamente
+            conforme novas notas chegam. Municípios que ainda não aderiram ao Sistema Nacional não distribuem pelo
+            ADN e, portanto, não são captados por aqui.
+          </p>
+          {municipios.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Nenhum município ainda — sincronize a recepção.</p>
+          ) : (
+            ufs.map((uf) => (
+              <div key={uf}>
+                <div className="text-xs font-semibold text-foreground mb-1.5">
+                  {uf} <span className="text-muted-foreground font-normal">({porUf[uf].length})</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {porUf[uf]
+                    .slice()
+                    .sort((a, b) => b.total - a.total)
+                    .map((m) => (
+                      <span key={m.codigo} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs">
+                        {m.nome ?? m.codigo}
+                        <span className="text-muted-foreground tabular-nums">{m.total}</span>
+                      </span>
+                    ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────────── Página ───────────────────────────── */
 
 export default function DocumentosNfsePage() {
@@ -688,6 +750,7 @@ export default function DocumentosNfsePage() {
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [detalheId, setDetalheId] = useState<string | null>(null);
   const [etiquetaDoc, setEtiquetaDoc] = useState<NfseDoc | null>(null);
+  const [showMunicipios, setShowMunicipios] = useState(false);
 
   useEffect(() => {
     if (empresa?.cnpj && !filtros.cnpj) {
@@ -783,6 +846,9 @@ export default function DocumentosNfsePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setShowMunicipios(true)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
+              <MapPinIcon size={16} /> Municípios{municipios.length ? ` (${municipios.length})` : ''}
+            </button>
             <button onClick={() => void carregarDocs()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors">
               <ArrowClockwiseIcon size={16} /> Atualizar
             </button>
@@ -878,6 +944,7 @@ export default function DocumentosNfsePage() {
         </div>
       </div>
 
+      {showMunicipios && <MunicipiosPopup municipios={municipios} onClose={() => setShowMunicipios(false)} />}
       {detalheId && <DetalheDrawer docId={detalheId} onClose={() => setDetalheId(null)} />}
       {etiquetaDoc && (
         <EtiquetasModal

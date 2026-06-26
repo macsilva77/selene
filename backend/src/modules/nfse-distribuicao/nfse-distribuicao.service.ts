@@ -19,7 +19,7 @@ import {
 } from './nfse.types';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
 import { AssociarDocumentosDto } from '../etiquetas/dto/associar-documentos.dto';
-import { MUNICIPIOS_IBGE } from './data/municipios-ibge';
+import { MUNICIPIOS_IBGE, MUNICIPIOS_UF } from './data/municipios-ibge';
 
 /**
  * Orquestra a recepção de NFS-e pela distribuição do ADN.
@@ -359,13 +359,13 @@ export class NfseDistribuicaoService {
       where: { tenantId, codMunIncidencia: { not: null } },
       _count: { _all: true },
     });
-    const map = new Map<string, { codigo: string; nome: string | null; total: number }>();
+    const map = new Map<string, { codigo: string; nome: string | null; uf: string; total: number }>();
     for (const g of grupos) {
       const cod = g.codMunIncidencia;
       if (!cod) continue;
-      const e = map.get(cod) ?? { codigo: cod, nome: null, total: 0 };
+      const e = map.get(cod) ?? { codigo: cod, nome: null, uf: MUNICIPIOS_UF[cod] ?? '', total: 0 };
       e.total += g._count._all;
-      if (g.munIncidenciaNome) e.nome = g.munIncidenciaNome;
+      e.nome = MUNICIPIOS_IBGE[cod] ?? g.munIncidenciaNome ?? e.nome;
       map.set(cod, e);
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
