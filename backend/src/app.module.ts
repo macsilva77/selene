@@ -38,6 +38,7 @@ import { ClientesFornecedoresModule } from './modules/clientes-fornecedores/clie
 import { IndicadoresEcfModule } from './modules/indicadores-ecf/indicadores-ecf.module';
 import { FaturamentoModule } from './modules/faturamento/faturamento.module';
 import { SimplesNacionalModule } from './modules/simples-nacional/simples-nacional.module';
+import { EstoqueModule } from './modules/estoque/estoque.module';
 
 
 @Module({
@@ -129,6 +130,7 @@ import { SimplesNacionalModule } from './modules/simples-nacional/simples-nacion
     IndicadoresEcfModule,
     FaturamentoModule,
     SimplesNacionalModule,
+    EstoqueModule,
   ],
   providers: [
     // Global exception filter

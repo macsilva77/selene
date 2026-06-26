@@ -10,6 +10,6 @@ import { FaturamentoController } from './faturamento.controller';
   imports: [PrismaModule],
   providers: [FaturamentoGcsService, FaturamentoQueryService, FaturamentoProcessamentoService, FaturamentoCanceladosService],
   controllers: [FaturamentoController],
-  exports: [FaturamentoProcessamentoService, FaturamentoQueryService],
+  exports: [FaturamentoProcessamentoService, FaturamentoQueryService, FaturamentoGcsService],
 })
 export class FaturamentoModule {}
