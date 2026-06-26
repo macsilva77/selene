@@ -2034,6 +2034,8 @@ model NfseDocumento {
   codMunEmissor    String?   @map("cod_mun_emissor") @db.VarChar(7)
   /// Código IBGE do município de incidência do ISSQN (cLocIncid)
   codMunIncidencia String?   @map("cod_mun_incidencia") @db.VarChar(7)
+  /// Nome do município de incidência do ISSQN (xLocIncid do XML)
+  munIncidenciaNome String?  @map("mun_incidencia_nome")
   /// Data/hora de processamento/validação da NFS-e (dhProc, UTC)
   dhProcessamento  DateTime? @map("dh_processamento")
   /// Competência da prestação (dCompet da DPS)

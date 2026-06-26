@@ -141,6 +141,15 @@ export class NfseDistribuicaoController {
     return this.service.listarMunicipios(tenantId);
   }
 
+  /** POST /nfse/municipios/backfill — preenche o nome dos municípios nas NFS-e existentes. */
+  @Post('municipios/backfill')
+  @RequiresPermission('nfse.manage')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Preencher nome dos municípios nas NFS-e já recebidas' })
+  backfillMunicipios(@CurrentUser('tenantId') tenantId: string) {
+    return this.service.backfillMunicipios(tenantId);
+  }
+
   /** GET /nfse/completude — verificação de completude (NSU vs recebidos) por CNPJ. */
   @Get('completude')
   @RequiresPermission('nfse.view')

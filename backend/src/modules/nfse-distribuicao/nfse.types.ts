@@ -115,6 +115,7 @@ export interface NfseProcessada {
   ambGerador?: number;
   codMunEmissor?: string;
   codMunIncidencia?: string;
+  munIncidenciaNome?: string;
   dhProcessamento?: Date;
   competencia?: Date;
 

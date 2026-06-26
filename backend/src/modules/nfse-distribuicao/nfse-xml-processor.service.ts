@@ -138,6 +138,7 @@ export class NfseXmlProcessorService {
       ambGerador: this.int(infNFSe?.ambGer),
       codMunEmissor: chaveAcesso ? chaveAcesso.substring(0, 7) : undefined,
       codMunIncidencia: this.str(infNFSe?.cLocIncid),
+      munIncidenciaNome: this.str(infNFSe?.xLocIncid),
       dhProcessamento: this.data(infNFSe?.dhProc),
       competencia: this.data(infDPS?.dCompet),
 
@@ -224,6 +225,7 @@ export class NfseXmlProcessorService {
           ambGerador: nfse.ambGerador,
           codMunEmissor: nfse.codMunEmissor,
           codMunIncidencia: nfse.codMunIncidencia,
+          munIncidenciaNome: nfse.munIncidenciaNome,
           dhProcessamento: nfse.dhProcessamento,
           competencia: nfse.competencia,
           prestadorDoc: nfse.prestadorDoc,

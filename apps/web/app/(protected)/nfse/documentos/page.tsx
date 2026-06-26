@@ -46,6 +46,7 @@ interface NfseDoc {
   competencia: string | null;
   dhProcessamento: string | null;
   codMunIncidencia: string | null;
+  munIncidenciaNome: string | null;
   prestadorDoc: string | null;
   prestadorNome: string | null;
   tomadorDoc: string | null;
@@ -102,6 +103,7 @@ const FILTROS_VAZIOS: Filtros = {
 
 interface MunicipioAtendido {
   codigo: string;
+  nome: string | null;
   total: number;
 }
 
@@ -361,7 +363,7 @@ function FiltersBar({
           <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.municipio} onChange={(e) => set('municipio', e.target.value)}>
             <option value="">Todos os municípios atendidos</option>
             {municipios.map((m) => (
-              <option key={m.codigo} value={m.codigo}>{m.codigo} ({m.total})</option>
+              <option key={m.codigo} value={m.codigo}>{m.nome ?? m.codigo} ({m.total})</option>
             ))}
           </select>
         </label>
@@ -719,6 +721,7 @@ export default function DocumentosNfsePage() {
                 <TableHead className="text-right">Nº</TableHead>
                 <TableHead>Prestador</TableHead>
                 <TableHead>Tomador</TableHead>
+                <TableHead>Município (ISS)</TableHead>
                 <TableHead>Chave NFS-e (50)</TableHead>
                 <TableHead>Competência</TableHead>
                 <TableHead className="text-right">ISSQN</TableHead>
@@ -729,9 +732,9 @@ export default function DocumentosNfsePage() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">Carregando…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-sm text-muted-foreground py-8">Carregando…</TableCell></TableRow>
               ) : docs.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">Nenhuma NFS-e nesta aba com os filtros atuais.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center text-sm text-muted-foreground py-8">Nenhuma NFS-e nesta aba com os filtros atuais.</TableCell></TableRow>
               ) : (
                 docs.map((d) => (
                   <TableRow key={d.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetalheId(d.id)}>
@@ -739,6 +742,7 @@ export default function DocumentosNfsePage() {
                     <TableCell className="text-right text-xs font-medium">{d.numero ?? '—'}</TableCell>
                     <TableCell className="max-w-[180px] truncate text-xs" title={d.prestadorNome ?? ''}>{d.prestadorNome ?? maskCnpj(d.prestadorDoc)}</TableCell>
                     <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground" title={d.tomadorNome ?? ''}>{d.tomadorNome ?? maskCnpj(d.tomadorDoc)}</TableCell>
+                    <TableCell className="max-w-[150px] truncate text-xs" title={d.munIncidenciaNome ?? d.codMunIncidencia ?? ''}>{d.munIncidenciaNome ?? d.codMunIncidencia ?? '—'}</TableCell>
                     <TableCell><span className="font-mono text-xs text-muted-foreground tracking-tight whitespace-nowrap" title={d.chaveAcesso}>{fmtChave50(d.chaveAcesso)}</span></TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtCompet(d.competencia)}</TableCell>
                     <TableCell className="text-right text-xs tabular-nums whitespace-nowrap">{fmtMoney(d.valorIssqn)}</TableCell>

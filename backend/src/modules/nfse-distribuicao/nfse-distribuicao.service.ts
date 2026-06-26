@@ -250,7 +250,7 @@ export class NfseDistribuicaoService {
         // não traz o XML na listagem
         select: {
           id: true, chaveAcesso: true, numero: true, papelTitular: true, cnpjTitular: true,
-          competencia: true, dhProcessamento: true, codMunIncidencia: true,
+          competencia: true, dhProcessamento: true, codMunIncidencia: true, munIncidenciaNome: true,
           prestadorDoc: true, prestadorNome: true, tomadorDoc: true, tomadorNome: true,
           codTribNac: true, descricaoServico: true, valorServico: true, valorIssqn: true,
           valorLiquido: true, tribIssqn: true, tpRetIssqn: true, cancelada: true,
@@ -350,16 +350,56 @@ export class NfseDistribuicaoService {
     return out;
   }
 
-  /** Municípios de incidência presentes nas NFS-e recebidas (com contagem). */
+  /** Municípios de incidência presentes nas NFS-e recebidas (código, nome, contagem). */
   async listarMunicipios(tenantId: string) {
     const grupos = await this.prisma.nfseDocumento.groupBy({
-      by: ['codMunIncidencia'],
+      by: ['codMunIncidencia', 'munIncidenciaNome'],
       where: { tenantId, codMunIncidencia: { not: null } },
       _count: { _all: true },
     });
-    return grupos
-      .map((g) => ({ codigo: g.codMunIncidencia as string, total: g._count._all }))
-      .sort((a, b) => b.total - a.total);
+    const map = new Map<string, { codigo: string; nome: string | null; total: number }>();
+    for (const g of grupos) {
+      const cod = g.codMunIncidencia;
+      if (!cod) continue;
+      const e = map.get(cod) ?? { codigo: cod, nome: null, total: 0 };
+      e.total += g._count._all;
+      if (g.munIncidenciaNome) e.nome = g.munIncidenciaNome;
+      map.set(cod, e);
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }
+
+  /**
+   * Preenche o nome do município (xLocIncid) nas NFS-e existentes que ainda não o
+   * têm, lendo o XML já armazenado. Eficiente: 1 leitura + 1 updateMany por município.
+   */
+  async backfillMunicipios(tenantId: string) {
+    const codigos = await this.prisma.nfseDocumento.groupBy({
+      by: ['codMunIncidencia'],
+      where: { tenantId, codMunIncidencia: { not: null }, munIncidenciaNome: null },
+      _count: { _all: true },
+    });
+    let municipios = 0;
+    let atualizados = 0;
+    for (const g of codigos) {
+      const cod = g.codMunIncidencia;
+      if (!cod) continue;
+      const amostra = await this.prisma.nfseDocumento.findFirst({
+        where: { tenantId, codMunIncidencia: cod, xmlOriginal: { not: null } },
+        select: { xmlOriginal: true },
+      });
+      if (!amostra?.xmlOriginal) continue;
+      const conteudo = this.processor.extrair(amostra.xmlOriginal.toString('utf8'));
+      const nome = conteudo && conteudo.tipo === 'NFSE' ? conteudo.munIncidenciaNome : undefined;
+      if (!nome) continue;
+      const r = await this.prisma.nfseDocumento.updateMany({
+        where: { tenantId, codMunIncidencia: cod, munIncidenciaNome: null },
+        data: { munIncidenciaNome: nome },
+      });
+      municipios++;
+      atualizados += r.count;
+    }
+    return { municipios, atualizados };
   }
 
   // ────────────────────────────────────────────────────────────────────────────
