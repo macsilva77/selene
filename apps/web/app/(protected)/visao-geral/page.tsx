@@ -20,6 +20,8 @@ import {
   type UltimaClassificacao,
   type Alerta,
   type KpiAnual,
+  type CruzamentoReceita,
+  type CruzamentoFlag,
 } from '@/lib/analise-credito-api';
 import { faturamentoApi, type FaturamentoAnual } from '@/lib/faturamento-api';
 import { useEmpresaSelecionada, mesmoCnpj } from '@/lib/empresa-selecionada';
@@ -86,6 +88,17 @@ function labelRegime(r: string | null): string {
   };
   return map[r] ?? r;
 }
+
+/* ─── Consistência Fiscal (ECF × EFD) ────────────────────────────────────── */
+
+type FlagUI = { label: string; cor: string; msg: string };
+const FLAG_UI: Record<CruzamentoFlag, FlagUI> = {
+  CONSISTENTE:   { label: 'Consistente',            cor: '#2F9E44', msg: 'As vendas do EFD batem com a receita declarada no ECF.' },
+  SUBDECLARACAO: { label: 'Possível subdeclaração', cor: '#E03131', msg: 'O EFD vende materialmente MAIS do que a ECF declara — risco de malha fiscal; conferir.' },
+  DIVERGENCIA:   { label: 'Divergência',            cor: '#F08C00', msg: 'A ECF declara mais do que as vendas de mercadoria do EFD — pode ser receita de serviço ou inconsistência.' },
+  SERVICO:       { label: 'Serviços',               cor: '#1098AD', msg: 'Sem vendas de mercadoria no EFD; a receita é de serviços (fora do EFD ICMS).' },
+  SEM_DADOS:     { label: 'Sem dados',              cor: '#868E96', msg: 'EFD incompleto (menos de 10 meses) ou ECF ausente no ano — sem base para cruzar.' },
+};
 
 /* ─── Score de Saúde (derivado do motor P04) ─────────────────────────────── */
 
@@ -208,6 +221,7 @@ export default function VisaoGeralPage() {
   const [dre, setDre]             = useState<Record<string, string | null> | null>(null);
   const [alertas, setAlertas]     = useState<Alerta[]>([]);
   const [kpisAnuais, setKpisAnuais] = useState<KpiAnual[]>([]);
+  const [cruzamento, setCruzamento] = useState<CruzamentoReceita | null>(null);
 
   // Mensal (EFD) — ano desacoplado do exercício do ECF (o EFD pode estar em outro ano)
   const [anoMensal, setAnoMensal]   = useState<number | null>(null);
@@ -235,7 +249,7 @@ export default function VisaoGeralPage() {
   const buscar = useCallback(async () => {
     if (!cnpj) return;
     setCarregando(true);
-    setDre(null); setAlertas([]); setKpisAnuais([]); setAnualCache({}); setAnoMensal(null); setAnosMensal([]);
+    setDre(null); setAlertas([]); setKpisAnuais([]); setCruzamento(null); setAnualCache({}); setAnoMensal(null); setAnosMensal([]);
     try {
       const exers = await analiseCreditoApi.exercicios(cnpj).catch(() => [] as number[]);
       const exer = exers.length ? Math.max(...exers) : null;
@@ -247,16 +261,18 @@ export default function VisaoGeralPage() {
         .filter(a => a >= 2018 && a <= ANO_CORRENTE + 1)
         .sort((a, b) => b - a);
 
-      const [rFin, rAlertas, rKpis, ...rAnuais] = await Promise.allSettled([
+      const [rFin, rAlertas, rKpis, rCruz, ...rAnuais] = await Promise.allSettled([
         exer ? analiseCreditoApi.financeiro(cnpj, exer) : Promise.resolve(null),
         exer ? analiseCreditoApi.alertas(cnpj, exer)    : Promise.resolve([] as Alerta[]),
         analiseCreditoApi.kpisAnuais(cnpj),
+        analiseCreditoApi.cruzamentoReceita(cnpj),
         ...candidatos.map(ano => faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS' })),
       ]);
 
       setDre(rFin.status === 'fulfilled' && rFin.value ? rFin.value.dre : null);
       setAlertas(rAlertas.status === 'fulfilled' ? rAlertas.value : []);
       setKpisAnuais(rKpis.status === 'fulfilled' ? rKpis.value : []);
+      setCruzamento(rCruz.status === 'fulfilled' ? rCruz.value : null);
 
       const cache: Record<number, FaturamentoAnual | null> = {};
       candidatos.forEach((ano, i) => {
@@ -503,6 +519,65 @@ export default function VisaoGeralPage() {
           <p><strong>{criticos[0]?.mensagem}</strong>{criticos.length > 1 ? ` · +${criticos.length - 1} alerta(s) crítico(s) — vale investigar.` : ' — vale investigar.'}</p>
         </div>
       )}
+
+      {/* Consistência Fiscal (ECF × EFD) — destaque, auditável, sem estimativa */}
+      {!carregando && cruzamento && cruzamento.anos.length > 0 && (() => {
+        const anosOrd = [...cruzamento.anos].sort((a, b) => b.ano - a.ano);
+        const destaque = anosOrd.find(a => a.flag !== 'SEM_DADOS') ?? anosOrd[0];
+        const ui = FLAG_UI[destaque.flag];
+        return (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between gap-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
+                  <SealCheckIcon size={15} /> Consistência Fiscal <span className="font-normal text-muted-foreground">(ECF × EFD)</span>
+                </CardTitle>
+                <span className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ borderColor: ui.cor, color: ui.cor }}>
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ui.cor }} /> {ui.label} · {destaque.ano}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Compara a receita declarada na contabilidade (ECF) com as vendas efetivas do EFD ICMS — <strong>auditável, sem estimativa</strong>. {ui.msg}
+              </p>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted-foreground border-b border-border">
+                      <th className="text-left font-medium py-1.5">Ano</th>
+                      <th className="text-right font-medium">Receita ECF</th>
+                      <th className="text-right font-medium">Vendas EFD</th>
+                      <th className="text-center font-medium">Meses</th>
+                      <th className="text-right font-medium">Ratio</th>
+                      <th className="text-right font-medium pl-3">Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {anosOrd.map(a => {
+                      const f = FLAG_UI[a.flag];
+                      return (
+                        <tr key={a.ano} className="border-b border-border/50 last:border-0">
+                          <td className="py-1.5 tabular-nums">{a.ano}</td>
+                          <td className="text-right tabular-nums">{fmtMilhoes(a.receitaEcf)}</td>
+                          <td className="text-right tabular-nums">{fmtMilhoes(a.vendasEfd)}</td>
+                          <td className="text-center tabular-nums">{a.mesesEfd}/12</td>
+                          <td className="text-right tabular-nums">{a.ratio === null ? '—' : a.ratio.toFixed(2)}</td>
+                          <td className="text-right pl-3">
+                            <span className="inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap" style={{ color: f.cor }}>
+                              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: f.cor }} /> {f.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Visão mensal (EFD) — colapsa quando não há EFD em nenhum ano */}
       {mostrarMensal && (<>
