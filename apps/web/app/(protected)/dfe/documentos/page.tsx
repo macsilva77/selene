@@ -989,9 +989,9 @@ function DocTable({
             <TableHead className="text-right">Nº Doc</TableHead>
             <TableHead>CNPJ Emitente</TableHead>
             <TableHead>Nome Emitente</TableHead>
-            <TableHead>Chave NF-e (44)</TableHead>
             <TableHead>Emissão</TableHead>
             <TableHead className="text-right">Valor Total</TableHead>
+            <TableHead>Chave NF-e (44)</TableHead>
             <TableHead>Ações</TableHead>
           </TableRow>
         </TableHeader>
@@ -1043,6 +1043,14 @@ function DocTable({
                   {doc.nfeEmitenteNome ?? '—'}
                 </TableCell>
 
+                {/* Data Emissão */}
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(doc.nfeDhEmissao)}</TableCell>
+
+                {/* Valor Total */}
+                <TableCell className="text-right text-xs tabular-nums font-medium whitespace-nowrap">
+                  {fmtCurrency(doc.nfeValorTotal)}
+                </TableCell>
+
                 {/* Chave completa 44 dígitos */}
                 <TableCell>
                   {doc.chaveAcesso ? (
@@ -1055,14 +1063,6 @@ function DocTable({
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
-                </TableCell>
-
-                {/* Data Emissão */}
-                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(doc.nfeDhEmissao)}</TableCell>
-
-                {/* Valor Total */}
-                <TableCell className="text-right text-xs tabular-nums font-medium whitespace-nowrap">
-                  {fmtCurrency(doc.nfeValorTotal)}
                 </TableCell>
 
                 {/* Ações */}

@@ -1006,11 +1006,11 @@ export default function DocumentosNfsePage() {
                 <TableHead>Prestador</TableHead>
                 <TableHead>Tomador</TableHead>
                 <TableHead>Município (ISS)</TableHead>
-                <TableHead>Chave NFS-e (50)</TableHead>
                 <TableHead>Competência</TableHead>
                 <TableHead className="text-right">ISSQN</TableHead>
                 <TableHead className="text-right">Líquido</TableHead>
                 <TableHead>Situação</TableHead>
+                <TableHead>Chave NFS-e (50)</TableHead>
                 <TableHead>Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -1027,7 +1027,6 @@ export default function DocumentosNfsePage() {
                     <TableCell className="max-w-[180px] truncate text-xs" title={d.prestadorNome ?? ''}>{d.prestadorNome ?? maskCnpj(d.prestadorDoc)}</TableCell>
                     <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground" title={d.tomadorNome ?? ''}>{d.tomadorNome ?? maskCnpj(d.tomadorDoc)}</TableCell>
                     <TableCell className="max-w-[150px] truncate text-xs" title={d.munIncidenciaNome ?? d.codMunIncidencia ?? ''}>{d.munIncidenciaNome ?? d.codMunIncidencia ?? '—'}</TableCell>
-                    <TableCell><span className="font-mono text-xs text-muted-foreground tracking-tight whitespace-nowrap" title={d.chaveAcesso}>{fmtChave50(d.chaveAcesso)}</span></TableCell>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtCompet(d.competencia)}</TableCell>
                     <TableCell className="text-right text-xs tabular-nums whitespace-nowrap">{fmtMoney(d.valorIssqn)}</TableCell>
                     <TableCell className="text-right text-xs tabular-nums font-medium whitespace-nowrap">{fmtMoney(d.valorLiquido)}</TableCell>
@@ -1038,6 +1037,7 @@ export default function DocumentosNfsePage() {
                         <Badge className="bg-emerald-50 text-emerald-700"><CheckCircleIcon size={12} className="mr-1" /> Ativa</Badge>
                       )}
                     </TableCell>
+                    <TableCell><span className="font-mono text-xs text-muted-foreground tracking-tight whitespace-nowrap" title={d.chaveAcesso}>{fmtChave50(d.chaveAcesso)}</span></TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <AcoesDropdown
                         onDetalhe={() => setDetalheId(d.id)}
