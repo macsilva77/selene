@@ -1011,7 +1011,7 @@ export default function DocumentosNfsePage() {
                 <TableHead className="text-right">Líquido</TableHead>
                 <TableHead>Situação</TableHead>
                 <TableHead>Chave NFS-e (50)</TableHead>
-                <TableHead>Ações</TableHead>
+                <TableHead className="sticky right-0 z-20 bg-card border-l border-border">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1038,7 +1038,7 @@ export default function DocumentosNfsePage() {
                       )}
                     </TableCell>
                     <TableCell><span className="font-mono text-xs text-muted-foreground tracking-tight whitespace-nowrap" title={d.chaveAcesso}>{fmtChave50(d.chaveAcesso)}</span></TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell onClick={(e) => e.stopPropagation()} className="sticky right-0 z-10 bg-card border-l border-border">
                       <AcoesDropdown
                         onDetalhe={() => setDetalheId(d.id)}
                         onEtiquetas={() => setEtiquetaDoc(d)}

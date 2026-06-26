@@ -992,7 +992,7 @@ function DocTable({
             <TableHead>Emissão</TableHead>
             <TableHead className="text-right">Valor Total</TableHead>
             <TableHead>Chave NF-e (44)</TableHead>
-            <TableHead>Ações</TableHead>
+            <TableHead className="sticky right-0 z-20 bg-card border-l border-border">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1066,7 +1066,7 @@ function DocTable({
                 </TableCell>
 
                 {/* Ações */}
-                <TableCell onClick={(e) => e.stopPropagation()}>
+                <TableCell onClick={(e) => e.stopPropagation()} className="sticky right-0 z-10 bg-card border-l border-border">
                   <AcoesDropdown
                     doc={doc}
                     onManifest={() => { onManifestSingle(doc); }}
