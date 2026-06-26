@@ -12,6 +12,26 @@
 
 import { NfsePapelTitular } from '@prisma/client';
 
+// ─── Normalização de nome de município ───────────────────────────────────────
+
+/** Conectores que ficam em minúsculo no meio do nome (Title Case pt-BR). */
+const CONECTORES_MUNICIPIO = new Set(['de', 'do', 'da', 'dos', 'das', 'e', 'di', 'du']);
+
+/**
+ * Normaliza o nome do município para Title Case (o ADN envia ora MAIÚSCULO,
+ * ora misto). Ex.: "SAO JOSE DOS CAMPOS" → "Sao Jose dos Campos";
+ * "São Paulo" → "São Paulo". Preserva acentos já presentes.
+ */
+export function tituloCaseMunicipio(nome: string): string {
+  return nome
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((w, i) => (i > 0 && CONECTORES_MUNICIPIO.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
 // ─── Namespace oficial ───────────────────────────────────────────────────────
 
 /** targetNamespace de todos os documentos NFS-e Nacional */

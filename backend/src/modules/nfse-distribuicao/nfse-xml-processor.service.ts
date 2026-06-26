@@ -11,6 +11,7 @@ import {
   NfsePapelTitular,
   NfseProcessada,
   NfseTipoDocumento,
+  tituloCaseMunicipio,
 } from './nfse.types';
 
 /**
@@ -138,7 +139,7 @@ export class NfseXmlProcessorService {
       ambGerador: this.int(infNFSe?.ambGer),
       codMunEmissor: chaveAcesso ? chaveAcesso.substring(0, 7) : undefined,
       codMunIncidencia: this.str(infNFSe?.cLocIncid),
-      munIncidenciaNome: this.str(infNFSe?.xLocIncid),
+      munIncidenciaNome: this.nomeMunicipio(infNFSe?.xLocIncid),
       dhProcessamento: this.data(infNFSe?.dhProc),
       competencia: this.data(infDPS?.dCompet),
 
@@ -351,6 +352,12 @@ export class NfseXmlProcessorService {
   private str(v: unknown): string | undefined {
     const s = String(v ?? '').trim();
     return s || undefined;
+  }
+
+  /** Nome de município em Title Case (normaliza a caixa inconsistente do ADN). */
+  private nomeMunicipio(v: unknown): string | undefined {
+    const s = this.str(v);
+    return s ? tituloCaseMunicipio(s) : undefined;
   }
 
   private int(v: unknown): number | undefined {

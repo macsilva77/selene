@@ -15,6 +15,7 @@ import {
   NfseCicloResumo,
   NFSE_DIST,
   NFSE_WORKER_DEFAULTS,
+  tituloCaseMunicipio,
 } from './nfse.types';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
 import { AssociarDocumentosDto } from '../etiquetas/dto/associar-documentos.dto';
@@ -399,7 +400,26 @@ export class NfseDistribuicaoService {
       municipios++;
       atualizados += r.count;
     }
-    return { municipios, atualizados };
+
+    // Normaliza a caixa dos nomes já gravados (Title Case)
+    let normalizados = 0;
+    const nomes = await this.prisma.nfseDocumento.groupBy({
+      by: ['munIncidenciaNome'],
+      where: { tenantId, munIncidenciaNome: { not: null } },
+    });
+    for (const n of nomes) {
+      if (!n.munIncidenciaNome) continue;
+      const novo = tituloCaseMunicipio(n.munIncidenciaNome);
+      if (novo !== n.munIncidenciaNome) {
+        const r = await this.prisma.nfseDocumento.updateMany({
+          where: { tenantId, munIncidenciaNome: n.munIncidenciaNome },
+          data: { munIncidenciaNome: novo },
+        });
+        normalizados += r.count;
+      }
+    }
+
+    return { municipios, atualizados, normalizados };
   }
 
   // ────────────────────────────────────────────────────────────────────────────
