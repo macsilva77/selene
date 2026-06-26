@@ -352,6 +352,58 @@ export class NfseDistribuicaoService {
     return out;
   }
 
+  /**
+   * Consulta a cobertura de um município (por código IBGE ou nome): retorna nome
+   * oficial, UF, quantas notas já captamos de lá e o convênio no ADN (se houver
+   * config ativa para autenticar). `atendido` = já recebemos nota OU o ADN
+   * confirma convênio.
+   */
+  async consultarCobertura(tenantId: string, termo: string) {
+    const t = (termo ?? '').trim();
+    let codigo = t.replace(/\D/g, '');
+    if (!(codigo.length === 7 && MUNICIPIOS_IBGE[codigo])) {
+      const alvo = t.toLowerCase();
+      const hit = Object.entries(MUNICIPIOS_IBGE).find(([, n]) => n.toLowerCase() === alvo);
+      codigo = hit ? hit[0] : '';
+    }
+    if (!codigo || !MUNICIPIOS_IBGE[codigo]) {
+      throw new NotFoundException('Município não encontrado (informe o código IBGE de 7 dígitos ou o nome exato).');
+    }
+
+    const nome = MUNICIPIOS_IBGE[codigo];
+    const uf = MUNICIPIOS_UF[codigo] ?? '';
+    const notasLocais = await this.prisma.nfseDocumento.count({
+      where: { tenantId, codMunIncidencia: codigo },
+    });
+
+    let convenio: unknown = null;
+    let convenioErro: string | null = null;
+    const config = await this.prisma.nfseConfig.findFirst({
+      where: { tenantId, ativo: true },
+      select: { baseUrl: true, certificadoId: true },
+    });
+    if (config) {
+      try {
+        const { pemCert, pemKey } = await this.certLoader.loadCert(config.certificadoId);
+        convenio = await this.client.consultarConvenio(config.baseUrl, codigo, pemCert, pemKey);
+      } catch (e) {
+        convenioErro = (e as Error).message;
+      }
+    } else {
+      convenioErro = 'Sem configuração NFS-e ativa para consultar o ADN.';
+    }
+
+    return {
+      codigo,
+      nome,
+      uf,
+      notasLocais,
+      atendido: notasLocais > 0 || (convenio != null && !convenioErro),
+      convenio,
+      convenioErro,
+    };
+  }
+
   /** Municípios de incidência presentes nas NFS-e recebidas (código, nome, contagem). */
   async listarMunicipios(tenantId: string) {
     const grupos = await this.prisma.nfseDocumento.groupBy({

@@ -150,6 +150,17 @@ export class NfseDistribuicaoController {
     return this.service.backfillMunicipios(tenantId);
   }
 
+  /** GET /nfse/cobertura?municipio=… — verifica se um município é atendido (notas + convênio ADN). */
+  @Get('cobertura')
+  @RequiresPermission('nfse.view')
+  @ApiOperation({ summary: 'Consultar cobertura de um município (código IBGE ou nome)' })
+  cobertura(
+    @Query('municipio') municipio: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    return this.service.consultarCobertura(tenantId, municipio ?? '');
+  }
+
   /** GET /nfse/completude — verificação de completude (NSU vs recebidos) por CNPJ. */
   @Get('completude')
   @RequiresPermission('nfse.view')

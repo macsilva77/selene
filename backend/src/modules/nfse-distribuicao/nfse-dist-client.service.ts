@@ -93,6 +93,28 @@ export class NfseDistClientService {
     return this.doGetBinary(url, pemCert, pemKey, 'application/pdf');
   }
 
+  /**
+   * GET /parametrizacao/{codMun}/convenio — consulta os dados de convênio de um
+   * município no ADN (Parâmetros Municipais, servido no host raiz sob /parametrizacao).
+   * Retorna o JSON cru (formato ResultadoConsultaConfiguracoesConvenio).
+   */
+  async consultarConvenio(
+    baseUrl: string,
+    codMun: string,
+    pemCert: string,
+    pemKey: string,
+  ): Promise<unknown> {
+    const origin = new URL(baseUrl).origin;
+    const url = `${origin}/parametrizacao/${codMun}/convenio`;
+    this.logger.log(`convênio → ${url}`);
+    const corpo = await this.doGet(url, pemCert, pemKey);
+    try {
+      return JSON.parse(corpo);
+    } catch {
+      return corpo;
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────────────────
   // Mapeamento da resposta
   // ────────────────────────────────────────────────────────────────────────────

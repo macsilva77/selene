@@ -673,6 +673,15 @@ function AcoesDropdown({
 
 /* ───────────────────────────── Municípios atendidos (popup) ───────────────────────────── */
 
+interface CoberturaResult {
+  codigo: string;
+  nome: string;
+  uf: string;
+  notasLocais: number;
+  atendido: boolean;
+  convenioErro: string | null;
+}
+
 function MunicipiosPopup({
   municipios,
   onClose,
@@ -681,6 +690,25 @@ function MunicipiosPopup({
   for (const m of municipios) (porUf[m.uf || '—'] ??= []).push(m);
   const ufs = Object.keys(porUf).sort();
   const totalNotas = municipios.reduce((s, m) => s + m.total, 0);
+
+  const [termo, setTermo] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [resultado, setResultado] = useState<CoberturaResult | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const consultar = async () => {
+    if (!termo.trim()) return;
+    setErro(null);
+    setResultado(null);
+    setBuscando(true);
+    try {
+      const res = await api.get(`/nfse/cobertura?municipio=${encodeURIComponent(termo.trim())}`);
+      setResultado(res.data as CoberturaResult);
+    } catch (e) {
+      setErro((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Município não encontrado.');
+    } finally {
+      setBuscando(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -703,6 +731,48 @@ function MunicipiosPopup({
             conforme novas notas chegam. Municípios que ainda não aderiram ao Sistema Nacional não distribuem pelo
             ADN e, portanto, não são captados por aqui.
           </p>
+
+          {/* Consulta de cobertura de um município */}
+          <div className="rounded-md border border-border p-3 flex flex-col gap-2">
+            <span className="text-xs font-medium text-foreground">Consultar um município</span>
+            <div className="flex items-center gap-2">
+              <input
+                className={`${inputCls} flex-1`}
+                placeholder="Nome (ex.: Campinas) ou código IBGE (7 dígitos)"
+                value={termo}
+                onChange={(e) => setTermo(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && consultar()}
+              />
+              <button
+                onClick={consultar}
+                disabled={buscando || !termo.trim()}
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 whitespace-nowrap"
+              >
+                {buscando ? 'Consultando…' : 'Consultar'}
+              </button>
+            </div>
+            {erro && <p className="text-xs text-red-600">{erro}</p>}
+            {resultado && (
+              <div className="flex flex-col gap-1 border-t border-border pt-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-foreground">{resultado.nome}/{resultado.uf}</span>
+                  <span className="text-xs text-muted-foreground font-mono">{resultado.codigo}</span>
+                  {resultado.atendido ? (
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-xs font-medium">Atendido</span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-xs font-medium">Sem notas captadas</span>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground">{resultado.notasLocais.toLocaleString('pt-BR')} nota(s) já captada(s) deste município.</span>
+                {resultado.convenioErro ? (
+                  <span className="text-xs text-muted-foreground">Convênio no ADN: não foi possível confirmar ({resultado.convenioErro.slice(0, 90)}).</span>
+                ) : (
+                  <span className="text-xs text-emerald-700">Convênio confirmado no ADN (integrado ao Sistema Nacional).</span>
+                )}
+              </div>
+            )}
+          </div>
+
           {municipios.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">Nenhum município ainda — sincronize a recepção.</p>
           ) : (
