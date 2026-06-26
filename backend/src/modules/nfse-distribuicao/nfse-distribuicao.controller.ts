@@ -141,6 +141,14 @@ export class NfseDistribuicaoController {
     return this.service.listarMunicipios(tenantId);
   }
 
+  /** GET /nfse/completude — verificação de completude (NSU vs recebidos) por CNPJ. */
+  @Get('completude')
+  @RequiresPermission('nfse.view')
+  @ApiOperation({ summary: 'Verificar completude da recepção NFS-e por CNPJ' })
+  completude(@CurrentUser('tenantId') tenantId: string) {
+    return this.service.verificarCompletude(tenantId);
+  }
+
   /** GET /nfse/documentos/:id — detalhe da NFS-e (com XML e eventos). */
   @Get('documentos/:id')
   @RequiresPermission('nfse.view')

@@ -60,11 +60,11 @@ export class NfseXmlProcessorService {
     }
 
     if (conteudo.tipo === 'NFSE') {
-      const id = await this.persistirNfse(conteudo, tenantId, cnpjTitular, xmlBuffer, xmlHash);
+      const id = await this.persistirNfse(conteudo, tenantId, cnpjTitular, xmlBuffer, xmlHash, raw.nsu);
       if (id) await this.aplicarEtiquetaPadrao(id, tenantId);
       return id ? { id, tipo: 'NFSE' } : null;
     }
-    const id = await this.persistirEvento(conteudo, tenantId, xmlBuffer, xmlHash);
+    const id = await this.persistirEvento(conteudo, tenantId, xmlBuffer, xmlHash, raw.nsu);
     return id ? { id, tipo: 'EVENTO' } : null;
   }
 
@@ -210,11 +210,13 @@ export class NfseXmlProcessorService {
     cnpjTitular: string,
     xmlBuffer: Buffer,
     xmlHash: string,
+    nsu?: string,
   ): Promise<string | null> {
     try {
       const doc = await this.prisma.nfseDocumento.create({
         data: {
           tenantId,
+          nsu,
           cnpjTitular,
           papelTitular: this.determinarPapel(nfse, cnpjTitular),
           chaveAcesso: nfse.chaveAcesso,
@@ -255,7 +257,15 @@ export class NfseXmlProcessorService {
       });
       return doc.id;
     } catch (err: any) {
-      if (err?.code === 'P2002') return null; // chave já existe — idempotência
+      if (err?.code === 'P2002') {
+        // Já existe — idempotência. Backfill do NSU se ainda não gravado.
+        if (nsu) {
+          await this.prisma.nfseDocumento
+            .updateMany({ where: { tenantId, chaveAcesso: nfse.chaveAcesso, nsu: null }, data: { nsu } })
+            .catch(() => undefined);
+        }
+        return null;
+      }
       throw err;
     }
   }
@@ -265,6 +275,7 @@ export class NfseXmlProcessorService {
     tenantId: string,
     xmlBuffer: Buffer,
     xmlHash: string,
+    nsu?: string,
   ): Promise<string | null> {
     // Vincula ao documento se já recebido; aplica cancelamento quando for o caso.
     const documento = await this.prisma.nfseDocumento.findUnique({
@@ -276,6 +287,7 @@ export class NfseXmlProcessorService {
       const ev = await this.prisma.nfseEvento.create({
         data: {
           tenantId,
+          nsu,
           documentoId: documento?.id,
           chaveNfse: evt.chaveNfse,
           tipoEvento: evt.tipoEvento,

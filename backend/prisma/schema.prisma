@@ -2017,6 +2017,8 @@ enum NfsePapelTitular {
 model NfseDocumento {
   id           String           @id @default(uuid())
   tenantId     String           @map("tenant_id")
+  /// NSU do documento na distribuição do ADN (auditoria de contiguidade/gaps)
+  nsu          String?
   /// CNPJ (14 dígitos) do contribuinte monitorado que consta na nota
   cnpjTitular  String           @map("cnpj_titular")
   /// Papel do titular na nota (prestador, tomador ou intermediário)
@@ -2107,6 +2109,7 @@ model NfseDocumento {
   @@index([tenantId, competencia])
   @@index([tenantId, codMunIncidencia])
   @@index([tenantId, processado])
+  @@index([tenantId, cnpjTitular, nsu])
   @@map("nfse_documentos")
 }
 
@@ -2114,6 +2117,8 @@ model NfseDocumento {
 model NfseEvento {
   id          String  @id @default(uuid())
   tenantId    String  @map("tenant_id")
+  /// NSU do evento na distribuição do ADN
+  nsu         String? @map("nsu")
   /// FK opcional — o evento pode chegar antes da própria NFS-e
   documentoId String? @map("documento_id")
 

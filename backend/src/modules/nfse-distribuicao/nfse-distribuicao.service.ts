@@ -308,6 +308,48 @@ export class NfseDistribuicaoService {
     };
   }
 
+  /**
+   * Verificação de completude por CNPJ: compara o último NSU com a quantidade
+   * de documentos+eventos recebidos. `completo` quando batem (varredura sem gaps).
+   * `rastreamentoNsu` indica quantos docs já têm o NSU gravado (auditoria fina).
+   */
+  async verificarCompletude(tenantId: string) {
+    const cfgs = await this.prisma.nfseConfig.findMany({
+      where: { tenantId },
+      include: { controle: true },
+    });
+    const out: Array<{
+      cnpj: string;
+      ultimoNsu: number;
+      documentos: number;
+      eventos: number;
+      recebido: number;
+      completo: boolean;
+      rastreamentoNsu: string;
+    }> = [];
+    for (const c of cfgs) {
+      const ultimoNsu = Number(c.controle?.ultimoNsu ?? 0);
+      const docs = await this.prisma.nfseDocumento.count({ where: { tenantId, cnpjTitular: c.cnpj } });
+      const docsComNsu = await this.prisma.nfseDocumento.count({
+        where: { tenantId, cnpjTitular: c.cnpj, nsu: { not: null } },
+      });
+      const eventos = await this.prisma.nfseEvento.count({
+        where: { tenantId, documento: { cnpjTitular: c.cnpj } },
+      });
+      const recebido = docs + eventos;
+      out.push({
+        cnpj: c.cnpj,
+        ultimoNsu,
+        documentos: docs,
+        eventos,
+        recebido,
+        completo: ultimoNsu === recebido,
+        rastreamentoNsu: docs === 0 ? '—' : `${docsComNsu}/${docs}`,
+      });
+    }
+    return out;
+  }
+
   /** Municípios de incidência presentes nas NFS-e recebidas (com contagem). */
   async listarMunicipios(tenantId: string) {
     const grupos = await this.prisma.nfseDocumento.groupBy({
