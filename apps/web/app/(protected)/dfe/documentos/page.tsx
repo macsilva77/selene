@@ -971,7 +971,7 @@ function DocTable({
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="w-10 text-center">
+            <TableHead className="w-10 text-center sticky left-0 z-20 bg-card border-r border-border">
               <button type="button" title={allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
                 onClick={onToggleAll}
                 className="text-muted-foreground hover:text-foreground transition-colors">
@@ -1005,7 +1005,7 @@ function DocTable({
                 className={`cursor-pointer ${isSelected ? 'bg-primary/5 hover:bg-primary/5' : 'hover:bg-muted/30'}`}
                 onClick={() => { onToggle(doc.id); }}
               >
-                <TableCell className="w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                <TableCell className="w-10 text-center sticky left-0 z-10 bg-card border-r border-border" onClick={(e) => e.stopPropagation()}>
                   <button type="button" title={isSelected ? 'Desmarcar' : 'Selecionar'}
                     onClick={() => { onToggle(doc.id); }}
                     className="text-muted-foreground hover:text-foreground transition-colors">
