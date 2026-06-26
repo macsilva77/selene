@@ -16,6 +16,7 @@ import {
   NFSE_DIST,
   NFSE_WORKER_DEFAULTS,
   tituloCaseMunicipio,
+  normalizarTexto,
 } from './nfse.types';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
 import { AssociarDocumentosDto } from '../etiquetas/dto/associar-documentos.dto';
@@ -358,16 +359,31 @@ export class NfseDistribuicaoService {
    * config ativa para autenticar). `atendido` = já recebemos nota OU o ADN
    * confirma convênio.
    */
+  /** Busca municípios por parte do nome (sem acento/caixa). Retorna até 15 candidatos. */
+  buscarMunicipios(q: string) {
+    const alvo = normalizarTexto(q ?? '');
+    if (alvo.length < 2) return [] as { codigo: string; nome: string; uf: string }[];
+    const hits: { codigo: string; nome: string; uf: string; rank: number }[] = [];
+    for (const [cod, nome] of Object.entries(MUNICIPIOS_IBGE)) {
+      const n = normalizarTexto(nome);
+      const idx = n.indexOf(alvo);
+      if (idx < 0) continue;
+      hits.push({ codigo: cod, nome, uf: MUNICIPIOS_UF[cod] ?? '', rank: n === alvo ? 0 : idx === 0 ? 1 : 2 });
+      if (hits.length > 400) break;
+    }
+    hits.sort((a, b) => a.rank - b.rank || a.nome.localeCompare(b.nome, 'pt-BR'));
+    return hits.slice(0, 15).map(({ codigo, nome, uf }) => ({ codigo, nome, uf }));
+  }
+
   async consultarCobertura(tenantId: string, termo: string) {
     const t = (termo ?? '').trim();
     let codigo = t.replace(/\D/g, '');
     if (!(codigo.length === 7 && MUNICIPIOS_IBGE[codigo])) {
-      const alvo = t.toLowerCase();
-      const hit = Object.entries(MUNICIPIOS_IBGE).find(([, n]) => n.toLowerCase() === alvo);
-      codigo = hit ? hit[0] : '';
+      // resolve por nome: melhor candidato da busca tolerante (sem acento/caixa, parcial)
+      codigo = this.buscarMunicipios(t)[0]?.codigo ?? '';
     }
     if (!codigo || !MUNICIPIOS_IBGE[codigo]) {
-      throw new NotFoundException('Município não encontrado (informe o código IBGE de 7 dígitos ou o nome exato).');
+      throw new NotFoundException('Município não encontrado (informe o código IBGE de 7 dígitos ou parte do nome).');
     }
 
     const nome = MUNICIPIOS_IBGE[codigo];

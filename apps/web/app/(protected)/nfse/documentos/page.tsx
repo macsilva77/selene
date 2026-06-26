@@ -695,19 +695,49 @@ function MunicipiosPopup({
   const [buscando, setBuscando] = useState(false);
   const [resultado, setResultado] = useState<CoberturaResult | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const consultar = async () => {
-    if (!termo.trim()) return;
+  const [sugestoes, setSugestoes] = useState<{ codigo: string; nome: string; uf: string }[]>([]);
+  const skipBusca = useRef(false);
+
+  // Autocomplete: busca por parte do nome (sem acento/caixa) enquanto digita
+  useEffect(() => {
+    if (skipBusca.current) {
+      skipBusca.current = false;
+      return;
+    }
+    const t = termo.trim();
+    if (t.length < 2) {
+      setSugestoes([]);
+      return;
+    }
+    const id = setTimeout(() => {
+      api.get(`/nfse/municipios/buscar?q=${encodeURIComponent(t)}`)
+        .then((r) => setSugestoes((r.data ?? []) as { codigo: string; nome: string; uf: string }[]))
+        .catch(() => setSugestoes([]));
+    }, 250);
+    return () => clearTimeout(id);
+  }, [termo]);
+
+  const consultarCodigo = async (alvo: string) => {
     setErro(null);
     setResultado(null);
     setBuscando(true);
     try {
-      const res = await api.get(`/nfse/cobertura?municipio=${encodeURIComponent(termo.trim())}`);
+      const res = await api.get(`/nfse/cobertura?municipio=${encodeURIComponent(alvo)}`);
       setResultado(res.data as CoberturaResult);
     } catch (e) {
       setErro((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Município não encontrado.');
     } finally {
       setBuscando(false);
     }
+  };
+  const consultar = () => {
+    if (termo.trim()) void consultarCodigo(termo.trim());
+  };
+  const selecionar = (s: { codigo: string; nome: string; uf: string }) => {
+    skipBusca.current = true;
+    setTermo(`${s.nome}/${s.uf}`);
+    setSugestoes([]);
+    void consultarCodigo(s.codigo);
   };
 
   return (
@@ -736,13 +766,31 @@ function MunicipiosPopup({
           <div className="rounded-md border border-border p-3 flex flex-col gap-2">
             <span className="text-xs font-medium text-foreground">Consultar um município</span>
             <div className="flex items-center gap-2">
-              <input
-                className={`${inputCls} flex-1`}
-                placeholder="Nome (ex.: Campinas) ou código IBGE (7 dígitos)"
-                value={termo}
-                onChange={(e) => setTermo(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && consultar()}
-              />
+              <div className="relative flex-1">
+                <input
+                  className={`${inputCls} w-full`}
+                  placeholder="Digite parte do nome (ex.: maceio) ou código IBGE"
+                  value={termo}
+                  onChange={(e) => setTermo(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && consultar()}
+                />
+                {sugestoes.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border border-input bg-background shadow-lg max-h-56 overflow-y-auto">
+                    {sugestoes.map((s) => (
+                      <button
+                        key={s.codigo}
+                        type="button"
+                        onClick={() => selecionar(s)}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors flex items-baseline gap-2"
+                      >
+                        <span className="text-foreground">{s.nome}</span>
+                        <span className="text-xs text-muted-foreground">{s.uf}</span>
+                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">{s.codigo}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={consultar}
                 disabled={buscando || !termo.trim()}

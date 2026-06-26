@@ -14,6 +14,16 @@ import { NfsePapelTitular } from '@prisma/client';
 
 // ─── Normalização de nome de município ───────────────────────────────────────
 
+/** Minúsculas + sem acentuação, para busca tolerante (Maceió ≡ maceio ≡ MACEIO). */
+export function normalizarTexto(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+
+
 /** Conectores que ficam em minúsculo no meio do nome (Title Case pt-BR). */
 const CONECTORES_MUNICIPIO = new Set(['de', 'do', 'da', 'dos', 'das', 'e', 'di', 'du']);
 

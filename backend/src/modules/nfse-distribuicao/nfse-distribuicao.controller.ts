@@ -150,6 +150,14 @@ export class NfseDistribuicaoController {
     return this.service.backfillMunicipios(tenantId);
   }
 
+  /** GET /nfse/municipios/buscar?q=… — autocomplete de municípios (IBGE, sem acento/caixa, parcial). */
+  @Get('municipios/buscar')
+  @RequiresPermission('nfse.view')
+  @ApiOperation({ summary: 'Buscar municípios por parte do nome (IBGE)' })
+  buscarMunicipios(@Query('q') q: string) {
+    return this.service.buscarMunicipios(q ?? '');
+  }
+
   /** GET /nfse/cobertura?municipio=… — verifica se um município é atendido (notas + convênio ADN). */
   @Get('cobertura')
   @RequiresPermission('nfse.view')
