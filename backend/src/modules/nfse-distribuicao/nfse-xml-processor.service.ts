@@ -13,6 +13,7 @@ import {
   NfseTipoDocumento,
   tituloCaseMunicipio,
 } from './nfse.types';
+import { MUNICIPIOS_IBGE } from './data/municipios-ibge';
 
 /**
  * Descompacta (quando aplicável), identifica, parseia e persiste cada documento
@@ -139,7 +140,7 @@ export class NfseXmlProcessorService {
       ambGerador: this.int(infNFSe?.ambGer),
       codMunEmissor: chaveAcesso ? chaveAcesso.substring(0, 7) : undefined,
       codMunIncidencia: this.str(infNFSe?.cLocIncid),
-      munIncidenciaNome: this.nomeMunicipio(infNFSe?.xLocIncid),
+      munIncidenciaNome: this.nomeMunicipio(this.str(infNFSe?.cLocIncid), infNFSe?.xLocIncid),
       dhProcessamento: this.data(infNFSe?.dhProc),
       competencia: this.data(infDPS?.dCompet),
 
@@ -354,9 +355,13 @@ export class NfseXmlProcessorService {
     return s || undefined;
   }
 
-  /** Nome de município em Title Case (normaliza a caixa inconsistente do ADN). */
-  private nomeMunicipio(v: unknown): string | undefined {
-    const s = this.str(v);
+  /**
+   * Nome do município: prioriza o nome OFICIAL do IBGE pelo código; se o código
+   * não existir na tabela, normaliza o xLocIncid do XML para Title Case.
+   */
+  private nomeMunicipio(cod: string | undefined, xLoc: unknown): string | undefined {
+    if (cod && MUNICIPIOS_IBGE[cod]) return MUNICIPIOS_IBGE[cod];
+    const s = this.str(xLoc);
     return s ? tituloCaseMunicipio(s) : undefined;
   }
 

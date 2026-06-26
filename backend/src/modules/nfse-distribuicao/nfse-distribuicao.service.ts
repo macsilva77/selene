@@ -19,6 +19,7 @@ import {
 } from './nfse.types';
 import { ConfigurarNfseDto } from './dto/configurar-nfse.dto';
 import { AssociarDocumentosDto } from '../etiquetas/dto/associar-documentos.dto';
+import { MUNICIPIOS_IBGE } from './data/municipios-ibge';
 
 /**
  * Orquestra a recepção de NFS-e pela distribuição do ADN.
@@ -371,13 +372,14 @@ export class NfseDistribuicaoService {
   }
 
   /**
-   * Preenche o nome do município (xLocIncid) nas NFS-e existentes que ainda não o
-   * têm, lendo o XML já armazenado. Eficiente: 1 leitura + 1 updateMany por município.
+   * Preenche/corrige o nome do município nas NFS-e usando o nome OFICIAL do IBGE
+   * pelo código de incidência. Para códigos fora da tabela, normaliza o que já
+   * estiver gravado para Title Case. 1 updateMany por município.
    */
   async backfillMunicipios(tenantId: string) {
     const codigos = await this.prisma.nfseDocumento.groupBy({
       by: ['codMunIncidencia'],
-      where: { tenantId, codMunIncidencia: { not: null }, munIncidenciaNome: null },
+      where: { tenantId, codMunIncidencia: { not: null } },
       _count: { _all: true },
     });
     let municipios = 0;
@@ -385,23 +387,19 @@ export class NfseDistribuicaoService {
     for (const g of codigos) {
       const cod = g.codMunIncidencia;
       if (!cod) continue;
-      const amostra = await this.prisma.nfseDocumento.findFirst({
-        where: { tenantId, codMunIncidencia: cod, xmlOriginal: { not: null } },
-        select: { xmlOriginal: true },
-      });
-      if (!amostra?.xmlOriginal) continue;
-      const conteudo = this.processor.extrair(amostra.xmlOriginal.toString('utf8'));
-      const nome = conteudo && conteudo.tipo === 'NFSE' ? conteudo.munIncidenciaNome : undefined;
+      const nome = MUNICIPIOS_IBGE[cod];
       if (!nome) continue;
       const r = await this.prisma.nfseDocumento.updateMany({
-        where: { tenantId, codMunIncidencia: cod, munIncidenciaNome: null },
+        where: { tenantId, codMunIncidencia: cod, NOT: { munIncidenciaNome: nome } },
         data: { munIncidenciaNome: nome },
       });
-      municipios++;
-      atualizados += r.count;
+      if (r.count > 0) {
+        municipios++;
+        atualizados += r.count;
+      }
     }
 
-    // Normaliza a caixa dos nomes já gravados (Title Case)
+    // Códigos fora da tabela IBGE: ao menos normaliza a caixa do que houver
     let normalizados = 0;
     const nomes = await this.prisma.nfseDocumento.groupBy({
       by: ['munIncidenciaNome'],
