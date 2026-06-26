@@ -85,8 +85,11 @@ export class NfseDistClientService {
     pemCert: string,
     pemKey: string,
   ): Promise<Buffer> {
-    const url = this.montarUrl(baseUrl, `/danfse/${chaveAcesso}`);
-    this.logger.log(`DANFSe → chave=...${chaveAcesso.slice(-6)}`);
+    // O DANFSe é servido pelo módulo /danfse no HOST RAIZ — NÃO sob /contribuintes.
+    // baseUrl é ".../contribuintes"; usamos só a origem + /danfse/{chave}.
+    const origin = new URL(baseUrl).origin;
+    const url = `${origin}/danfse/${chaveAcesso}`;
+    this.logger.log(`DANFSe → ${url}`);
     return this.doGetBinary(url, pemCert, pemKey, 'application/pdf');
   }
 
