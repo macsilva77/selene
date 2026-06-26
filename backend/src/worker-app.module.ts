@@ -7,6 +7,7 @@ import { AppConfigModule } from './config/app-config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisCacheModule } from './modules/cache/cache.module';
 import { DfeDistribuicaoWorkerModule }    from './modules/dfe-distribuicao/dfe-distribuicao-worker.module';
+import { NfseDistribuicaoWorkerModule }   from './modules/nfse-distribuicao/nfse-distribuicao-worker.module';
 
 /**
  * Módulo raiz do processo Worker.
@@ -60,6 +61,7 @@ import { DfeDistribuicaoWorkerModule }    from './modules/dfe-distribuicao/dfe-d
     }),
     PrismaModule,
     DfeDistribuicaoWorkerModule,
+    NfseDistribuicaoWorkerModule,
   ],
 })
 export class WorkerAppModule {}
