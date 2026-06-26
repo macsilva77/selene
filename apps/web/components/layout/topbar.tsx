@@ -8,6 +8,8 @@ import { CaretRightIcon, MagnifyingGlassIcon, XIcon } from '@phosphor-icons/reac
 // ── Mapa de rotas → breadcrumb ─────────────────────────────────────────────────
 const ROUTE_MAP: Record<string, { label: string; section: string }> = {
   '/dfe/documentos':                          { label: 'NF-e',                        section: 'Documentos' },
+  '/nfse/documentos':                         { label: 'NFS-e',                       section: 'Documentos' },
+  '/nfse':                                    { label: 'DFe NFS-e',                   section: 'Configurações' },
   '/documentos-cancelados':                   { label: 'Documentos Fiscais Cancelados', section: 'Documentos' },
   '/obrigacoes-acessorias/efd-icms-ipi':      { label: 'EFD ICMS/IPI',                section: 'Obrigações Acessórias'  },
   '/obrigacoes-acessorias/ecd':               { label: 'ECD',                         section: 'Obrigações Acessórias'  },

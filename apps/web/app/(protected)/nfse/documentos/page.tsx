@@ -5,9 +5,11 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import {
   ArrowClockwiseIcon,
+  ArrowLeftIcon,
   GearIcon,
   XIcon,
   FunnelIcon,
+  CaretDownIcon,
   CheckCircleIcon,
   ProhibitIcon,
   FilePdfIcon,
@@ -15,6 +17,9 @@ import {
   DotsThreeVerticalIcon,
   EyeIcon,
 } from '@phosphor-icons/react';
+
+const inputCls =
+  'rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring';
 import { api } from '@/lib/api';
 import { useToast, ToastContainer } from '@/components/ui/toast';
 import { useEmpresaSelecionada } from '@/lib/empresa-selecionada';
@@ -315,6 +320,15 @@ function EtiquetasModal({
 
 /* ───────────────────────────── Filtros ───────────────────────────── */
 
+function CampoFiltro({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
+  return (
+    <div className="flex flex-col gap-1 shrink-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 function FiltersBar({
   filtros,
   setFiltros,
@@ -331,62 +345,137 @@ function FiltersBar({
   onLimpar: () => void;
 }>) {
   const set = <K extends keyof Filtros>(k: K, v: Filtros[K]) => setFiltros((f) => ({ ...f, [k]: v }));
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [empAberta, setEmpAberta] = useState(false);
+  const [empBusca, setEmpBusca] = useState('');
+  const empRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (empRef.current && !empRef.current.contains(e.target as Node)) setEmpAberta(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const empSel = empresas.find((e) => e.cnpj === filtros.cnpj);
+  const q = empBusca.toLowerCase().trim();
+  const empFiltradas = empresas.filter(
+    (e) => !q || e.cnpj.includes(q.replace(/\D/g, '')) || (e.nome ?? '').toLowerCase().includes(q),
+  );
+  const hasFiltros =
+    filtros.cnpj || filtros.prestadorDoc || filtros.chaveAcesso || filtros.numero ||
+    filtros.competenciaInicio || filtros.competenciaFim || filtros.cancelada || filtros.municipio;
+
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-[10px]">
-      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <FunnelIcon size={16} /> Filtros
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Empresa (CNPJ titular)
-          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.cnpj} onChange={(e) => set('cnpj', e.target.value)}>
-            <option value="">Todas</option>
-            {empresas.map((emp) => (
-              <option key={emp.id} value={emp.cnpj}>{maskCnpj(emp.cnpj)} — {emp.nome}</option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          CNPJ Prestador
-          <input className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.prestadorDoc} onChange={(e) => set('prestadorDoc', e.target.value.replace(/\D/g, ''))} placeholder="14 dígitos" maxLength={14} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Chave de acesso
-          <input className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.chaveAcesso} onChange={(e) => set('chaveAcesso', e.target.value.replace(/\D/g, ''))} placeholder="50 dígitos" maxLength={50} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Nº NFS-e
-          <input className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.numero} onChange={(e) => set('numero', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Município (incidência ISS)
-          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.municipio} onChange={(e) => set('municipio', e.target.value)}>
-            <option value="">Todos os municípios atendidos</option>
-            {municipios.map((m) => (
-              <option key={m.codigo} value={m.codigo}>{m.nome ?? m.codigo} ({m.total})</option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Situação
-          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.cancelada} onChange={(e) => set('cancelada', e.target.value as Filtros['cancelada'])}>
-            <option value="">Todas</option>
-            <option value="false">Ativas</option>
-            <option value="true">Canceladas</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Competência início
-          <input type="date" className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.competenciaInicio} onChange={(e) => set('competenciaInicio', e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Competência fim
-          <input type="date" className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={filtros.competenciaFim} onChange={(e) => set('competenciaFim', e.target.value)} />
-        </label>
-      </div>
-      <div className="flex items-center gap-2">
-        <button onClick={onAplicar} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition">Aplicar filtros</button>
-        <button onClick={onLimpar} className="rounded-lg border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors">Limpar</button>
+    <div className="shrink-0 border-b bg-background px-6 py-3">
+      <div className="rounded-lg border border-border bg-card px-4 py-3 flex flex-col gap-[10px]">
+        {/* Linha 1: Empresa combobox */}
+        <div className="flex items-end gap-[10px]">
+          <div className="flex flex-col gap-1 w-[420px]" ref={empRef}>
+            <label className="text-xs text-muted-foreground">Empresa / Razão Social</label>
+            <div className="relative">
+              <input
+                type="text"
+                autoComplete="off"
+                placeholder="Todas as empresas — pesquise por CNPJ ou razão social"
+                className={`${inputCls} w-full pr-7`}
+                value={empAberta ? empBusca : empSel ? `${maskCnpj(empSel.cnpj)} — ${empSel.nome}` : ''}
+                onChange={(e) => { setEmpBusca(e.target.value); setEmpAberta(true); }}
+                onFocus={() => { setEmpBusca(''); setEmpAberta(true); }}
+              />
+              <CaretDownIcon size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              {empAberta && (
+                <div className="absolute z-50 mt-1 w-full min-w-[400px] rounded-md border border-input bg-background shadow-lg max-h-64 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => { set('cnpj', ''); setEmpAberta(false); setEmpBusca(''); }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors text-muted-foreground border-b border-input/30 ${!filtros.cnpj ? 'bg-primary/5 font-medium' : ''}`}
+                  >
+                    Todas as empresas
+                  </button>
+                  {empFiltradas.map((e) => (
+                    <button
+                      type="button"
+                      key={e.id}
+                      onClick={() => { set('cnpj', e.cnpj); setEmpAberta(false); setEmpBusca(''); }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-baseline gap-2 ${filtros.cnpj === e.cnpj ? 'bg-primary/5 font-medium' : ''}`}
+                    >
+                      <span className="font-mono text-xs text-muted-foreground shrink-0">{maskCnpj(e.cnpj)}</span>
+                      <span className="text-foreground truncate">{e.nome}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Linha 2: campos + Avançado + Filtrar */}
+        <div className="flex items-end gap-[10px] flex-wrap">
+          <CampoFiltro label="Chave NFS-e">
+            <input className={`${inputCls} w-72`} placeholder="50 dígitos…" value={filtros.chaveAcesso} maxLength={50}
+              onChange={(e) => set('chaveAcesso', e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && onAplicar()} />
+          </CampoFiltro>
+          <CampoFiltro label="CNPJ Prestador">
+            <input className={`${inputCls} w-40`} placeholder="14 dígitos" value={filtros.prestadorDoc} maxLength={14}
+              onChange={(e) => set('prestadorDoc', e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => e.key === 'Enter' && onAplicar()} />
+          </CampoFiltro>
+          <CampoFiltro label="Nº NFS-e">
+            <input className={`${inputCls} w-24`} value={filtros.numero}
+              onChange={(e) => set('numero', e.target.value)} onKeyDown={(e) => e.key === 'Enter' && onAplicar()} />
+          </CampoFiltro>
+          <CampoFiltro label="Competência início">
+            <input type="date" className={inputCls} value={filtros.competenciaInicio} onChange={(e) => set('competenciaInicio', e.target.value)} />
+          </CampoFiltro>
+          <CampoFiltro label="Competência fim">
+            <input type="date" className={inputCls} value={filtros.competenciaFim} onChange={(e) => set('competenciaFim', e.target.value)} />
+          </CampoFiltro>
+          <div className="flex flex-col gap-1 shrink-0">
+            <span className="text-xs text-muted-foreground invisible">t</span>
+            <button type="button" onClick={() => setShowAdvanced((v) => !v)}
+              className={['flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm transition-colors whitespace-nowrap', showAdvanced ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground hover:bg-muted'].join(' ')}>
+              Avançado
+              <span className={`w-6 h-3.5 rounded-full transition-colors shrink-0 ${showAdvanced ? 'bg-primary' : 'bg-muted-foreground/30'}`}>
+                <span className={`block w-2.5 h-2.5 mt-0.5 rounded-full bg-white shadow transition-transform ${showAdvanced ? 'translate-x-3' : 'translate-x-0.5'}`} />
+              </span>
+            </button>
+          </div>
+          <div className="flex flex-col gap-1 shrink-0">
+            <span className="text-xs text-muted-foreground invisible">b</span>
+            <div className="flex items-center gap-[10px]">
+              <button type="button" onClick={onAplicar} className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                <FunnelIcon size={14} />Filtrar
+              </button>
+              {hasFiltros ? (
+                <button type="button" onClick={onLimpar} className="flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors">
+                  <XIcon size={13} />Limpar
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Linha 3: Avançado */}
+        {showAdvanced ? (
+          <div className="flex flex-wrap gap-2 items-end pt-2 border-t">
+            <CampoFiltro label="Município (ISS)">
+              <select className={inputCls} value={filtros.municipio} onChange={(e) => set('municipio', e.target.value)}>
+                <option value="">Todos os municípios atendidos</option>
+                {municipios.map((m) => (
+                  <option key={m.codigo} value={m.codigo}>{m.nome ?? m.codigo} ({m.total})</option>
+                ))}
+              </select>
+            </CampoFiltro>
+            <CampoFiltro label="Situação">
+              <select className={inputCls} value={filtros.cancelada} onChange={(e) => set('cancelada', e.target.value as Filtros['cancelada'])}>
+                <option value="">Todas</option>
+                <option value="false">Ativas</option>
+                <option value="true">Canceladas</option>
+              </select>
+            </CampoFiltro>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -678,29 +767,37 @@ export default function DocumentosNfsePage() {
   const totalPaginas = Math.max(1, Math.ceil(total / LIMIT));
 
   return (
-    <div className="flex flex-col gap-4 flex-1 min-h-0 h-full overflow-y-auto pb-4">
+    <div className="flex flex-col h-full">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
 
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-2xl font-semibold">Documentos Fiscais Capturados</h1>
-          <p className="text-sm text-muted-foreground mt-1">NFS-e recebidas via distribuição do ADN</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => void carregarDocs()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors">
-            <ArrowClockwiseIcon size={16} /> Atualizar
-          </button>
-          <Link href="/nfse" className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
-            <GearIcon size={16} /> Configurações
-          </Link>
+      {/* Header */}
+      <div className="shrink-0 border-b bg-card px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/nfse" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" title="Voltar para DFe NFS-e">
+              <ArrowLeftIcon size={18} />
+            </Link>
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">Documentos Fiscais Capturados</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">NFS-e recebidas via distribuição do ADN</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => void carregarDocs()} disabled={loading} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors">
+              <ArrowClockwiseIcon size={16} /> Atualizar
+            </button>
+            <Link href="/nfse" className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
+              <GearIcon size={16} /> Configurações
+            </Link>
+          </div>
         </div>
       </div>
 
       <FiltersBar filtros={filtros} setFiltros={setFiltros} empresas={empresas} municipios={municipios} onAplicar={aplicarFiltros} onLimpar={limparFiltros} />
 
-      <div className="bg-card rounded-lg border border-border shadow-sm overflow-hidden flex flex-col min-h-0">
-        {/* Abas por papel */}
-        <div className="flex items-center gap-1 border-b border-border px-3">
+      {/* Abas por papel */}
+      <div className="shrink-0 border-b bg-card px-6">
+        <div className="flex items-center gap-1">
           {ABAS.map((t) => (
             <button
               key={t.id}
@@ -710,10 +807,13 @@ export default function DocumentosNfsePage() {
               {t.label}
             </button>
           ))}
-          <span className="ml-auto text-sm text-muted-foreground pr-2">{total.toLocaleString('pt-BR')} registro(s)</span>
+          <span className="ml-auto text-sm text-muted-foreground">{total.toLocaleString('pt-BR')} registro(s)</span>
         </div>
+      </div>
 
-        <div className="flex-1 min-h-0 overflow-auto">
+      {/* Tabela */}
+      <div className="flex-1 overflow-auto px-6 py-4">
+        <div className="rounded-lg border border-border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -767,13 +867,14 @@ export default function DocumentosNfsePage() {
             </TableBody>
           </Table>
         </div>
+      </div>
 
-        <div className="flex items-center justify-between px-5 py-3 border-t border-border text-sm">
-          <span className="text-muted-foreground">Página {page} de {totalPaginas}</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">Anterior</button>
-            <button onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))} disabled={page >= totalPaginas || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">Próxima</button>
-          </div>
+      {/* Paginação */}
+      <div className="shrink-0 border-t bg-card px-6 py-3 flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">Página {page} de {totalPaginas}</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">Anterior</button>
+          <button onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))} disabled={page >= totalPaginas || loading} className="rounded-md border px-3 py-1 hover:bg-muted disabled:opacity-50">Próxima</button>
         </div>
       </div>
 
