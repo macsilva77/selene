@@ -104,9 +104,6 @@ function fmtMoney(v: string | number | null | undefined) {
 }
 
 const MODELO_LABEL: Record<number, string> = { 57: 'CT-e', 67: 'CT-e OS', 64: 'GTV-e' };
-const MODAL_LABEL: Record<string, string> = {
-  '01': 'Rodoviário', '02': 'Aéreo', '03': 'Aquaviário', '04': 'Ferroviário', '05': 'Dutoviário', '06': 'Multimodal',
-};
 
 function tipoBadge(tipo: CteDocumento['tipoDocumento']): { label: string; cls: string } {
   switch (tipo) {
