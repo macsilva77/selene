@@ -6,6 +6,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { FaturamentoGcsService } from '../faturamento/faturamento-gcs.service';
 import { parseEfdBloco1300, agregarCombustivel, type MovimentoCombustivel } from './sped/efd-bloco1300-combustivel.parser';
 import { analisarCombustivel, type AnaliseCombustivel } from './sped/estoque-combustivel.analise';
+import { dedupPorCompetencia } from './obrigacao-dedup';
 
 const CACHE_TTL_MS = 60 * 60 * 1_000; // 1 hora
 
@@ -38,17 +39,19 @@ export class EstoqueCombustivelService {
     const cached = await this.cache.get<RespostaCombustivel>(ck);
     if (cached) return cached;
 
-    const arquivos = await this.prisma.obrigacaoAcessoria.findMany({
+    // dedup por competência: nesta base versaoAtual é pouco confiável (ver obrigacao-dedup);
+    // sem isso, meses retificados teriam o Bloco 1300 lido em dobro (volumes inflados).
+    const todas = await this.prisma.obrigacaoAcessoria.findMany({
       where: {
         tipoObrigacao: 'EFD_ICMS_IPI',
         cnpj: empresa.cnpj,
-        versaoAtual: true,
         statusProcessamento: { in: ['Recebido', 'Processado'] },
         dataInicial: { gte: new Date(`${ano}-01-01`), lte: new Date(`${ano}-12-31`) },
       },
-      select: { caminhoBucket: true },
+      select: { caminhoBucket: true, dataInicial: true, dataFinal: true, versao: true, criadoEm: true },
       orderBy: { dataInicial: 'asc' },
     });
+    const arquivos = dedupPorCompetencia(todas);
 
     const movs: MovimentoCombustivel[] = [];
     for (const arq of arquivos) {

@@ -28,6 +28,7 @@ import {
   FlowArrowIcon,
   GaugeIcon,
   GasPumpIcon,
+  PackageIcon,
 } from '@phosphor-icons/react';
 import { getSessionUser, clearSession } from '@/lib/session';
 
@@ -90,7 +91,14 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Análise Fiscal',
     items: [
       { href: '/cadeia-suprimento',                   icon: FlowArrowIcon,       label: 'Cadeia de Suprimento' },
-      { href: '/estoque',                             icon: GasPumpIcon,         label: 'Estoque de Combustível' },
+      {
+        icon: PackageIcon,
+        label: 'Estoque',
+        children: [
+          { href: '/estoque-fiscal', icon: PackageIcon,  label: 'Estoque Fiscal' },
+          { href: '/estoque',        icon: GasPumpIcon,  label: 'Combustível' },
+        ],
+      },
       { href: '/faturamento',                         icon: ChartBarIcon,        label: 'Faturamento' },
       { href: '/clientes-fornecedores',               icon: UsersThreeIcon,      label: 'Clientes e Fornecedores' },
       { href: '/clientes-fornecedores/processamento', icon: ArrowsClockwiseIcon, label: 'Processamento CF' },
