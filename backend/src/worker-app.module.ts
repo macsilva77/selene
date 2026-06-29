@@ -7,6 +7,7 @@ import { AppConfigModule } from './config/app-config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisCacheModule } from './modules/cache/cache.module';
 import { DfeDistribuicaoWorkerModule }    from './modules/dfe-distribuicao/dfe-distribuicao-worker.module';
+import { CteDistribuicaoWorkerModule }    from './modules/cte-distribuicao/cte-distribuicao-worker.module';
 import { NfseDistribuicaoWorkerModule }   from './modules/nfse-distribuicao/nfse-distribuicao-worker.module';
 
 /**
@@ -61,6 +62,7 @@ import { NfseDistribuicaoWorkerModule }   from './modules/nfse-distribuicao/nfse
     }),
     PrismaModule,
     DfeDistribuicaoWorkerModule,
+    CteDistribuicaoWorkerModule,
     NfseDistribuicaoWorkerModule,
   ],
 })

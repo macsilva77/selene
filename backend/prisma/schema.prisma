@@ -52,6 +52,7 @@ model Tenant {
   tiposDocumentoReg    TipoDocumentoReg[]
   documentosReg        DocumentoReg[]
   dfeConfigs           DfeConfig[]
+  cteConfigs           CteConfig[]
   etiquetas            Etiqueta[]
   spedArquivos         SpedArquivo[]
   creditoEmpresas      CreditoEmpresa[]
@@ -116,6 +117,8 @@ model Usuario {
   certificadosCriados         CertificadoDigital[]        @relation("CertCriadoPor")
   certificadoConvitesCriados  CertificadoConvite[]        @relation("ConviteCertCriadoPor")
   dfeConfigsCriados           DfeConfig[]                 @relation("DfeConfigCriadoPor")
+  cteConfigsCriados           CteConfig[]                 @relation("CteConfigCriadoPor")
+  cteEtiquetaHistorico        CteEtiquetaHistorico[]
   etiquetaHistorico           EtiquetaHistorico[]
   nfseEtiquetaHistorico       NfseEtiquetaHistorico[]
 
@@ -984,6 +987,7 @@ model CertificadoDigital {
   procuracao    ProcuracaoEletronica?
   logs          CertificadoLog[]
   dfeConfigs    DfeConfig[]
+  cteConfigs    CteConfig[]
 
   @@unique([tenantId, thumbprint])
   @@index([tenantId, status])
@@ -1374,6 +1378,7 @@ model Etiqueta {
   tenant         Tenant                  @relation(fields: [tenantId], references: [id])
   documentos     DfeDocumentoEtiqueta[]
   nfseDocumentos NfseDocumentoEtiqueta[]
+  cteDocumentos  CteDocumentoEtiqueta[]
 
   @@index([tenantId, deletadoEm])
   @@map("etiquetas")
@@ -1502,6 +1507,373 @@ model DfeExportJob {
   @@index([tenantId, status])
   @@index([tenantId, criadoEm])
   @@map("dfe_export_jobs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Distribuição de DF-e do CT-e (modelo 57 / CT-e OS 67 / GTV-e 64)
+// Web Service CTeDistribuicaoDFe (NT 2015.002 v1.05). Módulo isolado do DFe NF-e.
+// Ver documentacaoCte/CTe-DFe-ESPECIFICACAO.md
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum CteLoteStatus {
+  RECEBIDO
+  PROCESSANDO
+  PROCESSADO
+  ERRO
+  REPROCESSAR
+}
+
+enum CteTipoDocumento {
+  /// CT-e processado (cteProc) — documento completo
+  PROC_CTE
+  /// Evento processado (procEventoCTe)
+  PROC_EVENTO_CTE
+  /// Resumo de CT-e — reservado; a distribuição do CT-e aparentemente entrega o
+  /// procCTe completo direto (confirmar no pacote XSD). Mantido por simetria.
+  RES_CTE
+  /// Resumo de evento — reservado
+  RES_EVENTO_CTE
+}
+
+enum CteGapStatus {
+  PENDENTE
+  RECUPERADO
+  INEXISTENTE
+  ESGOTADO
+}
+
+enum CteVarreduraStatus {
+  ATIVA
+  PAUSADA
+  CONCLUIDA
+  ERRO
+}
+
+enum CteEventoStatus {
+  PENDENTE
+  ENVIADO
+  REJEITADO
+  ERRO
+}
+
+/// Configuração de monitoramento de distribuição CT-e por CNPJ/tenant
+model CteConfig {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  /// CNPJ monitorado, 14 dígitos sem máscara
+  cnpj          String
+  /// Código IBGE da UF (ex: 35 = SP, 41 = PR, 43 = RS)
+  cUf           Int      @map("c_uf")
+  /// 1 = produção, 2 = homologação
+  tpAmb         Int      @default(1) @map("tp_amb")
+  certificadoId String   @map("certificado_id")
+  ativo         Boolean  @default(true)
+  /// Horário de captura no formato "HH:MM" (ex: "08:00")
+  horarioCaptura   String @default("00:00") @map("horario_captura")
+  /// Intervalo em minutos entre execuções (ex: 60 = a cada 1h)
+  intervaloMinutos Int    @default(60) @map("intervalo_minutos")
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+  criadoPorId   String   @map("criado_por_id")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  certificado CertificadoDigital @relation(fields: [certificadoId], references: [id])
+  criadoPor   Usuario            @relation("CteConfigCriadoPor", fields: [criadoPorId], references: [id])
+  controle    CteNsuControle?
+  gaps        CteGapNsu[]
+  varredura   CteVarreduraNsu?
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId, ativo])
+  @@map("cte_configs")
+}
+
+/// Controle de NSU com lock distribuído por CNPJ (sequência de NSU própria do AN do CT-e)
+model CteNsuControle {
+  id                String    @id @default(uuid())
+  configId          String    @unique @map("config_id")
+  tenantId          String    @map("tenant_id")
+  cnpj              String
+  /// Último NSU processado com sucesso (15 dígitos, zero-padded)
+  ultimoNsu         String    @default("000000000000000") @map("ultimo_nsu")
+  /// maxNSU recebido na última resposta da SEFAZ
+  maxNsu            String    @default("000000000000000") @map("max_nsu")
+  ultimaConsulta    DateTime? @map("ultima_consulta")
+  proximaConsulta   DateTime? @map("proxima_consulta")
+  // — lock distribuído —
+  emProcessamento   Boolean   @default(false) @map("em_processamento")
+  lockId            String?   @map("lock_id")
+  lockAte           DateTime? @map("lock_ate")
+  /// "hostname:pid" do processo que detém o lock
+  lockProcessoId    String?   @map("lock_processo_id")
+  // — estatísticas —
+  totalDocBaixados  Int       @default(0) @map("total_doc_baixados")
+  totalLotes        Int       @default(0) @map("total_lotes")
+  totalErros        Int       @default(0) @map("total_erros")
+  ultimoErro        String?   @map("ultimo_erro")
+  ultimoErroEm      DateTime? @map("ultimo_erro_em")
+  errosConsecutivos Int       @default(0) @map("erros_consecutivos")
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  config CteConfig @relation(fields: [configId], references: [id])
+  lotes  CteLote[]
+
+  @@unique([tenantId, cnpj])
+  @@index([proximaConsulta, emProcessamento])
+  @@map("cte_nsu_controles")
+}
+
+/// Lote de requisição à SEFAZ — cada chamada ao CTeDistribuicaoDFe gera um lote
+model CteLote {
+  id             String        @id @default(uuid())
+  controleId     String        @map("controle_id")
+  tenantId       String        @map("tenant_id")
+  cnpj           String
+  /// NSU enviado na requisição (distNSU)
+  nsuEnviado     String        @map("nsu_enviado")
+  cStat          String        @map("c_stat")
+  xMotivo        String        @map("x_motivo")
+  ultNsuRecebido String        @map("ult_nsu_recebido")
+  maxNsuRecebido String        @map("max_nsu_recebido")
+  qtdDocumentos  Int           @default(0) @map("qtd_documentos")
+  status         CteLoteStatus @default(RECEBIDO)
+  tentativas     Int           @default(1)
+  duracaoMs      Int?          @map("duracao_ms")
+  iniciadoEm     DateTime      @default(now()) @map("iniciado_em")
+  finalizadoEm   DateTime?     @map("finalizado_em")
+  erroMensagem   String?       @map("erro_mensagem")
+
+  controle   CteNsuControle @relation(fields: [controleId], references: [id])
+  documentos CteDocumento[]
+
+  @@index([tenantId, cnpj, status])
+  @@index([tenantId, iniciadoEm])
+  @@index([controleId, status])
+  @@map("cte_lotes")
+}
+
+/// Documento (CT-e / CT-e OS / GTV-e ou evento) baixado da distribuição
+model CteDocumento {
+  id               String           @id @default(uuid())
+  loteId           String           @map("lote_id")
+  tenantId         String           @map("tenant_id")
+  /// CNPJ interessado para o qual a distribuição foi consultada (config)
+  cnpjInteressado  String           @map("cnpj_interessado")
+  /// NSU do documento (15 dígitos, zero-padded) — chave natural
+  nsu              String
+  /// Schema XML conforme SEFAZ (ex: "procCTe_v4.00.xsd")
+  schema           String
+  tipoDocumento    CteTipoDocumento @map("tipo_documento")
+  /// Modelo fiscal: 57 = CT-e, 67 = CT-e OS, 64 = GTV-e
+  modelo           Int?
+  /// XML original descomprimido — null quando armazenado no GCS (ver xmlStoragePath)
+  xmlOriginal      Bytes?           @map("xml_original")
+  /// Path do XML no Google Cloud Storage (ex: cte/{tenantId}/{cnpj}/{nsu}.xml)
+  xmlStoragePath   String?          @map("xml_storage_path") @db.VarChar(500)
+  /// SHA-256 do XML para validação de integridade
+  xmlHash          String           @map("xml_hash")
+  chaveAcesso      String?          @map("chave_acesso")
+  // — dados do CT-e —
+  cteEmitenteCnpj   String?  @map("cte_emitente_cnpj")
+  cteEmitenteNome   String?  @map("cte_emitente_nome")
+  /// vTPrest — valor total da prestação do serviço
+  cteValorPrestacao Decimal? @map("cte_valor_prestacao") @db.Decimal(15, 2)
+  /// vRec — valor a receber
+  cteValorReceber   Decimal? @map("cte_valor_receber") @db.Decimal(15, 2)
+  cteDhEmissao      DateTime? @map("cte_dh_emissao")
+  cteSituacao       String?  @map("cte_situacao")
+  /// tpCTe: 0 = normal, 1 = complementar, 2 = anulação, 3 = substituto
+  tpCte             Int?     @map("tp_cte")
+  cfop              String?
+  /// Modal: 01 rodoviário, 02 aéreo, 03 aquaviário, 04 ferroviário, 05 dutoviário, 06 multimodal
+  modal             String?
+  /// UF de início da prestação (sigla)
+  ufIni             String?  @map("uf_ini")
+  /// UF de fim da prestação (sigla)
+  ufFim             String?  @map("uf_fim")
+  // — papéis (usados como filtros de listagem) —
+  cteTomadorCnpj      String? @map("cte_tomador_cnpj")
+  cteRemetenteCnpj    String? @map("cte_remetente_cnpj")
+  cteDestinatarioCnpj String? @map("cte_destinatario_cnpj")
+  cteExpedidorCnpj    String? @map("cte_expedidor_cnpj")
+  cteRecebedorCnpj    String? @map("cte_recebedor_cnpj")
+  /// Chaves das NF-e transportadas (CSV) — permite cruzar com o DFe da NF-e
+  cteChavesNfe        String? @map("cte_chaves_nfe") @db.Text
+  // — eventos —
+  eventoTipo        String?  @map("evento_tipo")
+  eventoDescricao   String?  @map("evento_descricao")
+  processado        Boolean  @default(false)
+  processadoEm      DateTime? @map("processado_em")
+  erroProcessamento String?  @map("erro_processamento")
+  criadoEm          DateTime @default(now()) @map("criado_em")
+
+  lote              CteLote                @relation(fields: [loteId], references: [id])
+  eventos           CteEvento[]
+  gapsRecuperados   CteGapNsu[]
+  etiquetas         CteDocumentoEtiqueta[]
+  etiquetaHistorico CteEtiquetaHistorico[]
+
+  /// Idempotência: mesmo NSU nunca é inserido duas vezes por tenant
+  @@unique([tenantId, nsu])
+  @@index([tenantId, cnpjInteressado])
+  @@index([tenantId, cteTomadorCnpj])
+  @@index([tenantId, cteRemetenteCnpj])
+  @@index([tenantId, cteDestinatarioCnpj])
+  @@index([tenantId, chaveAcesso])
+  @@index([tenantId, tipoDocumento])
+  @@index([tenantId, modelo])
+  @@index([tenantId, processado])
+  @@index([tenantId, cteDhEmissao])
+  @@map("cte_documentos")
+}
+
+/// Trilha de auditoria de todas as operações NSU/DF-e do CT-e
+model CteAuditoria {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  cnpj      String
+  operacao  String
+  nsuAntes  String?  @map("nsu_antes")
+  nsuDepois String?  @map("nsu_depois")
+  cStat     String?  @map("c_stat")
+  sucesso   Boolean
+  detalhe   String?  @db.Text
+  duracaoMs Int?     @map("duracao_ms")
+  hostname  String?
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@index([tenantId, cnpj, criadoEm])
+  @@index([tenantId, sucesso])
+  @@map("cte_auditorias")
+}
+
+/// Lacuna NSU detectada entre documentos consecutivos. Recuperada via consNSU.
+model CteGapNsu {
+  id               String       @id @default(uuid())
+  tenantId         String       @map("tenant_id")
+  cnpj             String
+  configId         String       @map("config_id")
+  nsuFaltante      String       @map("nsu_faltante")
+  status           CteGapStatus @default(PENDENTE)
+  tentativas       Int          @default(0)
+  nsuAnterior      String       @map("nsu_anterior")
+  nsuPosterior     String       @map("nsu_posterior")
+  proximaTentativa DateTime?    @map("proxima_tentativa")
+  recuperadoEm     DateTime?    @map("recuperado_em")
+  documentoId      String?      @map("documento_id")
+  erroMensagem     String?      @map("erro_mensagem") @db.Text
+  criadoEm         DateTime     @default(now()) @map("criado_em")
+  atualizadoEm     DateTime     @updatedAt @map("atualizado_em")
+
+  config    CteConfig     @relation(fields: [configId], references: [id])
+  documento CteDocumento? @relation(fields: [documentoId], references: [id])
+
+  @@unique([tenantId, cnpj, nsuFaltante])
+  @@index([tenantId, cnpj, status])
+  @@index([status, proximaTentativa])
+  @@index([configId, status])
+  @@map("cte_gap_nsus")
+}
+
+/// Varredura retroativa de NSU via consNSU (recupera documentos antigos)
+model CteVarreduraNsu {
+  id              String             @id @default(uuid())
+  configId        String             @unique @map("config_id")
+  tenantId        String             @map("tenant_id")
+  cnpj            String
+  status          CteVarreduraStatus @default(PAUSADA)
+  nsuInicio       String             @map("nsu_inicio")
+  nsuFim          String             @map("nsu_fim")
+  nsuAtual        String             @map("nsu_atual")
+  totalConsultado Int                @default(0) @map("total_consultado")
+  totalRecuperado Int                @default(0) @map("total_recuperado")
+  iniciadoEm      DateTime?          @map("iniciado_em")
+  pausadoEm       DateTime?          @map("pausado_em")
+  concluidoEm     DateTime?          @map("concluido_em")
+  ultimoErro      String?            @map("ultimo_erro") @db.Text
+  criadoEm        DateTime           @default(now()) @map("criado_em")
+  atualizadoEm    DateTime           @updatedAt @map("atualizado_em")
+
+  config CteConfig @relation(fields: [configId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("cte_varreduras_nsu")
+}
+
+/// Evento do tomador enviado ao WS CTeRecepcaoEventoV4 (roteado por UF autorizadora).
+/// Tipos: 610110 = Prestação do Serviço em Desacordo; 610111 = Cancelamento do Desacordo.
+/// O CT-e NÃO usa o modelo de manifestação do destinatário da NF-e (210200/...).
+model CteEvento {
+  id           String          @id @default(uuid())
+  tenantId     String          @map("tenant_id")
+  /// CNPJ do autor do evento (tomador do serviço)
+  cnpj         String
+  documentoId  String          @map("documento_id")
+  chaveAcesso  String          @map("chave_acesso") @db.VarChar(44)
+  /// Código do evento (ex: "610110")
+  tpEvento     String          @map("tp_evento") @db.VarChar(6)
+  /// Descrição textual (ex: "Prestacao do servico em desacordo")
+  xEvento      String          @map("x_evento") @db.VarChar(60)
+  nSeqEvento   Int             @default(1) @map("n_seq_evento")
+  /// Observação/justificativa do desacordo — obrigatória, 15 a 255 caracteres
+  xObs         String?         @map("x_obs") @db.VarChar(255)
+  /// indDesacordoOper — indicador de operação em desacordo
+  indDesacordo Boolean         @default(true) @map("ind_desacordo")
+  /// UF autorizadora do CT-e (define o endpoint CTeRecepcaoEventoV4 — maioria SVRS)
+  ufAutorizador String?        @map("uf_autorizador")
+  status       CteEventoStatus @default(PENDENTE)
+  tentativas   Int             @default(0)
+  nProt        String?         @map("n_prot") @db.VarChar(15)
+  cStat        String?         @map("c_stat") @db.VarChar(3)
+  xMotivo      String?         @map("x_motivo") @db.VarChar(255)
+  dhRegEvento  DateTime?       @map("dh_reg_evento")
+  xmlEnvio     Bytes?          @map("xml_envio")
+  xmlResposta  Bytes?          @map("xml_resposta")
+  erroMensagem String?         @map("erro_mensagem") @db.Text
+  criadoEm     DateTime        @default(now()) @map("criado_em")
+  enviadoEm    DateTime?       @map("enviado_em")
+  atualizadoEm DateTime        @updatedAt @map("atualizado_em")
+
+  documento CteDocumento @relation(fields: [documentoId], references: [id])
+
+  @@unique([tenantId, chaveAcesso, tpEvento, nSeqEvento])
+  @@index([tenantId, cnpj, status])
+  @@index([tenantId, chaveAcesso])
+  @@index([status, criadoEm])
+  @@index([documentoId])
+  @@map("cte_eventos")
+}
+
+/// Tabela de junção entre CteDocumento e Etiqueta (reusa o model Etiqueta genérico)
+model CteDocumentoEtiqueta {
+  id          String   @id @default(uuid())
+  documentoId String   @map("documento_id")
+  etiquetaId  String   @map("etiqueta_id")
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  documento CteDocumento @relation(fields: [documentoId], references: [id])
+  etiqueta  Etiqueta     @relation(fields: [etiquetaId], references: [id])
+
+  @@unique([documentoId, etiquetaId])
+  @@index([etiquetaId])
+  @@map("cte_documento_etiquetas")
+}
+
+/// Histórico imutável de alterações de etiquetas em CteDocumento
+model CteEtiquetaHistorico {
+  id              String   @id @default(uuid())
+  documentoId     String   @map("documento_id")
+  usuarioId       String?  @map("usuario_id")
+  etiquetasAntes  Json     @map("etiquetas_antes")
+  etiquetasDepois Json     @map("etiquetas_depois")
+  criadoEm        DateTime @default(now()) @map("criado_em")
+
+  documento CteDocumento @relation(fields: [documentoId], references: [id])
+  usuario   Usuario?     @relation(fields: [usuarioId], references: [id])
+
+  @@index([documentoId, criadoEm])
+  @@map("cte_etiqueta_historico")
 }
 
 // ─── SPED ─────────────────────────────────────────────────────────────────────

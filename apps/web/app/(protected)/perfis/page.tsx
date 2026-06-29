@@ -62,6 +62,7 @@ const PERMISSION_GROUPS = [
   { group: 'Certificados', module: 'certificados', label: 'Certificados', permissions: [{ key: 'certificados.view', label: 'Visualizar' }, { key: 'certificados.create', label: 'Fazer upload' }, { key: 'certificados.delete', label: 'Revogar' }] },
   { group: 'Unidades',     module: 'unidades',     label: 'Unidades',     permissions: [{ key: 'unidades.view', label: 'Visualizar' }, { key: 'unidades.create', label: 'Criar' }, { key: 'unidades.edit', label: 'Editar' }] },
   { group: 'DFe / NF-e',  module: 'dfe',          label: 'DFe / NF-e',  permissions: [{ key: 'dfe.view', label: 'Visualizar' }, { key: 'dfe.manage', label: 'Gerenciar' }] },
+  { group: 'CT-e',         module: 'cte',          label: 'CT-e',         permissions: [{ key: 'cte.view', label: 'Visualizar' }, { key: 'cte.manage', label: 'Gerenciar' }] },
   { group: 'Etiquetas',    module: 'etiquetas',    label: 'Etiquetas',    permissions: [{ key: 'etiquetas.view', label: 'Visualizar' }, { key: 'etiquetas.create', label: 'Criar' }, { key: 'etiquetas.edit', label: 'Editar' }, { key: 'etiquetas.delete', label: 'Excluir' }] },
   { group: 'Auditoria',    module: 'auditoria',    label: 'Auditoria',    permissions: [{ key: 'auditoria.view', label: 'Visualizar' }] },
   { group: 'Relatórios',   module: 'relatorios',   label: 'Relatórios',   permissions: [{ key: 'relatorios.view', label: 'Visualizar' }] },

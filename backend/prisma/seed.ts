@@ -91,6 +91,8 @@ async function main() {
     'empresas.view', 'empresas.manage',
     // Permissões de DF-e Distribuição
     'dfe.view', 'dfe.manage',
+    // Permissões de CT-e Distribuição
+    'cte.view', 'cte.manage',
     // Permissões de Etiquetas
     'etiquetas.view', 'etiquetas.create', 'etiquetas.edit', 'etiquetas.delete',
     // Permissões de Obrigações Acessórias
