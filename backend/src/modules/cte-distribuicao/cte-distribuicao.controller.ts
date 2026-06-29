@@ -66,6 +66,21 @@ export class CteDistribuicaoController {
     return this.service.listarStatus(tenantId);
   }
 
+  @Get('lotes')
+  @RequiresPermission('cte.view')
+  @ApiOperation({ summary: 'Histórico de lotes (chamadas SEFAZ) por configuração' })
+  lotes(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query() query: { configId?: string; cnpj?: string; page?: string; limit?: string },
+  ) {
+    return this.service.listarLotes(tenantId, {
+      configId: query.configId,
+      cnpj: query.cnpj,
+      page: query.page ? Number(query.page) : undefined,
+      limit: query.limit ? Number(query.limit) : undefined,
+    });
+  }
+
   @Post(':configId/toggle')
   @RequiresPermission('cte.manage')
   @HttpCode(HttpStatus.OK)

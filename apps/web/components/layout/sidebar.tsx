@@ -44,6 +44,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/certificados', icon: CertificateIcon,     label: 'Certificados A1' },
       { href: '/dfe',          icon: CloudArrowDownIcon,  label: 'DFe' },
       { href: '/nfse',         icon: CloudArrowDownIcon,  label: 'DFe NFS-e' },
+      { href: '/cte',          icon: TruckIcon,           label: 'DFe CT-e' },
       { href: '/empresas',     icon: BuildingsIcon,       label: 'Empresas' },
       { href: '/etiquetas',    icon: TagIcon,             label: 'Etiquetas' },
       { href: '/fornecedores', icon: TruckIcon,           label: 'Fornecedores' },
@@ -59,7 +60,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/dfe/documentos',        icon: FileMagnifyingGlassIcon, label: 'NF-e' },
       { href: '/nfse/documentos',       icon: ReceiptIcon,             label: 'NFS-e' },
-      { href: '#',                      icon: TruckIcon,               label: 'CT-e',  soon: true },
+      { href: '/cte/documentos',        icon: TruckIcon,               label: 'CT-e' },
       { href: '/documentos-cancelados', icon: ProhibitIcon,            label: 'Documentos Fiscais Cancelados' },
       {
         icon: FilesIcon,

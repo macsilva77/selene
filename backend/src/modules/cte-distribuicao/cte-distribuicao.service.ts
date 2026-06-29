@@ -22,6 +22,7 @@ import {
   CteCicloResultado,
   HORARIO_MIN_RECHECK_MS,
 } from './cte.types';
+import { buildMeta, parsePagination } from '../../common/utils/pagination.helper';
 
 /** Mapa de sigla UF → código IBGE */
 const UF_PARA_CUF: Record<string, number> = {
@@ -130,10 +131,90 @@ export class CteDistribuicaoService {
   async listarStatus(tenantId: string) {
     const configs = await this.prisma.cteConfig.findMany({
       where: { tenantId },
-      include: { controle: true, certificado: { select: { id: true } } },
-      orderBy: { criadoEm: 'desc' },
+      include: {
+        controle: {
+          select: {
+            ultimoNsu: true,
+            maxNsu: true,
+            ultimaConsulta: true,
+            proximaConsulta: true,
+            emProcessamento: true,
+            totalDocBaixados: true,
+            totalLotes: true,
+            totalErros: true,
+            errosConsecutivos: true,
+            ultimoErro: true,
+            ultimoErroEm: true,
+            lotes: {
+              select: { cStat: true, xMotivo: true, iniciadoEm: true },
+              orderBy: { iniciadoEm: 'desc' },
+              take: 1,
+            },
+          },
+        },
+        certificado: {
+          select: { id: true, razaoSocial: true, cnpjCert: true, dataValidade: true, status: true },
+        },
+      },
+      orderBy: { criadoEm: 'asc' },
     });
-    return configs;
+
+    // Nomes das empresas pelo CNPJ
+    const cnpjs = [...new Set(configs.map((c) => c.cnpj))];
+    const empresas = await this.prisma.empresa.findMany({
+      where: { tenantId, cnpj: { in: cnpjs } },
+      select: { cnpj: true, nome: true, nomeFantasia: true },
+    });
+    const empresaMap = new Map(empresas.map((e) => [e.cnpj, e]));
+
+    return configs.map((c) => {
+      const controle = c.controle
+        ? (() => {
+            const { lotes, ...rest } = c.controle!;
+            return { ...rest, ultimoLote: lotes[0] ?? null };
+          })()
+        : null;
+      const empresa = empresaMap.get(c.cnpj);
+      return {
+        id: c.id,
+        cnpj: c.cnpj,
+        nome: empresa?.nome ?? null,
+        nomeFantasia: empresa?.nomeFantasia ?? null,
+        cUf: c.cUf,
+        tpAmb: c.tpAmb,
+        ativo: c.ativo,
+        horarioCaptura: c.horarioCaptura,
+        intervaloMinutos: c.intervaloMinutos,
+        certificado: c.certificado,
+        controle,
+      };
+    });
+  }
+
+  /** Histórico de lotes (chamadas SEFAZ) — usado no drawer de detalhe da config. */
+  async listarLotes(tenantId: string, params: { configId?: string; cnpj?: string; page?: number; limit?: number }) {
+    const { page, limit, skip } = parsePagination(params);
+
+    const where: Prisma.CteLoteWhereInput = { tenantId };
+    if (params.configId) where.controle = { configId: params.configId };
+    if (params.cnpj) where.cnpj = params.cnpj;
+
+    const [total, lotes] = await Promise.all([
+      this.prisma.cteLote.count({ where }),
+      this.prisma.cteLote.findMany({
+        where,
+        select: {
+          id: true, cnpj: true, nsuEnviado: true, cStat: true, xMotivo: true,
+          ultNsuRecebido: true, maxNsuRecebido: true, qtdDocumentos: true,
+          status: true, duracaoMs: true, iniciadoEm: true, finalizadoEm: true, erroMensagem: true,
+        },
+        orderBy: { iniciadoEm: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return { data: lotes, meta: buildMeta(total, page, limit) };
   }
 
   async toggleConfig(tenantId: string, configId: string) {
