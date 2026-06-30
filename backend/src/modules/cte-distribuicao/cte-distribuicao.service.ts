@@ -612,8 +612,52 @@ export class CteDistribuicaoService {
       }),
     ]);
 
+    // Eventos (PROC_EVENTO_CTE) não carregam participantes no próprio XML — só a chave do
+    // CT-e referenciado. Enriquece cada evento com os papéis (remetente/destinatário/tomador/
+    // expedidor/recebedor) e o valor do CT-e (PROC_CTE) de mesma chave, quando ele existe na base.
+    const chavesEvento = [...new Set(
+      data
+        .filter(d => d.tipoDocumento !== 'PROC_CTE' && !!d.chaveAcesso
+          && !d.cteRemetenteCnpj && !d.cteDestinatarioCnpj && !d.cteTomadorCnpj)
+        .map(d => d.chaveAcesso as string),
+    )];
+
+    let enriquecido = data;
+    if (chavesEvento.length) {
+      const ctes = await this.prisma.cteDocumento.findMany({
+        where: { tenantId, tipoDocumento: 'PROC_CTE', chaveAcesso: { in: chavesEvento } },
+        select: {
+          chaveAcesso: true, cteValorPrestacao: true,
+          cteTomadorCnpj: true, cteRemetenteCnpj: true, cteDestinatarioCnpj: true,
+          cteExpedidorCnpj: true, cteRecebedorCnpj: true,
+          cteTomadorNome: true, cteRemetenteNome: true, cteDestinatarioNome: true,
+          cteExpedidorNome: true, cteRecebedorNome: true,
+        },
+      });
+      const porChave = new Map(ctes.filter(c => c.chaveAcesso).map(c => [c.chaveAcesso as string, c]));
+      enriquecido = data.map(d => {
+        const cte = d.tipoDocumento !== 'PROC_CTE' && d.chaveAcesso ? porChave.get(d.chaveAcesso) : undefined;
+        if (!cte) return d;
+        return {
+          ...d,
+          cteValorPrestacao:   d.cteValorPrestacao   ?? cte.cteValorPrestacao,
+          cteTomadorCnpj:      d.cteTomadorCnpj       ?? cte.cteTomadorCnpj,
+          cteRemetenteCnpj:    d.cteRemetenteCnpj     ?? cte.cteRemetenteCnpj,
+          cteDestinatarioCnpj: d.cteDestinatarioCnpj  ?? cte.cteDestinatarioCnpj,
+          cteExpedidorCnpj:    d.cteExpedidorCnpj     ?? cte.cteExpedidorCnpj,
+          cteRecebedorCnpj:    d.cteRecebedorCnpj     ?? cte.cteRecebedorCnpj,
+          cteTomadorNome:      d.cteTomadorNome       ?? cte.cteTomadorNome,
+          cteRemetenteNome:    d.cteRemetenteNome     ?? cte.cteRemetenteNome,
+          cteDestinatarioNome: d.cteDestinatarioNome  ?? cte.cteDestinatarioNome,
+          cteExpedidorNome:    d.cteExpedidorNome      ?? cte.cteExpedidorNome,
+          cteRecebedorNome:    d.cteRecebedorNome      ?? cte.cteRecebedorNome,
+          participantesDoCte:  true,
+        };
+      });
+    }
+
     return {
-      data,
+      data: enriquecido,
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
