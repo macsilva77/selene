@@ -183,8 +183,8 @@ export function PlanejamentoTributario({ cnpj, exercicio, regimeAtualLabel }: Re
 
       {/* Modal — Memória de cálculo */}
       <Modal isOpen={memoria} onClose={() => setMemoria(false)} size="3xl"
-        title="Memória de cálculo" subtitle={`${data.razaoSocial} · exercício ${data.exercicio}`}>
-        <MemoriaConteudo sim={sim} focoInicial={foco} />
+        title="Memória de cálculo" subtitle={`${data.razaoSocial} · exercício ${data.exercicio} · todos os regimes`}>
+        <MemoriaConteudo sim={sim} />
       </Modal>
     </Card>
   );
@@ -280,55 +280,62 @@ function Composicao({ r }: Readonly<{ r: RegimeSimulado }>) {
 
 /* ─── Memória de cálculo (modal) ─────────────────────────────────────────── */
 
-function MemoriaConteudo({ sim, focoInicial }: Readonly<{ sim: NonNullable<SimulacaoTributaria['simulacao']>; focoInicial: Regime }>) {
-  const [aba, setAba] = useState<Regime>(focoInicial);
-  const r = sim.regimes.find(x => x.regime === aba) ?? sim.regimes[0];
-
+function MemoriaConteudo({ sim }: Readonly<{ sim: NonNullable<SimulacaoTributaria['simulacao']> }>) {
   return (
-    <div className="space-y-4">
-      {/* Abas por regime */}
-      <div className="flex gap-1 border-b border-border">
-        {sim.regimes.map(rg => (
-          <button key={rg.regime} type="button" onClick={() => setAba(rg.regime)}
-            className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-              aba === rg.regime ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}>
-            {rg.rotulo}
-          </button>
-        ))}
-      </div>
+    <div className="space-y-5">
+      {/* Todos os regimes, lado a lado (empilhados) */}
+      {sim.regimes.map(r => (
+        <RegimeMemoria
+          key={r.regime}
+          r={r}
+          recomendado={r.regime === sim.recomendado}
+          atual={r.regime === sim.regimeAtual}
+        />
+      ))}
 
-      {!r.elegivel ? (
-        <div className="text-sm text-muted-foreground flex items-center gap-2 py-4">
-          <ProhibitIcon size={16} /> {r.observacoes[0] ?? 'Regime não elegível para esta empresa.'}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Total + carga */}
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-            <div>
-              <span className="text-xs text-muted-foreground">Total federal</span>
-              <p className="text-lg font-bold tabular-nums">{fmtBrl(r.totalFederal ?? 0)}</p>
-            </div>
-            <div>
-              <span className="text-xs text-muted-foreground">Carga efetiva</span>
-              <p className="text-lg font-bold tabular-nums">{fmtPct(r.cargaEfetiva, 2)}</p>
-            </div>
+      {/* Premissas gerais */}
+      <div className="rounded-lg bg-muted/40 border border-border p-3">
+        <p className="text-xs font-semibold mb-1">Premissas da simulação</p>
+        <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+          {sim.premissas.map((p, i) => <li key={i}>{p}</li>)}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function RegimeMemoria({ r, recomendado, atual }: Readonly<{ r: RegimeSimulado; recomendado: boolean; atual: boolean }>) {
+  return (
+    <section className={`rounded-lg border ${recomendado ? 'border-primary/50' : 'border-border'} overflow-hidden`}>
+      {/* Cabeçalho do regime */}
+      <header className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 border-b ${recomendado ? 'bg-primary/5 border-primary/30' : 'bg-muted/40 border-border'}`}>
+        <span className="text-sm font-semibold flex items-center gap-2">
+          {r.rotulo}
+          {recomendado && <span className="text-[10px] font-bold uppercase tracking-wide text-primary">Recomendado</span>}
+          {atual && <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Atual</span>}
+        </span>
+        {r.elegivel && (
+          <span className="flex items-baseline gap-x-4 text-xs">
+            <span className="text-muted-foreground">Total federal <strong className="text-foreground tabular-nums">{fmtBrl(r.totalFederal ?? 0)}</strong></span>
+            <span className="text-muted-foreground">Carga <strong className="text-foreground tabular-nums">{fmtPct(r.cargaEfetiva, 2)}</strong></span>
             {r.regime === 'simples_nacional' && r.totalUnificado != null && (
-              <div>
-                <span className="text-xs text-muted-foreground">DAS total (unificado)</span>
-                <p className="text-lg font-bold tabular-nums">{fmtBrl(r.totalUnificado)}</p>
-              </div>
+              <span className="text-muted-foreground">DAS <strong className="text-foreground tabular-nums">{fmtBrl(r.totalUnificado)}</strong></span>
             )}
             {r.estimado && (
-              <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium">
-                <WarningIcon size={13} /> valor estimado
-              </span>
+              <span className="inline-flex items-center gap-1 text-amber-600 font-medium"><WarningIcon size={12} /> estimado</span>
             )}
-          </div>
+          </span>
+        )}
+      </header>
 
-          {/* Tributo a tributo */}
+      <div className="p-3">
+        {!r.elegivel ? (
+          <div className="text-sm text-muted-foreground flex items-center gap-2 py-1">
+            <ProhibitIcon size={16} /> {r.observacoes[0] ?? 'Regime não elegível para esta empresa.'}
+          </div>
+        ) : (
           <div className="space-y-3">
+            {/* Tributo a tributo */}
             {r.tributos.map(t => (
               <div key={t.sigla} className="rounded-lg border border-border overflow-hidden">
                 <div className="flex items-center justify-between bg-muted/40 px-3 py-1.5">
@@ -351,24 +358,16 @@ function MemoriaConteudo({ sim, focoInicial }: Readonly<{ sim: NonNullable<Simul
                 </table>
               </div>
             ))}
+
+            {/* Observações do regime */}
+            {r.observacoes.length > 0 && (
+              <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
+                {r.observacoes.map((o, i) => <li key={i}>{o}</li>)}
+              </ul>
+            )}
           </div>
-
-          {/* Observações do regime */}
-          {r.observacoes.length > 0 && (
-            <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
-              {r.observacoes.map((o, i) => <li key={i}>{o}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {/* Premissas gerais */}
-      <div className="rounded-lg bg-muted/40 border border-border p-3">
-        <p className="text-xs font-semibold mb-1">Premissas da simulação</p>
-        <ul className="text-[11px] text-muted-foreground space-y-1 list-disc pl-4">
-          {sim.premissas.map((p, i) => <li key={i}>{p}</li>)}
-        </ul>
+        )}
       </div>
-    </div>
+    </section>
   );
 }
