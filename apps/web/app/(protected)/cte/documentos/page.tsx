@@ -519,8 +519,8 @@ export default function CteDocumentosPage() {
                 <th className="px-4 py-2.5 font-medium">Tomador</th>
                 <th className="px-4 py-2.5 font-medium text-right">Valor prest.</th>
                 <th className="px-4 py-2.5 font-medium">Emissão</th>
-                <th className="px-4 py-2.5 font-medium">Chave</th>
                 <th className="px-4 py-2.5 font-medium text-right">Ações</th>
+                <th className="px-4 py-2.5 font-medium">Chave</th>
               </tr>
             </thead>
             <tbody>
@@ -577,9 +577,6 @@ export default function CteDocumentosPage() {
                     <td className="px-4 py-2.5 text-right font-medium text-foreground whitespace-nowrap">{fmtMoney(doc.cteValorPrestacao)}</td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{fmtDate(doc.cteDhEmissao)}</td>
                     <td className="px-4 py-2.5">
-                      <span className="font-mono text-[11px] text-muted-foreground">{doc.chaveAcesso ? `…${doc.chaveAcesso.slice(-12)}` : '—'}</span>
-                    </td>
-                    <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
                         <button type="button" onClick={() => setEventosDoc(doc)} title="Ver eventos"
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
@@ -592,6 +589,9 @@ export default function CteDocumentosPage() {
                           </button>
                         ) : null}
                       </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className="font-mono text-[11px] text-muted-foreground">{doc.chaveAcesso ? `…${doc.chaveAcesso.slice(-12)}` : '—'}</span>
                     </td>
                   </tr>
                 );
