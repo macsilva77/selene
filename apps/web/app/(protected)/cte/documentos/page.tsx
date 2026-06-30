@@ -48,6 +48,8 @@ interface CteDocumento {
   cteTomadorCnpj: string | null;
   cteRemetenteCnpj: string | null;
   cteDestinatarioCnpj: string | null;
+  cteExpedidorCnpj: string | null;
+  cteRecebedorCnpj: string | null;
   cteChavesNfe: string | null;
   eventoTipo: string | null;
   eventoDescricao: string | null;
@@ -129,6 +131,21 @@ const EVENTO_STATUS: Record<CteEvento['status'], { label: string; cls: string }>
   REJEITADO: { label: 'Rejeitado', cls: 'bg-red-50 text-red-700' },
   ERRO: { label: 'Erro', cls: 'bg-red-50 text-red-700' },
 };
+
+/** CNPJ de um participante do CT-e; destaca em cor quando é a empresa monitorada. */
+function Parte({ cnpj, monitorado, label }: Readonly<{ cnpj?: string | null; monitorado: string; label?: string }>) {
+  if (!cnpj) return label ? null : <span className="text-muted-foreground">—</span>;
+  const monDigits = monitorado.replace(/\D/g, '');
+  const ehMonitorado = monDigits !== '' && cnpj.replace(/\D/g, '') === monDigits;
+  return (
+    <div className="leading-tight" title={ehMonitorado ? 'Empresa monitorada' : undefined}>
+      {label ? <span className="text-[10px] text-muted-foreground/60">{label} </span> : null}
+      <span className={`font-mono text-[11px] ${ehMonitorado ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
+        {maskCnpj(cnpj)}
+      </span>
+    </div>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────────────── */
 /* Modal: registrar desacordo                                          */
@@ -485,7 +502,9 @@ export default function CteDocumentosPage() {
               <tr className="text-left text-xs text-muted-foreground">
                 <th className="px-4 py-2.5 font-medium">Tipo</th>
                 <th className="px-4 py-2.5 font-medium">Situação</th>
-                <th className="px-4 py-2.5 font-medium">Transportadora</th>
+                <th className="px-4 py-2.5 font-medium">Emitente (transp.)</th>
+                <th className="px-4 py-2.5 font-medium">Remetente</th>
+                <th className="px-4 py-2.5 font-medium">Destinatário</th>
                 <th className="px-4 py-2.5 font-medium">Tomador</th>
                 <th className="px-4 py-2.5 font-medium text-right">Valor prest.</th>
                 <th className="px-4 py-2.5 font-medium">Emissão</th>
@@ -497,11 +516,11 @@ export default function CteDocumentosPage() {
               {loading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-t border-border/40">
-                    <td colSpan={8} className="px-4 py-3"><div className="h-5 bg-muted rounded animate-pulse" /></td>
+                    <td colSpan={10} className="px-4 py-3"><div className="h-5 bg-muted rounded animate-pulse" /></td>
                   </tr>
                 ))
               ) : docs.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-16 text-center text-muted-foreground">
+                <tr><td colSpan={10} className="px-4 py-16 text-center text-muted-foreground">
                   <TruckIcon size={32} className="mx-auto opacity-30 mb-2" />
                   Nenhum documento CT-e encontrado.
                 </td></tr>
@@ -530,7 +549,19 @@ export default function CteDocumentosPage() {
                       </div>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className="font-mono text-xs text-muted-foreground">{maskCnpj(doc.cteTomadorCnpj)}</span>
+                      <Parte cnpj={doc.cteRemetenteCnpj} monitorado={cnpj} />
+                      {doc.cteExpedidorCnpj && doc.cteExpedidorCnpj !== doc.cteRemetenteCnpj ? (
+                        <Parte cnpj={doc.cteExpedidorCnpj} monitorado={cnpj} label="Exped." />
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Parte cnpj={doc.cteDestinatarioCnpj} monitorado={cnpj} />
+                      {doc.cteRecebedorCnpj && doc.cteRecebedorCnpj !== doc.cteDestinatarioCnpj ? (
+                        <Parte cnpj={doc.cteRecebedorCnpj} monitorado={cnpj} label="Receb." />
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Parte cnpj={doc.cteTomadorCnpj} monitorado={cnpj} />
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-foreground whitespace-nowrap">{fmtMoney(doc.cteValorPrestacao)}</td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{fmtDate(doc.cteDhEmissao)}</td>
