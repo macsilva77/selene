@@ -942,6 +942,41 @@ export class DfeDistribuicaoService {
     return { ...doc, xmlBuffer };
   }
 
+  /**
+   * Lista os CT-e que transportam (referenciam) uma determinada NF-e.
+   *
+   * O vínculo é feito pela chave de acesso da NF-e: busca os CteDocumento cujo
+   * campo `cteChavesNfe` (CSV de chaves transportadas) contém a chave do documento.
+   */
+  async listarCtesDaNfe(tenantId: string, documentoId: string) {
+    const doc = await this.prisma.dfeDocumento.findFirst({
+      where: { id: documentoId, tenantId },
+      select: { id: true, chaveAcesso: true },
+    });
+    if (!doc) throw new NotFoundException('Documento DFe não encontrado');
+
+    const chave = (doc.chaveAcesso ?? '').replace(/\D/g, '');
+    if (chave.length !== 44) return { chaveNfe: doc.chaveAcesso, ctes: [] };
+
+    const ctes = await this.prisma.cteDocumento.findMany({
+      where: {
+        tenantId,
+        tipoDocumento: 'PROC_CTE',
+        cteChavesNfe: { contains: chave },
+      },
+      orderBy: { cteDhEmissao: 'desc' },
+      select: {
+        id: true, chaveAcesso: true, modelo: true,
+        cteEmitenteCnpj: true, cteEmitenteNome: true,
+        cteValorPrestacao: true, cteDhEmissao: true, cteSituacao: true,
+        modal: true, ufIni: true, ufFim: true,
+        cteRemetenteNome: true, cteDestinatarioNome: true, cteTomadorNome: true,
+      },
+    });
+
+    return { chaveNfe: doc.chaveAcesso, ctes };
+  }
+
   // ────────────────────────────────────────────────────────────────────────────
   // Gaps NSU
   // ────────────────────────────────────────────────────────────────────────────

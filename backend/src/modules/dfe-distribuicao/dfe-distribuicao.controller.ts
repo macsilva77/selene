@@ -468,6 +468,22 @@ export class DfeDistribuicaoController {
     return new StreamableFile(doc.xmlBuffer);
   }
 
+  /**
+   * GET /dfe/documentos/:documentoId/ctes
+   *
+   * Lista os CT-e que transportam (referenciam) esta NF-e, cruzando a chave de
+   * acesso da NF-e com as chaves transportadas declaradas em cada CT-e.
+   */
+  @Get('documentos/:documentoId/ctes')
+  @RequiresPermission('dfe.view')
+  @ApiOperation({ summary: 'Listar os CT-e que transportam esta NF-e' })
+  ctesDaNfe(
+    @Param('documentoId', ParseUUIDPipe) documentoId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    return this.service.listarCtesDaNfe(tenantId, documentoId);
+  }
+
   // ────────────────────────────────────────────────────────────────────────────
   // Gaps NSU
   // ────────────────────────────────────────────────────────────────────────────

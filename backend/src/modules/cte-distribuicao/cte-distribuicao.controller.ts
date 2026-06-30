@@ -137,6 +137,16 @@ export class CteDistribuicaoController {
     return this.service.listarEventos(tenantId, documentoId);
   }
 
+  @Get('documentos/:documentoId/nfes')
+  @RequiresPermission('cte.view')
+  @ApiOperation({ summary: 'Listar as NF-e transportadas por um CT-e' })
+  nfes(
+    @Param('documentoId', ParseUUIDPipe) documentoId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    return this.service.listarNfesDoCte(tenantId, documentoId);
+  }
+
   @Post('documentos/backfill-participantes')
   @RequiresPermission('cte.manage')
   @ApiOperation({ summary: 'Reprocessa XMLs para popular os nomes dos participantes (docs antigos)' })

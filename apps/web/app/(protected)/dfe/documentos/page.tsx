@@ -21,6 +21,7 @@ import {
   ListBulletsIcon,
   FilePdfIcon,
   FileArrowDownIcon,
+  TruckIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -83,6 +84,23 @@ interface DfeDocumento {
   criadoEm: string;
   ultimaManifestacao: UltimaManifestacao | null;
   etiquetas: Etiqueta[];
+}
+
+interface CteRelacionado {
+  id: string;
+  chaveAcesso: string | null;
+  modelo: number | null;
+  cteEmitenteCnpj: string | null;
+  cteEmitenteNome: string | null;
+  cteValorPrestacao: string | number | null;
+  cteDhEmissao: string | null;
+  cteSituacao: string | null;
+  modal: string | null;
+  ufIni: string | null;
+  ufFim: string | null;
+  cteRemetenteNome: string | null;
+  cteDestinatarioNome: string | null;
+  cteTomadorNome: string | null;
 }
 
 interface PageMeta { total: number; page: number; limit: number; totalPages: number; }
@@ -637,6 +655,91 @@ function EtiquetaHistoricoPanel({
 }
 
 /* ─────────────────────────────────────────────────────────────────── */
+/* CT-e relacionados — side panel                                      */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function CtesPanel({
+  documento,
+  onClose,
+}: Readonly<{ documento: DfeDocumento; onClose: () => void }>) {
+  const [ctes, setCtes] = useState<CteRelacionado[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { nNF, serie, modelo } = parseChave(documento.chaveAcesso);
+
+  useEffect(() => {
+    setLoading(true);
+    api
+      .get(`/dfe/documentos/${documento.id}/ctes`)
+      .then((res) => { setCtes((res.data as { ctes: CteRelacionado[] }).ctes ?? []); })
+      .catch(() => { setCtes([]); })
+      .finally(() => { setLoading(false); });
+  }, [documento.id]);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-lg bg-card shadow-xl border-l flex flex-col">
+        <div className="flex items-start justify-between border-b px-5 py-4">
+          <div className="min-w-0 flex-1 pr-3">
+            <h2 className="font-semibold text-foreground">CT-e relacionados</h2>
+            {nNF ? (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                NF-e {modelo}/{String(serie).padStart(3, '0')} — Nº {nNF}
+              </p>
+            ) : null}
+          </div>
+          <button type="button" title="Fechar" onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted transition-colors">
+            <XIcon size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+              <ArrowClockwiseIcon size={16} className="animate-spin" />
+              <span className="text-sm">Carregando CT-e…</span>
+            </div>
+          ) : ctes.length === 0 ? (
+            <div className="text-center py-10 text-sm text-muted-foreground">
+              Nenhum CT-e capturado transporta esta NF-e.
+            </div>
+          ) : (
+            ctes.map((c) => (
+              <div key={c.id} className="rounded-lg border p-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {c.cteEmitenteNome || maskCnpj(c.cteEmitenteCnpj)}
+                  </span>
+                  {c.cteValorPrestacao != null ? (
+                    <span className="text-xs font-medium text-foreground whitespace-nowrap">
+                      {fmtCurrency(Number(c.cteValorPrestacao))}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  {c.cteDhEmissao ? <span>{fmtDate(c.cteDhEmissao)}</span> : null}
+                  {c.modal ? <><span>·</span><span>{c.modal}</span></> : null}
+                  {c.ufIni && c.ufFim ? <><span>·</span><span>{c.ufIni} → {c.ufFim}</span></> : null}
+                </div>
+                {c.cteRemetenteNome || c.cteDestinatarioNome ? (
+                  <p className="text-xs text-muted-foreground truncate">
+                    {c.cteRemetenteNome ?? '—'} → {c.cteDestinatarioNome ?? '—'}
+                  </p>
+                ) : null}
+                {c.chaveAcesso ? (
+                  <p className="font-mono text-[10px] text-muted-foreground/70 break-all">{c.chaveAcesso}</p>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────── */
 /* Ações Dropdown (portal-based to escape overflow:hidden)            */
 /* ─────────────────────────────────────────────────────────────────── */
 
@@ -644,6 +747,7 @@ function AcoesDropdown({
   doc,
   onManifest,
   onVerManifestacoes,
+  onVerCtes,
   onDownloadXml,
   onDownloadDanfe,
   onHistoricoEtiquetas,
@@ -651,6 +755,7 @@ function AcoesDropdown({
   doc: DfeDocumento;
   onManifest: () => void;
   onVerManifestacoes: () => void;
+  onVerCtes: () => void;
   onDownloadXml: () => void;
   onDownloadDanfe: () => void;
   onHistoricoEtiquetas: () => void;
@@ -741,6 +846,7 @@ function AcoesDropdown({
           {item('Carta de Correção', <FileTextIcon size={13} />, () => {}, true)}
           <div className="border-t my-1" />
           {item('Ver manifestações', <ListBulletsIcon size={13} />, onVerManifestacoes)}
+          {item('CT-e relacionado', <TruckIcon size={13} />, onVerCtes, !hasChave)}
           {item('Histórico de etiquetas', <TagIcon size={13} />, onHistoricoEtiquetas)}
         </div>,
         document.body,
@@ -948,6 +1054,7 @@ function DocTable({
   onToggleAll,
   onManifestSingle,
   onVerManifestacoes,
+  onVerCtes,
   onDownloadXml,
   onDownloadDanfe,
   onEtiquetasSingle,
@@ -959,6 +1066,7 @@ function DocTable({
   onToggleAll: () => void;
   onManifestSingle: (doc: DfeDocumento) => void;
   onVerManifestacoes: (doc: DfeDocumento) => void;
+  onVerCtes: (doc: DfeDocumento) => void;
   onDownloadXml: (doc: DfeDocumento) => void;
   onDownloadDanfe: (doc: DfeDocumento) => void;
   onEtiquetasSingle: (doc: DfeDocumento) => void;
@@ -1071,6 +1179,7 @@ function DocTable({
                     doc={doc}
                     onManifest={() => { onManifestSingle(doc); }}
                     onVerManifestacoes={() => { onVerManifestacoes(doc); }}
+                    onVerCtes={() => { onVerCtes(doc); }}
                     onDownloadXml={() => { onDownloadXml(doc); }}
                     onDownloadDanfe={() => { onDownloadDanfe(doc); }}
                     onHistoricoEtiquetas={() => { onHistoricoEtiquetas(doc); }}
@@ -1490,6 +1599,7 @@ export default function DfeDocumentosPage() {
   const configsRef = useRef<DfeConfigItem[]>([]);
   const [modalDocs, setModalDocs] = useState<DfeDocumento[] | null>(null);
   const [panelDoc, setPanelDoc] = useState<DfeDocumento | null>(null);
+  const [ctesDoc, setCtesDoc] = useState<DfeDocumento | null>(null);
   const [etiquetasLista, setEtiquetasLista] = useState<Etiqueta[]>([]);
   const [etiquetasModalDocs, setEtiquetasModalDocs] = useState<DfeDocumento[] | null>(null);
   const [historicoDoc, setHistoricoDoc] = useState<DfeDocumento | null>(null);
@@ -1783,6 +1893,7 @@ export default function DfeDocumentosPage() {
             onToggleAll={toggleAll}
             onManifestSingle={(doc) => { openManifestModal([doc]); }}
             onVerManifestacoes={(doc) => { setPanelDoc(doc); }}
+            onVerCtes={(doc) => { setCtesDoc(doc); }}
             onDownloadXml={(doc) => { void downloadXml(doc); }}
             onDownloadDanfe={(doc) => { void downloadDanfe(doc); }}
             onEtiquetasSingle={(doc) => { setEtiquetasModalDocs([doc]); }}
@@ -1807,6 +1918,14 @@ export default function DfeDocumentosPage() {
         <ManifestoesPanel
           documento={panelDoc}
           onClose={() => { setPanelDoc(null); }}
+        />
+      ) : null}
+
+      {/* Painel lateral de CT-e relacionados à NF-e */}
+      {ctesDoc ? (
+        <CtesPanel
+          documento={ctesDoc}
+          onClose={() => { setCtesDoc(null); }}
         />
       ) : null}
 

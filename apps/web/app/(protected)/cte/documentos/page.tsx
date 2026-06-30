@@ -12,6 +12,8 @@ import {
   ProhibitIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  FileTextIcon,
+  ReceiptIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { Modal } from '@/components/ui/modal';
@@ -76,6 +78,18 @@ interface CteEvento {
   criadoEm: string;
 }
 
+interface CteNfe {
+  chave: string;
+  encontrada: boolean;
+  documentoId: string | null;
+  tipoDocumento: string | null;
+  nfeEmitenteCnpj: string | null;
+  nfeEmitenteNome: string | null;
+  nfeValorTotal: string | number | null;
+  nfeDhEmissao: string | null;
+  nfeSituacao: string | null;
+}
+
 interface PageMeta { page: number; limit: number; total: number; totalPages: number; }
 
 type Papel = 'todos' | 'tomador' | 'remetente' | 'destinatario' | 'recebedor';
@@ -112,6 +126,20 @@ function fmtMoney(v: string | number | null | undefined) {
 
 const MODELO_LABEL: Record<number, string> = { 57: 'CT-e', 67: 'CT-e OS', 64: 'GTV-e' };
 
+/** Conta as chaves de NF-e válidas (44 dígitos) presentes no CSV `cteChavesNfe`. */
+function contarChavesNfe(csv: string | null): number {
+  if (!csv) return 0;
+  return new Set(
+    csv.split(',').map((c) => c.replace(/\D/g, '')).filter((c) => c.length === 44),
+  ).size;
+}
+
+/** Extrai o número da NF-e (nNF) da chave de acesso de 44 dígitos. */
+function nNfDaChave(chave: string): string {
+  if (chave.length !== 44) return '—';
+  return String(Number(chave.slice(25, 34)));
+}
+
 function tipoBadge(tipo: CteDocumento['tipoDocumento']): { label: string; cls: string } {
   switch (tipo) {
     case 'PROC_CTE': return { label: 'CT-e', cls: 'bg-sky-50 text-sky-700' };
@@ -138,19 +166,28 @@ const EVENTO_STATUS: Record<CteEvento['status'], { label: string; cls: string }>
 };
 
 /** Participante do CT-e (nome + CNPJ); destaca em cor quando é a empresa monitorada. */
-function Parte({ cnpj, nome, monitorado, label }: Readonly<{ cnpj?: string | null; nome?: string | null; monitorado: string; label?: string }>) {
+function ehMonitorado(cnpj: string | null | undefined, monitorado: string): boolean {
+  const mon = monitorado.replace(/\D/g, '');
+  return mon !== '' && (cnpj ?? '').replace(/\D/g, '') === mon;
+}
+
+/** Coluna do NOME do participante (com destaque quando é a empresa monitorada). */
+function NomeParte({ cnpj, nome, monitorado, label }: Readonly<{ cnpj?: string | null; nome?: string | null; monitorado: string; label?: string }>) {
   if (!cnpj && !nome) return label ? null : <span className="text-muted-foreground">—</span>;
-  const monDigits = monitorado.replace(/\D/g, '');
-  const ehMonitorado = monDigits !== '' && (cnpj ?? '').replace(/\D/g, '') === monDigits;
-  const corNome = ehMonitorado ? 'text-primary font-semibold' : 'text-foreground';
-  const corCnpj = ehMonitorado ? 'text-primary font-semibold' : 'text-muted-foreground';
+  const cor = ehMonitorado(cnpj, monitorado) ? 'text-primary font-semibold' : 'text-foreground';
   return (
-    <div className="leading-tight max-w-48" title={nome ?? undefined}>
+    <div className="leading-tight max-w-52" title={nome ?? undefined}>
       {label ? <span className="text-[10px] text-muted-foreground/60">{label} </span> : null}
-      {nome ? <div className={`truncate text-xs ${corNome}`}>{nome}</div> : null}
-      {cnpj ? <span className={`font-mono text-[11px] ${corCnpj}`}>{maskCnpj(cnpj)}</span> : null}
+      <span className={`block truncate text-xs ${cor}`}>{nome || '—'}</span>
     </div>
   );
+}
+
+/** Coluna do CNPJ do participante (separada do nome). */
+function CnpjParte({ cnpj, monitorado }: Readonly<{ cnpj?: string | null; monitorado: string }>) {
+  if (!cnpj) return <span className="text-muted-foreground">—</span>;
+  const cor = ehMonitorado(cnpj, monitorado) ? 'text-primary font-semibold' : 'text-muted-foreground';
+  return <span className={`font-mono text-[11px] ${cor} whitespace-nowrap`}>{maskCnpj(cnpj)}</span>;
 }
 
 /* ─────────────────────────────────────────────────────────────────── */
@@ -312,6 +349,94 @@ function EventosPanel({ doc, onClose }: Readonly<{ doc: CteDocumento; onClose: (
 }
 
 /* ─────────────────────────────────────────────────────────────────── */
+/* Painel: NF-e transportadas pelo CT-e                                */
+/* ─────────────────────────────────────────────────────────────────── */
+
+function NfesPanel({ doc, onClose }: Readonly<{ doc: CteDocumento; onClose: () => void }>) {
+  const [nfes, setNfes] = useState<CteNfe[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let ativo = true;
+    setLoading(true);
+    api.get(`/cte/documentos/${doc.id}/nfes`)
+      .then((res) => {
+        const data = res.data as { nfes: CteNfe[] };
+        if (ativo) setNfes(data.nfes ?? []);
+      })
+      .catch(() => { if (ativo) setNfes([]); })
+      .finally(() => { if (ativo) setLoading(false); });
+    return () => { ativo = false; };
+  }, [doc.id]);
+
+  const encontradas = nfes.filter((n) => n.encontrada).length;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={onClose} />
+      <div className="fixed top-0 right-0 z-50 h-full w-[520px] max-w-[94vw] bg-card shadow-2xl flex flex-col border-l border-border overflow-hidden">
+        <div className="px-6 py-5 border-b border-border shrink-0 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">Notas fiscais do CT-e</p>
+            <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">{doc.chaveAcesso}</p>
+            {!loading && nfes.length > 0 ? (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {nfes.length} nota{nfes.length !== 1 ? 's' : ''} · {encontradas} na base
+              </p>
+            ) : null}
+          </div>
+          <button type="button" title="Fechar" onClick={onClose}
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0">
+            <XIcon size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 bg-muted rounded-lg animate-pulse" />)}
+            </div>
+          ) : nfes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
+              <ReceiptIcon size={28} className="opacity-30" />
+              <p className="text-sm">Nenhuma NF-e vinculada a este CT-e</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {nfes.map((nfe) => (
+                <div key={nfe.chave} className="rounded-lg border border-border p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-foreground">
+                      NF-e nº {nNfDaChave(nfe.chave)}
+                    </span>
+                    {nfe.encontrada ? (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Na base</span>
+                    ) : (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Não capturada</span>
+                    )}
+                  </div>
+                  {nfe.nfeEmitenteNome || nfe.nfeEmitenteCnpj ? (
+                    <div className="leading-tight">
+                      {nfe.nfeEmitenteNome ? <div className="text-xs text-foreground truncate">{nfe.nfeEmitenteNome}</div> : null}
+                      {nfe.nfeEmitenteCnpj ? <span className="font-mono text-[11px] text-muted-foreground">{maskCnpj(nfe.nfeEmitenteCnpj)}</span> : null}
+                    </div>
+                  ) : null}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {nfe.nfeValorTotal != null ? <span className="font-medium text-foreground">{fmtMoney(nfe.nfeValorTotal)}</span> : null}
+                    {nfe.nfeDhEmissao ? <><span>·</span><span>{fmtDate(nfe.nfeDhEmissao)}</span></> : null}
+                  </div>
+                  <p className="font-mono text-[10px] text-muted-foreground/70 break-all">{nfe.chave}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────── */
 /* Page                                                                */
 /* ─────────────────────────────────────────────────────────────────── */
 
@@ -336,6 +461,7 @@ export default function CteDocumentosPage() {
   // Ações
   const [desacordoDoc, setDesacordoDoc] = useState<CteDocumento | null>(null);
   const [eventosDoc, setEventosDoc] = useState<CteDocumento | null>(null);
+  const [nfesDoc, setNfesDoc] = useState<CteDocumento | null>(null);
   const [enviandoDesacordo, setEnviandoDesacordo] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
 
@@ -430,7 +556,7 @@ export default function CteDocumentosPage() {
   const showRem = papel !== 'remetente';
   const showDest = papel !== 'destinatario';
   const showToma = papel !== 'tomador';
-  const colCount = 7 + (showRem ? 1 : 0) + (showDest ? 1 : 0) + (showToma ? 1 : 0);
+  const colCount = 8 + (showRem ? 2 : 0) + (showDest ? 2 : 0) + (showToma ? 2 : 0);
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0 h-full overflow-y-auto pb-4">
@@ -547,9 +673,13 @@ export default function CteDocumentosPage() {
                 <th className="px-4 py-2.5 font-medium">Tipo</th>
                 <th className="px-4 py-2.5 font-medium">Situação</th>
                 <th className="px-4 py-2.5 font-medium">Emitente (transp.)</th>
+                <th className="px-4 py-2.5 font-medium">CNPJ emit.</th>
                 {showRem ? <th className="px-4 py-2.5 font-medium">Remetente</th> : null}
+                {showRem ? <th className="px-4 py-2.5 font-medium">CNPJ remet.</th> : null}
                 {showDest ? <th className="px-4 py-2.5 font-medium">Destinatário</th> : null}
+                {showDest ? <th className="px-4 py-2.5 font-medium">CNPJ dest.</th> : null}
                 {showToma ? <th className="px-4 py-2.5 font-medium">Tomador</th> : null}
+                {showToma ? <th className="px-4 py-2.5 font-medium">CNPJ toma.</th> : null}
                 <th className="px-4 py-2.5 font-medium text-right">Valor prest.</th>
                 <th className="px-4 py-2.5 font-medium">Emissão</th>
                 <th className="px-4 py-2.5 font-medium text-right">Ações</th>
@@ -573,6 +703,7 @@ export default function CteDocumentosPage() {
                 const sb = situacaoBadge(doc.cteSituacao);
                 const isCte = doc.tipoDocumento === 'PROC_CTE';
                 const isEvento = doc.tipoDocumento === 'PROC_EVENTO_CTE';
+                const qtdNfes = contarChavesNfe(doc.cteChavesNfe);
                 return (
                   <tr key={doc.id} className="border-t border-border/40 hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-2.5">
@@ -587,36 +718,73 @@ export default function CteDocumentosPage() {
                       ) : <span className="text-xs text-muted-foreground">—</span>}
                     </td>
                     <td className="px-4 py-2.5">
-                      <div className="flex flex-col leading-tight max-w-52">
-                        <span className="truncate text-foreground">{doc.cteEmitenteNome || '—'}</span>
-                        <span className="font-mono text-[11px] text-muted-foreground">{maskCnpj(doc.cteEmitenteCnpj)}</span>
-                      </div>
+                      <NomeParte cnpj={doc.cteEmitenteCnpj} nome={doc.cteEmitenteNome} monitorado="" />
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <CnpjParte cnpj={doc.cteEmitenteCnpj} monitorado="" />
                     </td>
                     {showRem ? (
-                      <td className="px-4 py-2.5">
-                        <Parte cnpj={doc.cteRemetenteCnpj} nome={doc.cteRemetenteNome} monitorado={cnpj} />
-                        {doc.cteExpedidorCnpj && doc.cteExpedidorCnpj !== doc.cteRemetenteCnpj ? (
-                          <Parte cnpj={doc.cteExpedidorCnpj} nome={doc.cteExpedidorNome} monitorado={cnpj} label="Exped." />
-                        ) : null}
-                      </td>
+                      <>
+                        <td className="px-4 py-2.5">
+                          <div className="flex flex-col gap-0.5">
+                            <NomeParte cnpj={doc.cteRemetenteCnpj} nome={doc.cteRemetenteNome} monitorado={cnpj} />
+                            {doc.cteExpedidorCnpj && doc.cteExpedidorCnpj !== doc.cteRemetenteCnpj ? (
+                              <NomeParte cnpj={doc.cteExpedidorCnpj} nome={doc.cteExpedidorNome} monitorado={cnpj} label="Exped." />
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex flex-col gap-0.5">
+                            <CnpjParte cnpj={doc.cteRemetenteCnpj} monitorado={cnpj} />
+                            {doc.cteExpedidorCnpj && doc.cteExpedidorCnpj !== doc.cteRemetenteCnpj ? (
+                              <CnpjParte cnpj={doc.cteExpedidorCnpj} monitorado={cnpj} />
+                            ) : null}
+                          </div>
+                        </td>
+                      </>
                     ) : null}
                     {showDest ? (
-                      <td className="px-4 py-2.5">
-                        <Parte cnpj={doc.cteDestinatarioCnpj} nome={doc.cteDestinatarioNome} monitorado={cnpj} />
-                        {doc.cteRecebedorCnpj && doc.cteRecebedorCnpj !== doc.cteDestinatarioCnpj ? (
-                          <Parte cnpj={doc.cteRecebedorCnpj} nome={doc.cteRecebedorNome} monitorado={cnpj} label="Receb." />
-                        ) : null}
-                      </td>
+                      <>
+                        <td className="px-4 py-2.5">
+                          <div className="flex flex-col gap-0.5">
+                            <NomeParte cnpj={doc.cteDestinatarioCnpj} nome={doc.cteDestinatarioNome} monitorado={cnpj} />
+                            {doc.cteRecebedorCnpj && doc.cteRecebedorCnpj !== doc.cteDestinatarioCnpj ? (
+                              <NomeParte cnpj={doc.cteRecebedorCnpj} nome={doc.cteRecebedorNome} monitorado={cnpj} label="Receb." />
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex flex-col gap-0.5">
+                            <CnpjParte cnpj={doc.cteDestinatarioCnpj} monitorado={cnpj} />
+                            {doc.cteRecebedorCnpj && doc.cteRecebedorCnpj !== doc.cteDestinatarioCnpj ? (
+                              <CnpjParte cnpj={doc.cteRecebedorCnpj} monitorado={cnpj} />
+                            ) : null}
+                          </div>
+                        </td>
+                      </>
                     ) : null}
                     {showToma ? (
-                      <td className="px-4 py-2.5">
-                        <Parte cnpj={doc.cteTomadorCnpj} nome={doc.cteTomadorNome} monitorado={cnpj} />
-                      </td>
+                      <>
+                        <td className="px-4 py-2.5">
+                          <NomeParte cnpj={doc.cteTomadorCnpj} nome={doc.cteTomadorNome} monitorado={cnpj} />
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <CnpjParte cnpj={doc.cteTomadorCnpj} monitorado={cnpj} />
+                        </td>
+                      </>
                     ) : null}
                     <td className="px-4 py-2.5 text-right font-medium text-foreground whitespace-nowrap">{fmtMoney(doc.cteValorPrestacao)}</td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{fmtDate(doc.cteDhEmissao)}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
+                        {isCte && qtdNfes > 0 ? (
+                          <button type="button" onClick={() => setNfesDoc(doc)}
+                            title={`Ver ${qtdNfes} nota(s) fiscal(is) do CT-e`}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs border border-sky-200 text-sky-700 bg-sky-50 hover:bg-sky-100 transition-colors">
+                            <FileTextIcon size={13} />Notas
+                            <span className="font-semibold">{qtdNfes}</span>
+                          </button>
+                        ) : null}
                         <button type="button" onClick={() => setEventosDoc(doc)} title="Ver eventos"
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
                           <ClockCounterClockwiseIcon size={15} />
@@ -668,6 +836,8 @@ export default function CteDocumentosPage() {
       ) : null}
 
       {eventosDoc ? <EventosPanel doc={eventosDoc} onClose={() => setEventosDoc(null)} /> : null}
+
+      {nfesDoc ? <NfesPanel doc={nfesDoc} onClose={() => setNfesDoc(null)} /> : null}
     </div>
   );
 }

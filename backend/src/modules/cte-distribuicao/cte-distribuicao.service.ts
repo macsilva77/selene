@@ -669,6 +669,66 @@ export class CteDistribuicaoService {
     });
   }
 
+  /**
+   * Lista as NF-e transportadas por um CT-e.
+   *
+   * As chaves vêm do campo `cteChavesNfe` (CSV extraído do XML). Quando a NF-e já
+   * existe na base DFe do tenant, enriquece com emitente/valor/situação; caso
+   * contrário, retorna apenas a chave (`encontrada: false`).
+   */
+  async listarNfesDoCte(tenantId: string, documentoId: string) {
+    const doc = await this.prisma.cteDocumento.findFirst({
+      where: { tenantId, id: documentoId },
+      select: { id: true, cteChavesNfe: true },
+    });
+    if (!doc) throw new NotFoundException('Documento CT-e não encontrado');
+
+    const chaves = [...new Set(
+      (doc.cteChavesNfe ?? '')
+        .split(',')
+        .map((c) => c.replace(/\D/g, ''))
+        .filter((c) => c.length === 44),
+    )];
+
+    if (chaves.length === 0) return { total: 0, encontradas: 0, nfes: [] };
+
+    const docsNfe = await this.prisma.dfeDocumento.findMany({
+      where: { tenantId, chaveAcesso: { in: chaves } },
+      select: {
+        id: true, chaveAcesso: true, tipoDocumento: true,
+        nfeEmitenteCnpj: true, nfeEmitenteNome: true,
+        nfeValorTotal: true, nfeDhEmissao: true, nfeSituacao: true,
+      },
+    });
+
+    // Pode haver RES_NFE + PROC_NFE para a mesma chave: prefere o procNFe (dados completos).
+    const porChave = new Map<string, (typeof docsNfe)[number]>();
+    for (const n of docsNfe) {
+      if (!n.chaveAcesso) continue;
+      const atual = porChave.get(n.chaveAcesso);
+      if (!atual || (atual.tipoDocumento !== 'PROC_NFE' && n.tipoDocumento === 'PROC_NFE')) {
+        porChave.set(n.chaveAcesso, n);
+      }
+    }
+
+    const nfes = chaves.map((chave) => {
+      const n = porChave.get(chave);
+      return {
+        chave,
+        encontrada: !!n,
+        documentoId: n?.id ?? null,
+        tipoDocumento: n?.tipoDocumento ?? null,
+        nfeEmitenteCnpj: n?.nfeEmitenteCnpj ?? null,
+        nfeEmitenteNome: n?.nfeEmitenteNome ?? null,
+        nfeValorTotal: n?.nfeValorTotal ?? null,
+        nfeDhEmissao: n?.nfeDhEmissao ?? null,
+        nfeSituacao: n?.nfeSituacao ?? null,
+      };
+    });
+
+    return { total: chaves.length, encontradas: porChave.size, nfes };
+  }
+
   /** Reprocessa XMLs já baixados para popular os nomes dos participantes (docs antigos). */
   backfillParticipantes(tenantId: string) {
     return this.xmlProcessor.backfillParticipantes(tenantId);
