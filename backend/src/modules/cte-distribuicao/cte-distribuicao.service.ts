@@ -42,6 +42,10 @@ export interface ListarCteDocumentosQuery {
   chaveAcesso?: string;
   cteEmitenteCnpj?: string;
   cteTomadorCnpj?: string;
+  cteRemetenteCnpj?: string;
+  cteDestinatarioCnpj?: string;
+  cteRecebedorCnpj?: string;
+  cteExpedidorCnpj?: string;
   dataInicio?: string;
   dataFim?: string;
   valorMin?: string | number;
@@ -572,6 +576,10 @@ export class CteDistribuicaoService {
     if (query.chaveAcesso) where.chaveAcesso = query.chaveAcesso.replace(/\D/g, '');
     if (query.cteEmitenteCnpj) where.cteEmitenteCnpj = query.cteEmitenteCnpj.replace(/\D/g, '');
     if (query.cteTomadorCnpj) where.cteTomadorCnpj = query.cteTomadorCnpj.replace(/\D/g, '');
+    if (query.cteRemetenteCnpj) where.cteRemetenteCnpj = query.cteRemetenteCnpj.replace(/\D/g, '');
+    if (query.cteDestinatarioCnpj) where.cteDestinatarioCnpj = query.cteDestinatarioCnpj.replace(/\D/g, '');
+    if (query.cteRecebedorCnpj) where.cteRecebedorCnpj = query.cteRecebedorCnpj.replace(/\D/g, '');
+    if (query.cteExpedidorCnpj) where.cteExpedidorCnpj = query.cteExpedidorCnpj.replace(/\D/g, '');
     if (query.dataInicio || query.dataFim) {
       where.cteDhEmissao = {};
       if (query.dataInicio) where.cteDhEmissao.gte = new Date(query.dataInicio);

@@ -31,6 +31,10 @@ class CteDocumentosQueryDto {
   @IsOptional() @IsString() chaveAcesso?: string;
   @IsOptional() @IsString() cteEmitenteCnpj?: string;
   @IsOptional() @IsString() cteTomadorCnpj?: string;
+  @IsOptional() @IsString() cteRemetenteCnpj?: string;
+  @IsOptional() @IsString() cteDestinatarioCnpj?: string;
+  @IsOptional() @IsString() cteRecebedorCnpj?: string;
+  @IsOptional() @IsString() cteExpedidorCnpj?: string;
   @IsOptional() @IsString() dataInicio?: string;
   @IsOptional() @IsString() dataFim?: string;
   @IsOptional() @IsString() valorMin?: string;

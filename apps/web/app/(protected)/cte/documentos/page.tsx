@@ -73,7 +73,7 @@ interface CteEvento {
 
 interface PageMeta { page: number; limit: number; total: number; totalPages: number; }
 
-type Papel = 'todos' | 'tomador';
+type Papel = 'todos' | 'tomador' | 'remetente' | 'destinatario' | 'recebedor';
 
 /* ─────────────────────────────────────────────────────────────────── */
 /* Helpers                                                             */
@@ -357,7 +357,12 @@ export default function CteDocumentosPage() {
       params.set('page', String(page));
       params.set('limit', '20');
       params.set('cnpj', cnpj.replace(/\D/g, ''));
-      if (papel === 'tomador') params.set('cteTomadorCnpj', cnpj.replace(/\D/g, ''));
+      // Aba por papel: filtra os CT-es em que a empresa monitorada exerce esse papel.
+      const cnpjD = cnpj.replace(/\D/g, '');
+      if (papel === 'tomador') params.set('cteTomadorCnpj', cnpjD);
+      else if (papel === 'remetente') params.set('cteRemetenteCnpj', cnpjD);
+      else if (papel === 'destinatario') params.set('cteDestinatarioCnpj', cnpjD);
+      else if (papel === 'recebedor') params.set('cteRecebedorCnpj', cnpjD);
       if (tipo) params.set('tipo', tipo);
       if (modelo) params.set('modelo', modelo);
       if (chave.trim()) params.set('chaveAcesso', chave.replace(/\D/g, ''));
@@ -479,9 +484,15 @@ export default function CteDocumentosPage() {
               </div>
             </div>
           </div>
-          {/* Abas por papel */}
+          {/* Abas por papel da empresa monitorada no CT-e */}
           <div className="flex items-center gap-1">
-            {([['todos', 'Todos'], ['tomador', 'Como tomador']] as const).map(([op, label]) => (
+            {([
+              ['todos', 'Todos'],
+              ['tomador', 'Tomador'],
+              ['remetente', 'Remetente'],
+              ['destinatario', 'Destinatário'],
+              ['recebedor', 'Recebedor'],
+            ] as const).map(([op, label]) => (
               <button key={op} type="button" onClick={() => setPapel(op)}
                 className={[
                   'px-3 py-1.5 rounded-lg text-sm transition-colors border',
