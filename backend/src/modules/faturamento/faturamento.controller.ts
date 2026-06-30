@@ -247,6 +247,7 @@ export class FaturamentoController {
     @Query('cnpj') cnpj: string,
     @Query('ano') anoStr: string,
     @Query('fonte') fonteParam: string | undefined,
+    @Query('grupo') grupoParam: string | undefined,
     @CurrentUser() user: { tenantId: string },
   ) {
     const fonte = fonteParam ?? 'AMBOS';
@@ -257,42 +258,61 @@ export class FaturamentoController {
     const ano = Number.parseInt(anoStr, 10);
     if (ano < 2000 || ano > 2100) throw new BadRequestException('ano inválido');
 
-    const competencias = await this.prisma.faturamentoCompetencia.findMany({
-      where: { tenantId: user.tenantId, cnpj, ano, fonte },
-      orderBy: { mes: 'asc' },
-      select: {
-        mes: true,
-        vlFaturamentoBruto: true, vlIcms: true, vlIpi: true,
-        vlPis: true, vlCofins: true, qtdDocumentos: true,
-        vlComprasBruto: true, qtdDocumentosCompras: true,
-      },
-    });
+    // grupo=true: o EFD ICMS é por estabelecimento (filial); para a visão company-wide
+    // agrega todos os estabelecimentos pela RAIZ do CNPJ (8 dígitos), somando por mês.
+    // (mesmo critério do cruzamento de receita ECF×EFD). Default: estabelecimento exato.
+    const grupo = grupoParam === 'true' || grupoParam === '1';
+    const filtroCnpj = grupo ? { startsWith: cnpj.slice(0, 8) } : cnpj;
 
-    const total = (key: keyof typeof competencias[0]) =>
-      competencias.reduce((acc, c) => acc + Number(c[key] ?? 0), 0);
+    const buscarPorFonte = (f: string) =>
+      this.prisma.faturamentoCompetencia.groupBy({
+        by:      ['mes'],
+        where:   { tenantId: user.tenantId, cnpj: filtroCnpj, ano, fonte: f },
+        _sum:    {
+          vlFaturamentoBruto: true, vlIcms: true, vlIpi: true,
+          vlPis: true, vlCofins: true, qtdDocumentos: true, vlComprasBruto: true,
+        },
+        orderBy: { mes: 'asc' },
+      });
+
+    // 'AMBOS' é uma competência MESCLADA (EFD_ICMS + EFD_CONTRIB) que só existe quando
+    // a mesclagem foi materializada. Quando não há linhas AMBOS, cai para EFD_ICMS — que
+    // já traz o faturamento bruto — para não esconder a movimentação fiscal existente.
+    let fonteEfetiva = fonte;
+    let grupos = await buscarPorFonte(fonte);
+    if (grupos.length === 0 && fonte === 'AMBOS') {
+      fonteEfetiva = 'EFD_ICMS';
+      grupos = await buscarPorFonte('EFD_ICMS');
+    }
+
+    const mensal = grupos.map(g => ({
+      mes:                g.mes,
+      vlFaturamentoBruto: Number(g._sum.vlFaturamentoBruto ?? 0),
+      vlComprasBruto:     Number(g._sum.vlComprasBruto ?? 0),
+      vlIcms:             Number(g._sum.vlIcms ?? 0),
+      vlIpi:              Number(g._sum.vlIpi ?? 0),
+      vlPis:              Number(g._sum.vlPis ?? 0),
+      vlCofins:           Number(g._sum.vlCofins ?? 0),
+      qtdDocumentos:      Number(g._sum.qtdDocumentos ?? 0),
+    }));
+
+    const total = (key: keyof typeof mensal[0]) =>
+      mensal.reduce((acc, m) => acc + Number(m[key] ?? 0), 0);
 
     return {
       cnpj,
       ano,
-      fonte,
+      fonte: fonteEfetiva,
+      grupo,
       totalFaturamentoBruto: total('vlFaturamentoBruto'),
       totalComprasBruto:     total('vlComprasBruto'),
       totalIcms:             total('vlIcms'),
       totalIpi:              total('vlIpi'),
       totalPis:              total('vlPis'),
       totalCofins:           total('vlCofins'),
-      totalDocumentos:       competencias.reduce((acc, c) => acc + c.qtdDocumentos, 0),
-      mesesProcessados:      competencias.length,
-      mensal: competencias.map(c => ({
-        mes:                  c.mes,
-        vlFaturamentoBruto:   Number(c.vlFaturamentoBruto),
-        vlComprasBruto:       Number(c.vlComprasBruto),
-        vlIcms:               Number(c.vlIcms),
-        vlIpi:                Number(c.vlIpi),
-        vlPis:                Number(c.vlPis),
-        vlCofins:             Number(c.vlCofins),
-        qtdDocumentos:        c.qtdDocumentos,
-      })),
+      totalDocumentos:       total('qtdDocumentos'),
+      mesesProcessados:      mensal.length,
+      mensal,
     };
   }
 

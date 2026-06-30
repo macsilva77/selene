@@ -267,7 +267,7 @@ export default function VisaoGeralPage() {
         exer ? analiseCreditoApi.alertas(cnpj, exer)    : Promise.resolve([] as Alerta[]),
         analiseCreditoApi.kpisAnuais(cnpj),
         analiseCreditoApi.cruzamentoReceita(cnpj),
-        ...candidatos.map(ano => faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS' })),
+        ...candidatos.map(ano => faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS', grupo: true })),
       ]);
 
       setDre(rFin.status === 'fulfilled' && rFin.value ? rFin.value.dre : null);
@@ -298,7 +298,7 @@ export default function VisaoGeralPage() {
     setAnoMensal(ano);
     if (anualCache[ano] !== undefined) return;
     try {
-      const r = await faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS' });
+      const r = await faturamentoApi.anual({ cnpj, ano, fonte: 'AMBOS', grupo: true });
       setAnualCache(prev => ({ ...prev, [ano]: r }));
     } catch {
       setAnualCache(prev => ({ ...prev, [ano]: null }));

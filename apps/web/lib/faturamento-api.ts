@@ -209,9 +209,13 @@ export const faturamentoApi = {
     return api.post('/faturamento/processar-contrib', params ?? {}).then(r => r.data);
   },
 
-  anual(params: { cnpj: string; ano: number; fonte?: string }): Promise<FaturamentoAnual> {
+  /** grupo=true agrega todos os estabelecimentos (filiais) pela raiz do CNPJ — o EFD ICMS é por filial. */
+  anual(params: { cnpj: string; ano: number; fonte?: string; grupo?: boolean }): Promise<FaturamentoAnual> {
     return api.get('/faturamento/anual', {
-      params: { cnpj: params.cnpj, ano: params.ano, fonte: params.fonte ?? 'AMBOS' },
+      params: {
+        cnpj: params.cnpj, ano: params.ano, fonte: params.fonte ?? 'AMBOS',
+        ...(params.grupo ? { grupo: 'true' } : {}),
+      },
     }).then(r => r.data);
   },
 
