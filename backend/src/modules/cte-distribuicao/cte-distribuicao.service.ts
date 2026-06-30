@@ -604,6 +604,8 @@ export class CteDistribuicaoService {
           cteDhEmissao: true, cteSituacao: true, tpCte: true, modal: true,
           ufIni: true, ufFim: true, cteTomadorCnpj: true, cteRemetenteCnpj: true,
           cteDestinatarioCnpj: true, cteExpedidorCnpj: true, cteRecebedorCnpj: true,
+          cteTomadorNome: true, cteRemetenteNome: true, cteDestinatarioNome: true,
+          cteExpedidorNome: true, cteRecebedorNome: true,
           cteChavesNfe: true, eventoTipo: true,
           eventoDescricao: true, criadoEm: true,
         },
@@ -621,5 +623,10 @@ export class CteDistribuicaoService {
       where: { tenantId, documentoId },
       orderBy: { criadoEm: 'desc' },
     });
+  }
+
+  /** Reprocessa XMLs já baixados para popular os nomes dos participantes (docs antigos). */
+  backfillParticipantes(tenantId: string) {
+    return this.xmlProcessor.backfillParticipantes(tenantId);
   }
 }

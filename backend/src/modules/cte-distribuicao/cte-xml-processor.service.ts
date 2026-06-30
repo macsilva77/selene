@@ -178,6 +178,12 @@ export class CteXmlProcessorService {
     return String(part.CNPJ ?? part.CPF ?? '').replace(/\D/g, '') || undefined;
   }
 
+  /** Nome/razão social (xNome) de um grupo de participante. */
+  private nomeDe(part: any): string | undefined {
+    if (!part) return undefined;
+    return String(part.xNome ?? '').trim() || undefined;
+  }
+
   /** Converte para número preservando 0; ausente/vazio/NaN → undefined. */
   private numOrUndef(v: unknown): number | undefined {
     if (v === null || v === undefined || v === '') return undefined;
@@ -211,7 +217,7 @@ export class CteXmlProcessorService {
         chaveAcesso,
         modelo,
         cteEmitenteCnpj: this.docDe(emit),
-        cteEmitenteNome: String(emit.xNome ?? '') || undefined,
+        cteEmitenteNome: this.nomeDe(emit),
         cteValorPrestacao: this.numOrUndef(vPrest.vTPrest),
         cteValorReceber: this.numOrUndef(vPrest.vRec),
         cteDhEmissao: ide.dhEmi ? new Date(String(ide.dhEmi)) : undefined,
@@ -226,6 +232,11 @@ export class CteXmlProcessorService {
         cteDestinatarioCnpj: this.docDe(dest),
         cteExpedidorCnpj: this.docDe(exped),
         cteRecebedorCnpj: this.docDe(receb),
+        cteTomadorNome: this.resolverTomadorNome(ide, { rem, exped, receb, dest }),
+        cteRemetenteNome: this.nomeDe(rem),
+        cteDestinatarioNome: this.nomeDe(dest),
+        cteExpedidorNome: this.nomeDe(exped),
+        cteRecebedorNome: this.nomeDe(receb),
         cteChavesNfe: this.extrairChavesNfe(infCte),
       };
     } catch (err) {
@@ -252,6 +263,27 @@ export class CteXmlProcessorService {
         return this.docDe(partes.receb);
       case '3':
         return this.docDe(partes.dest);
+      default:
+        return undefined;
+    }
+  }
+
+  /** Resolve o nome do tomador a partir de ide.toma3/toma4 (mesma lógica de resolverTomador). */
+  private resolverTomadorNome(
+    ide: any,
+    partes: { rem: any; exped: any; receb: any; dest: any },
+  ): string | undefined {
+    if (ide?.toma4) return this.nomeDe(ide.toma4);
+    const tomaVal = ide?.toma3?.toma ?? ide?.toma3 ?? ide?.toma;
+    switch (String(tomaVal)) {
+      case '0':
+        return this.nomeDe(partes.rem);
+      case '1':
+        return this.nomeDe(partes.exped);
+      case '2':
+        return this.nomeDe(partes.receb);
+      case '3':
+        return this.nomeDe(partes.dest);
       default:
         return undefined;
     }
@@ -387,6 +419,11 @@ export class CteXmlProcessorService {
           cteDestinatarioCnpj: params.campos.cteDestinatarioCnpj,
           cteExpedidorCnpj: params.campos.cteExpedidorCnpj,
           cteRecebedorCnpj: params.campos.cteRecebedorCnpj,
+          cteTomadorNome: params.campos.cteTomadorNome,
+          cteRemetenteNome: params.campos.cteRemetenteNome,
+          cteDestinatarioNome: params.campos.cteDestinatarioNome,
+          cteExpedidorNome: params.campos.cteExpedidorNome,
+          cteRecebedorNome: params.campos.cteRecebedorNome,
           cteChavesNfe: params.campos.cteChavesNfe,
           eventoTipo: params.campos.eventoTipo,
           eventoDescricao: params.campos.eventoDescricao,
@@ -400,5 +437,76 @@ export class CteXmlProcessorService {
       }
       throw err;
     }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Backfill: reprocessa XMLs existentes para popular os nomes dos participantes
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Reprocessa os XMLs de CT-e já baixados para popular os nomes dos participantes
+   * (remetente/destinatário/expedidor/recebedor/tomador) em documentos antigos,
+   * persistidos antes da captura desses nomes.
+   */
+  async backfillParticipantes(tenantId?: string): Promise<{ processados: number; atualizados: number; erros: number }> {
+    let processados = 0;
+    let atualizados = 0;
+    let erros = 0;
+    const BATCH = 200;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = { tipoDocumento: 'PROC_CTE', cteRemetenteNome: null };
+    if (tenantId) where.tenantId = tenantId;
+
+    const total = await this.prisma.cteDocumento.count({ where });
+    this.logger.log(`Backfill participantes CT-e: ${total} documento(s) a processar`);
+
+    let cursor: string | undefined;
+    for (;;) {
+      const docs = await this.prisma.cteDocumento.findMany({
+        where,
+        select: { id: true, xmlOriginal: true, xmlStoragePath: true },
+        take: BATCH,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: { id: 'asc' },
+      });
+      if (docs.length === 0) break;
+      cursor = docs[docs.length - 1].id;
+
+      for (const doc of docs) {
+        processados++;
+        try {
+          const xmlRaw = await this.storageService.resolverXml(doc);
+          let xml: Buffer;
+          try { xml = gunzipSync(xmlRaw); } catch { xml = xmlRaw; }
+          const parsed = this.xmlParser.parse(xml.toString('utf8'));
+          const campos = this.extrairProcCte(parsed);
+          if (
+            !campos.cteRemetenteNome && !campos.cteDestinatarioNome && !campos.cteTomadorNome &&
+            !campos.cteExpedidorNome && !campos.cteRecebedorNome
+          ) {
+            continue;
+          }
+          await this.prisma.cteDocumento.update({
+            where: { id: doc.id },
+            data: {
+              cteTomadorNome: campos.cteTomadorNome ?? null,
+              cteRemetenteNome: campos.cteRemetenteNome ?? null,
+              cteDestinatarioNome: campos.cteDestinatarioNome ?? null,
+              cteExpedidorNome: campos.cteExpedidorNome ?? null,
+              cteRecebedorNome: campos.cteRecebedorNome ?? null,
+            },
+          });
+          atualizados++;
+        } catch (err) {
+          erros++;
+          this.logger.warn(`Backfill participantes erro doc ${doc.id}: ${(err as Error).message}`);
+        }
+      }
+      this.logger.debug(`Backfill participantes: ${processados}/${total} (atualizados=${atualizados} erros=${erros})`);
+    }
+
+    this.logger.log(`Backfill participantes concluído: processados=${processados} atualizados=${atualizados} erros=${erros}`);
+    return { processados, atualizados, erros };
   }
 }

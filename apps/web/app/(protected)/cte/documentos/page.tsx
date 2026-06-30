@@ -50,6 +50,11 @@ interface CteDocumento {
   cteDestinatarioCnpj: string | null;
   cteExpedidorCnpj: string | null;
   cteRecebedorCnpj: string | null;
+  cteTomadorNome: string | null;
+  cteRemetenteNome: string | null;
+  cteDestinatarioNome: string | null;
+  cteExpedidorNome: string | null;
+  cteRecebedorNome: string | null;
   cteChavesNfe: string | null;
   eventoTipo: string | null;
   eventoDescricao: string | null;
@@ -132,17 +137,18 @@ const EVENTO_STATUS: Record<CteEvento['status'], { label: string; cls: string }>
   ERRO: { label: 'Erro', cls: 'bg-red-50 text-red-700' },
 };
 
-/** CNPJ de um participante do CT-e; destaca em cor quando é a empresa monitorada. */
-function Parte({ cnpj, monitorado, label }: Readonly<{ cnpj?: string | null; monitorado: string; label?: string }>) {
-  if (!cnpj) return label ? null : <span className="text-muted-foreground">—</span>;
+/** Participante do CT-e (nome + CNPJ); destaca em cor quando é a empresa monitorada. */
+function Parte({ cnpj, nome, monitorado, label }: Readonly<{ cnpj?: string | null; nome?: string | null; monitorado: string; label?: string }>) {
+  if (!cnpj && !nome) return label ? null : <span className="text-muted-foreground">—</span>;
   const monDigits = monitorado.replace(/\D/g, '');
-  const ehMonitorado = monDigits !== '' && cnpj.replace(/\D/g, '') === monDigits;
+  const ehMonitorado = monDigits !== '' && (cnpj ?? '').replace(/\D/g, '') === monDigits;
+  const corNome = ehMonitorado ? 'text-primary font-semibold' : 'text-foreground';
+  const corCnpj = ehMonitorado ? 'text-primary font-semibold' : 'text-muted-foreground';
   return (
-    <div className="leading-tight" title={ehMonitorado ? 'Empresa monitorada' : undefined}>
+    <div className="leading-tight max-w-48" title={nome ?? undefined}>
       {label ? <span className="text-[10px] text-muted-foreground/60">{label} </span> : null}
-      <span className={`font-mono text-[11px] ${ehMonitorado ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
-        {maskCnpj(cnpj)}
-      </span>
+      {nome ? <div className={`truncate text-xs ${corNome}`}>{nome}</div> : null}
+      {cnpj ? <span className={`font-mono text-[11px] ${corCnpj}`}>{maskCnpj(cnpj)}</span> : null}
     </div>
   );
 }
@@ -331,6 +337,7 @@ export default function CteDocumentosPage() {
   const [desacordoDoc, setDesacordoDoc] = useState<CteDocumento | null>(null);
   const [eventosDoc, setEventosDoc] = useState<CteDocumento | null>(null);
   const [enviandoDesacordo, setEnviandoDesacordo] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
 
   // Carrega configs (para o dropdown de empresa) uma vez
   useEffect(() => {
@@ -380,6 +387,20 @@ export default function CteDocumentosPage() {
     }
   }, [cnpj, papel, tipo, modelo, chave, dataInicio, dataFim, page, toastError]);
 
+  const handleBackfill = useCallback(async () => {
+    setBackfilling(true);
+    try {
+      const res = await api.post('/cte/documentos/backfill-participantes');
+      const r = res.data as { processados: number; atualizados: number; erros: number };
+      success(`Nomes preenchidos em ${r.atualizados} de ${r.processados} documento(s)`);
+      await carregar();
+    } catch {
+      toastError('Erro ao atualizar nomes dos participantes');
+    } finally {
+      setBackfilling(false);
+    }
+  }, [carregar, success, toastError]);
+
   useEffect(() => { void carregar(); }, [carregar]);
 
   // Reset de página ao mudar filtros
@@ -405,6 +426,12 @@ export default function CteDocumentosPage() {
 
   const empresaAtual = useMemo(() => configs.find((c) => c.cnpj === cnpj), [configs, cnpj]);
 
+  // Em abas de papel, oculta a coluna do papel ativo (a empresa é sempre aquele papel).
+  const showRem = papel !== 'remetente';
+  const showDest = papel !== 'destinatario';
+  const showToma = papel !== 'tomador';
+  const colCount = 7 + (showRem ? 1 : 0) + (showDest ? 1 : 0) + (showToma ? 1 : 0);
+
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0 h-full overflow-y-auto pb-4">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
@@ -422,6 +449,12 @@ export default function CteDocumentosPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors">
             <GearIcon size={16} />Configurações
           </Link>
+          <button type="button" onClick={() => { void handleBackfill(); }} disabled={backfilling}
+            title="Reprocessa os XMLs já baixados para preencher os nomes dos participantes nos documentos antigos"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+            <ArrowClockwiseIcon size={16} className={backfilling ? 'animate-spin' : ''} />
+            {backfilling ? 'Atualizando…' : 'Atualizar nomes'}
+          </button>
           <button type="button" onClick={() => { void carregar(); }} disabled={loading} title="Atualizar"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-input text-foreground text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
             <ArrowClockwiseIcon size={16} className={loading ? 'animate-spin' : ''} />
@@ -514,9 +547,9 @@ export default function CteDocumentosPage() {
                 <th className="px-4 py-2.5 font-medium">Tipo</th>
                 <th className="px-4 py-2.5 font-medium">Situação</th>
                 <th className="px-4 py-2.5 font-medium">Emitente (transp.)</th>
-                <th className="px-4 py-2.5 font-medium">Remetente</th>
-                <th className="px-4 py-2.5 font-medium">Destinatário</th>
-                <th className="px-4 py-2.5 font-medium">Tomador</th>
+                {showRem ? <th className="px-4 py-2.5 font-medium">Remetente</th> : null}
+                {showDest ? <th className="px-4 py-2.5 font-medium">Destinatário</th> : null}
+                {showToma ? <th className="px-4 py-2.5 font-medium">Tomador</th> : null}
                 <th className="px-4 py-2.5 font-medium text-right">Valor prest.</th>
                 <th className="px-4 py-2.5 font-medium">Emissão</th>
                 <th className="px-4 py-2.5 font-medium text-right">Ações</th>
@@ -527,11 +560,11 @@ export default function CteDocumentosPage() {
               {loading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-t border-border/40">
-                    <td colSpan={10} className="px-4 py-3"><div className="h-5 bg-muted rounded animate-pulse" /></td>
+                    <td colSpan={colCount} className="px-4 py-3"><div className="h-5 bg-muted rounded animate-pulse" /></td>
                   </tr>
                 ))
               ) : docs.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-16 text-center text-muted-foreground">
+                <tr><td colSpan={colCount} className="px-4 py-16 text-center text-muted-foreground">
                   <TruckIcon size={32} className="mx-auto opacity-30 mb-2" />
                   Nenhum documento CT-e encontrado.
                 </td></tr>
@@ -559,21 +592,27 @@ export default function CteDocumentosPage() {
                         <span className="font-mono text-[11px] text-muted-foreground">{maskCnpj(doc.cteEmitenteCnpj)}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <Parte cnpj={doc.cteRemetenteCnpj} monitorado={cnpj} />
-                      {doc.cteExpedidorCnpj && doc.cteExpedidorCnpj !== doc.cteRemetenteCnpj ? (
-                        <Parte cnpj={doc.cteExpedidorCnpj} monitorado={cnpj} label="Exped." />
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Parte cnpj={doc.cteDestinatarioCnpj} monitorado={cnpj} />
-                      {doc.cteRecebedorCnpj && doc.cteRecebedorCnpj !== doc.cteDestinatarioCnpj ? (
-                        <Parte cnpj={doc.cteRecebedorCnpj} monitorado={cnpj} label="Receb." />
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Parte cnpj={doc.cteTomadorCnpj} monitorado={cnpj} />
-                    </td>
+                    {showRem ? (
+                      <td className="px-4 py-2.5">
+                        <Parte cnpj={doc.cteRemetenteCnpj} nome={doc.cteRemetenteNome} monitorado={cnpj} />
+                        {doc.cteExpedidorCnpj && doc.cteExpedidorCnpj !== doc.cteRemetenteCnpj ? (
+                          <Parte cnpj={doc.cteExpedidorCnpj} nome={doc.cteExpedidorNome} monitorado={cnpj} label="Exped." />
+                        ) : null}
+                      </td>
+                    ) : null}
+                    {showDest ? (
+                      <td className="px-4 py-2.5">
+                        <Parte cnpj={doc.cteDestinatarioCnpj} nome={doc.cteDestinatarioNome} monitorado={cnpj} />
+                        {doc.cteRecebedorCnpj && doc.cteRecebedorCnpj !== doc.cteDestinatarioCnpj ? (
+                          <Parte cnpj={doc.cteRecebedorCnpj} nome={doc.cteRecebedorNome} monitorado={cnpj} label="Receb." />
+                        ) : null}
+                      </td>
+                    ) : null}
+                    {showToma ? (
+                      <td className="px-4 py-2.5">
+                        <Parte cnpj={doc.cteTomadorCnpj} nome={doc.cteTomadorNome} monitorado={cnpj} />
+                      </td>
+                    ) : null}
                     <td className="px-4 py-2.5 text-right font-medium text-foreground whitespace-nowrap">{fmtMoney(doc.cteValorPrestacao)}</td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{fmtDate(doc.cteDhEmissao)}</td>
                     <td className="px-4 py-2.5">

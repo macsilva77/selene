@@ -137,6 +137,13 @@ export class CteDistribuicaoController {
     return this.service.listarEventos(tenantId, documentoId);
   }
 
+  @Post('documentos/backfill-participantes')
+  @RequiresPermission('cte.manage')
+  @ApiOperation({ summary: 'Reprocessa XMLs para popular os nomes dos participantes (docs antigos)' })
+  backfillParticipantes(@CurrentUser('tenantId') tenantId: string) {
+    return this.service.backfillParticipantes(tenantId);
+  }
+
   @Post('documentos/:documentoId/desacordo')
   @RequiresPermission('cte.manage')
   @HttpCode(HttpStatus.OK)

@@ -1698,6 +1698,11 @@ model CteDocumento {
   cteDestinatarioCnpj String? @map("cte_destinatario_cnpj")
   cteExpedidorCnpj    String? @map("cte_expedidor_cnpj")
   cteRecebedorCnpj    String? @map("cte_recebedor_cnpj")
+  cteTomadorNome      String? @map("cte_tomador_nome")
+  cteRemetenteNome    String? @map("cte_remetente_nome")
+  cteDestinatarioNome String? @map("cte_destinatario_nome")
+  cteExpedidorNome    String? @map("cte_expedidor_nome")
+  cteRecebedorNome    String? @map("cte_recebedor_nome")
   /// Chaves das NF-e transportadas (CSV) — permite cruzar com o DFe da NF-e
   cteChavesNfe        String? @map("cte_chaves_nfe") @db.Text
   // — eventos —

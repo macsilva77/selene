@@ -378,6 +378,11 @@ export interface CteDocumentoProcessado {
   cteDestinatarioCnpj?: string;
   cteExpedidorCnpj?: string;
   cteRecebedorCnpj?: string;
+  cteTomadorNome?: string;
+  cteRemetenteNome?: string;
+  cteDestinatarioNome?: string;
+  cteExpedidorNome?: string;
+  cteRecebedorNome?: string;
   /** CSV das chaves das NF-e transportadas */
   cteChavesNfe?: string;
   eventoTipo?: string;
