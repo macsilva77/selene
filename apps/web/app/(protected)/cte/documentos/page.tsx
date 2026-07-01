@@ -706,9 +706,12 @@ export default function CteDocumentosPage() {
                 const qtdNfes = contarChavesNfe(doc.cteChavesNfe);
                 return (
                   <tr key={doc.id} className="border-t border-border/40 hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-2.5">
-                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${tb.cls}`}>{tb.label}</span>
-                      {doc.modelo ? <span className="ml-1.5 text-[10px] text-muted-foreground">{MODELO_LABEL[doc.modelo] ?? doc.modelo}</span> : null}
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${tb.cls}`}>{tb.label}</span>
+                      {/* rótulo do modelo só quando agrega info (ex.: CT-e OS / GTV-e) — evita "CT-e CT-e" */}
+                      {doc.modelo && (MODELO_LABEL[doc.modelo] ?? String(doc.modelo)) !== tb.label ? (
+                        <span className="ml-1.5 text-[10px] text-muted-foreground">{MODELO_LABEL[doc.modelo] ?? doc.modelo}</span>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2.5">
                       {isEvento ? (
