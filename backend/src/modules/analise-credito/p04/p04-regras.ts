@@ -42,7 +42,9 @@ export type ConfigMap = Map<string, RegraCfg>;
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const pct = (d: Decimal) => `${d.mul(100).toFixed(1)}%`;
-const rat = (d: Decimal) => `${d.toFixed(2)}x`;
+// NÃO anexa "x": todos os templates que usam este helper já trazem o "x" literal
+// (ex.: "Liquidez corrente de {val}x"). Anexar aqui gerava "0.53xx".
+const rat = (d: Decimal) => d.toFixed(2);
 
 function renderMsg(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? `{${k}}`);
@@ -138,7 +140,7 @@ function cr07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
   if (cj === null || !cj.lessThan(th)) return null;
   return { codigoRegra: 'CR-07', severidade: c.severidade as Severidade, indicador: 'cobertura_juros',
     valorAtual: cj, categoria: 'capacidade de pagamento', regraOk: fonteOk(ctx, 'cobertura_juros'),
-    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(1) }) };
+    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(2) }) };
 }
 
 function cr08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
@@ -235,7 +237,7 @@ function at07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
   if (cj === null || !cj.greaterThanOrEqualTo(lo) || !cj.lessThan(hi)) return null;
   return { codigoRegra: 'AT-07', severidade: c.severidade as Severidade, indicador: 'cobertura_juros',
     valorAtual: cj, categoria: 'capacidade de pagamento', regraOk: fonteOk(ctx, 'cobertura_juros'),
-    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(1) }) };
+    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(2) }) };
 }
 
 function at08(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
@@ -371,7 +373,7 @@ function po06(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
   if (cj === null || !cj.greaterThan(th)) return null;
   return { codigoRegra: 'PO-06', severidade: c.severidade as Severidade, indicador: 'cobertura_juros',
     valorAtual: cj, categoria: 'capacidade de pagamento', regraOk: fonteOk(ctx, 'cobertura_juros'),
-    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(1) }) };
+    mensagem: renderMsg(c.templateMensagem, { val: cj.toFixed(2) }) };
 }
 
 function po07(ctx: RegraCtx, map: ConfigMap): AlertaRow | null {
