@@ -102,3 +102,26 @@ describe('Orquestrador', () => {
     expect(['lucro_presumido', 'lucro_real']).toContain(r.recomendado);
   });
 });
+
+describe('Revenda de combustível (monofásico + presunção 1,6%)', () => {
+  it('Presumido: IRPJ presume 1,6%, CSLL 12%, PIS/COFINS = 0 (monofásico)', () => {
+    const r = simularLucroPresumido(base({ receitaBruta: 1_000_000, atividade: 'revenda_combustivel' }));
+    // base IRPJ = 16.000 → 15% = 2.400 (sem adicional)
+    expect(r.tributos.find(t => t.sigla === 'IRPJ')!.valor).toBeCloseTo(2_400, 0);
+    // CSLL base = 120.000 → 9% = 10.800
+    expect(r.tributos.find(t => t.sigla === 'CSLL')!.valor).toBeCloseTo(10_800, 0);
+    expect(r.tributos.find(t => t.sigla === 'PIS')!.valor).toBe(0);
+    expect(r.tributos.find(t => t.sigla === 'COFINS')!.valor).toBe(0);
+    expect(r.totalFederal).toBeCloseTo(13_200, 0);
+  });
+
+  it('Lucro Real: PIS/COFINS = 0 (monofásico); prejuízo zera IRPJ/CSLL', () => {
+    const comLucro = simularLucroReal(base({ receitaBruta: 1_000_000, atividade: 'revenda_combustivel', lairContabil: 100_000 }));
+    expect(comLucro.tributos.find(t => t.sigla === 'PIS')!.valor).toBe(0);
+    expect(comLucro.tributos.find(t => t.sigla === 'COFINS')!.valor).toBe(0);
+    expect(comLucro.tributos.find(t => t.sigla === 'IRPJ')!.valor).toBeCloseTo(15_000, 0);
+
+    const comPrejuizo = simularLucroReal(base({ receitaBruta: 1_000_000, atividade: 'revenda_combustivel', lairContabil: -50_000 }));
+    expect(comPrejuizo.totalFederal).toBe(0); // prejuízo → IRPJ/CSLL 0 e PIS/COFINS monofásico 0
+  });
+});

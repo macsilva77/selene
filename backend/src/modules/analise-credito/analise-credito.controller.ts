@@ -397,7 +397,7 @@ export class AnaliseCreditoController {
         ? null
         : dre.ebit
           ? Math.max(0, dre.ebit) / receitaBruta
-          : atividade === 'servico' ? 0.32 : 0.08;
+          : atividade === 'servico' ? 0.32 : atividade === 'revenda_combustivel' ? 0.03 : 0.08;
 
     const simulacao = simularRegimes({ receitaBruta, lairContabil, margemProxy, atividade, regimeAtual });
 
@@ -413,6 +413,8 @@ export class AnaliseCreditoController {
 
   /** Atividade predominante p/ presunção/anexo: CNAE → indústria/comércio; EFD sem mercadoria → serviço. */
   private inferirAtividade(cnae: string | null, vendasMercadoria: number, receita: number): Atividade {
+    // Posto de combustível (CNAE 4731): PIS/COFINS monofásico + presunção de IRPJ 1,6%.
+    if ((cnae ?? '').replace(/\D/g, '').startsWith('4731')) return 'revenda_combustivel';
     const div = cnae ? Number(cnae.slice(0, 2)) : NaN;
     if (div >= 5 && div <= 33) return 'industria';
     if (div >= 45 && div <= 47) return 'comercio';

@@ -148,7 +148,7 @@ export interface CruzamentoReceita {
 
 /* ─── Simulação Tributária ─────────────────────────────────────────────────── */
 
-export type Atividade = 'comercio' | 'industria' | 'servico';
+export type Atividade = 'comercio' | 'industria' | 'servico' | 'revenda_combustivel';
 export type Regime = 'simples_nacional' | 'lucro_presumido' | 'lucro_real';
 
 export interface PassoMemoria {

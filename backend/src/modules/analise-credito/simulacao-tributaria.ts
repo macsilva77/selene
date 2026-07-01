@@ -21,7 +21,7 @@
 
 /* ─── Tipos ──────────────────────────────────────────────────────────────── */
 
-export type Atividade = 'comercio' | 'industria' | 'servico';
+export type Atividade = 'comercio' | 'industria' | 'servico' | 'revenda_combustivel';
 export type Regime = 'simples_nacional' | 'lucro_presumido' | 'lucro_real';
 
 /** Um passo da memória de cálculo: rótulo + fórmula textual + valor resultante. */
@@ -90,10 +90,19 @@ const ADICIONAL_IRPJ = 0.10;
 const ALIQ_CSLL = 0.09;
 
 // Presunção do Lucro Presumido (RIR/2018) — base de IRPJ e de CSLL por atividade.
+// Revenda de combustível: IRPJ presume 1,6% (Lei 9.249/95 art. 15 §1 I "a"); CSLL 12%.
 const PRESUNCAO: Record<Atividade, { irpj: number; csll: number }> = {
-  comercio:  { irpj: 0.08, csll: 0.12 },
-  industria: { irpj: 0.08, csll: 0.12 },
-  servico:   { irpj: 0.32, csll: 0.32 },
+  comercio:            { irpj: 0.08,  csll: 0.12 },
+  industria:           { irpj: 0.08,  csll: 0.12 },
+  servico:             { irpj: 0.32,  csll: 0.32 },
+  revenda_combustivel: { irpj: 0.016, csll: 0.12 },
+};
+
+// Combustível é MONOFÁSICO: PIS/COFINS concentrados na refinaria/distribuidora →
+// alíquota ZERO na revenda (Lei 9.718/98, 10.865/04, 11.727/08), no Presumido E no Real.
+// v1: trata o posto como ~100% combustível (domina a receita); conveniência entra na v2.
+const EH_MONOFASICO: Record<Atividade, boolean> = {
+  comercio: false, industria: false, servico: false, revenda_combustivel: true,
 };
 
 // PIS/COFINS cumulativo (Presumido) × não-cumulativo (Real).
@@ -131,6 +140,16 @@ const ANEXO: Record<Atividade, FaixaSimples[]> = {
     { ate: 3_600_000, aliq: 0.2100, deduzir: 125_640 },
     { ate: 4_800_000, aliq: 0.3300, deduzir: 648_000 },
   ],
+  // Combustível no Simples é caso especial (segregação/monofásico); postos costumam
+  // exceder o teto de R$ 4,8 mi (→ não elegível). v1 reusa o Anexo I por segurança.
+  revenda_combustivel: [
+    { ate: 180_000,   aliq: 0.0400, deduzir: 0 },
+    { ate: 360_000,   aliq: 0.0730, deduzir: 5_940 },
+    { ate: 720_000,   aliq: 0.0950, deduzir: 13_860 },
+    { ate: 1_800_000, aliq: 0.1070, deduzir: 22_500 },
+    { ate: 3_600_000, aliq: 0.1430, deduzir: 87_300 },
+    { ate: 4_800_000, aliq: 0.1900, deduzir: 378_000 },
+  ],
 };
 
 /** Partilha do DAS por faixa (fração de cada tributo dentro do total) — LC 123. */
@@ -163,12 +182,22 @@ const PARTILHA: Record<Atividade, Partilha[]> = {
     { irpj: 0.0400, csll: 0.0350, cofins: 0.1282, pis: 0.0278, cpp: 0.4340, icmsIss: 0.3350 },
     { irpj: 0.3500, csll: 0.1500, cofins: 0.1603, pis: 0.0347, cpp: 0.3050, icmsIss: 0.0000 },
   ],
+  // v1: reusa a partilha do Anexo I (comércio) — ver nota no ANEXO.
+  revenda_combustivel: [
+    { irpj: 0.0550, csll: 0.0350, cofins: 0.1274, pis: 0.0276, cpp: 0.4150, icmsIss: 0.3400 },
+    { irpj: 0.0550, csll: 0.0350, cofins: 0.1274, pis: 0.0276, cpp: 0.4150, icmsIss: 0.3400 },
+    { irpj: 0.0550, csll: 0.0350, cofins: 0.1274, pis: 0.0276, cpp: 0.4200, icmsIss: 0.3350 },
+    { irpj: 0.0550, csll: 0.0350, cofins: 0.1274, pis: 0.0276, cpp: 0.4200, icmsIss: 0.3350 },
+    { irpj: 0.0550, csll: 0.0350, cofins: 0.1274, pis: 0.0276, cpp: 0.4200, icmsIss: 0.3350 },
+    { irpj: 0.1350, csll: 0.1000, cofins: 0.2827, pis: 0.0613, cpp: 0.4210, icmsIss: 0.0000 },
+  ],
 };
 
 const ROTULO_ATIVIDADE: Record<Atividade, string> = {
   comercio: 'Comércio (Anexo I)',
   industria: 'Indústria (Anexo II)',
   servico: 'Serviços (Anexo III)',
+  revenda_combustivel: 'Revenda de combustível',
 };
 
 export const OBS_ESCOPO =
@@ -205,8 +234,9 @@ export function simularLucroPresumido(e: EntradaSimulacao): RegimeSimulado {
   const baseCsll = rb * pres.csll;
   const csll = baseCsll * ALIQ_CSLL;
 
-  const pis = rb * PIS_CUMULATIVO;
-  const cofins = rb * COFINS_CUMULATIVO;
+  const monofasico = EH_MONOFASICO[atividade];
+  const pis = monofasico ? 0 : rb * PIS_CUMULATIVO;
+  const cofins = monofasico ? 0 : rb * COFINS_CUMULATIVO;
 
   const tributos: TributoLinha[] = [
     {
@@ -224,22 +254,26 @@ export function simularLucroPresumido(e: EntradaSimulacao): RegimeSimulado {
         { rotulo: 'CSLL 9%', formula: `Base × 9%`, valor: r2(csll) },
       ],
     },
-    {
-      sigla: 'PIS', nome: 'PIS (cumulativo)', valor: r2(pis),
-      memoria: [{ rotulo: 'PIS 0,65%', formula: `Receita × 0,65%`, valor: r2(pis) }],
-    },
-    {
-      sigla: 'COFINS', nome: 'COFINS (cumulativo)', valor: r2(cofins),
-      memoria: [{ rotulo: 'COFINS 3%', formula: `Receita × 3%`, valor: r2(cofins) }],
-    },
+    monofasico
+      ? { sigla: 'PIS', nome: 'PIS (monofásico)', valor: 0,
+          memoria: [{ rotulo: 'Monofásico — combustível', formula: 'Recolhido na refinaria/distribuidora → alíquota 0 na revenda', valor: 0 }] }
+      : { sigla: 'PIS', nome: 'PIS (cumulativo)', valor: r2(pis),
+          memoria: [{ rotulo: 'PIS 0,65%', formula: `Receita × 0,65%`, valor: r2(pis) }] },
+    monofasico
+      ? { sigla: 'COFINS', nome: 'COFINS (monofásico)', valor: 0,
+          memoria: [{ rotulo: 'Monofásico — combustível', formula: 'Recolhido na refinaria/distribuidora → alíquota 0 na revenda', valor: 0 }] }
+      : { sigla: 'COFINS', nome: 'COFINS (cumulativo)', valor: r2(cofins),
+          memoria: [{ rotulo: 'COFINS 3%', formula: `Receita × 3%`, valor: r2(cofins) }] },
   ];
 
   const totalFederal = r2(irpj + csll + pis + cofins);
+  const observacoes = [`Presunção ${ROTULO_ATIVIDADE[atividade].split(' (')[0]}: IRPJ ${fmtPctMem(pres.irpj)}, CSLL ${fmtPctMem(pres.csll)}.`];
+  if (monofasico) observacoes.push('PIS/COFINS = 0: combustível é monofásico (concentrado na refinaria/distribuidora). v1 trata a receita como ~100% combustível.');
   return {
     regime: 'lucro_presumido', rotulo: 'Lucro Presumido', elegivel: true,
     totalFederal, cargaEfetiva: rb > 0 ? totalFederal / rb : null,
     tributos, estimado: false,
-    observacoes: [`Presunção ${ROTULO_ATIVIDADE[atividade].split(' (')[0]}: IRPJ ${fmtPctMem(pres.irpj)}, CSLL ${fmtPctMem(pres.csll)}.`],
+    observacoes,
   };
 }
 
@@ -251,12 +285,13 @@ export function simularLucroReal(e: EntradaSimulacao): RegimeSimulado {
   const lair = e.lairContabil ?? (e.margemProxy !== null ? rb * e.margemProxy : 0);
   const lairPositivo = Math.max(0, lair);
 
+  const monofasico = EH_MONOFASICO[e.atividade];
   const irpjBase = lairPositivo * ALIQ_IRPJ;
   const irpjAdic = adicionalIrpj(lairPositivo);
   const irpj = irpjBase + irpjAdic;
   const csll = lairPositivo * ALIQ_CSLL;
-  const pis = rb * PIS_NAO_CUMULATIVO;
-  const cofins = rb * COFINS_NAO_CUMULATIVO;
+  const pis = monofasico ? 0 : rb * PIS_NAO_CUMULATIVO;
+  const cofins = monofasico ? 0 : rb * COFINS_NAO_CUMULATIVO;
 
   const baseMem: PassoMemoria[] = estimado
     ? [{ rotulo: 'Lucro estimado (margem-proxy)', formula: `Receita × ${e.margemProxy !== null ? fmtPctMem(e.margemProxy) : '—'}`, valor: r2(lair) }]
@@ -275,20 +310,22 @@ export function simularLucroReal(e: EntradaSimulacao): RegimeSimulado {
       sigla: 'CSLL', nome: 'Contribuição Social', valor: r2(csll),
       memoria: [...baseMem, { rotulo: 'CSLL 9%', formula: `Lucro × 9%`, valor: r2(csll) }],
     },
-    {
-      sigla: 'PIS', nome: 'PIS (não-cumulativo)', valor: r2(pis),
-      memoria: [{ rotulo: 'PIS 1,65%', formula: `Receita × 1,65% (sem créditos)`, valor: r2(pis) }],
-    },
-    {
-      sigla: 'COFINS', nome: 'COFINS (não-cumulativo)', valor: r2(cofins),
-      memoria: [{ rotulo: 'COFINS 7,6%', formula: `Receita × 7,6% (sem créditos)`, valor: r2(cofins) }],
-    },
+    monofasico
+      ? { sigla: 'PIS', nome: 'PIS (monofásico)', valor: 0,
+          memoria: [{ rotulo: 'Monofásico — combustível', formula: 'Alíquota 0 na revenda; sem crédito na compra', valor: 0 }] }
+      : { sigla: 'PIS', nome: 'PIS (não-cumulativo)', valor: r2(pis),
+          memoria: [{ rotulo: 'PIS 1,65%', formula: `Receita × 1,65% (sem créditos)`, valor: r2(pis) }] },
+    monofasico
+      ? { sigla: 'COFINS', nome: 'COFINS (monofásico)', valor: 0,
+          memoria: [{ rotulo: 'Monofásico — combustível', formula: 'Alíquota 0 na revenda; sem crédito na compra', valor: 0 }] }
+      : { sigla: 'COFINS', nome: 'COFINS (não-cumulativo)', valor: r2(cofins),
+          memoria: [{ rotulo: 'COFINS 7,6%', formula: `Receita × 7,6% (sem créditos)`, valor: r2(cofins) }] },
   ];
 
   const totalFederal = r2(irpj + csll + pis + cofins);
-  const observacoes = [
-    'PIS/COFINS não-cumulativo calculado SEM créditos de insumos — é teto; o efetivo tende a ser menor.',
-  ];
+  const observacoes = monofasico
+    ? ['PIS/COFINS = 0: combustível é monofásico (alíquota 0 na revenda, sem crédito na compra). v1 trata a receita como ~100% combustível.']
+    : ['PIS/COFINS não-cumulativo calculado SEM créditos de insumos — é teto; o efetivo tende a ser menor.'];
   if (estimado) observacoes.unshift('Sem ECF de Lucro Real: lucro estimado por margem — valor indicativo.');
 
   return {
