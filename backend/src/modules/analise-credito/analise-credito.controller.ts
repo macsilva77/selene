@@ -21,10 +21,14 @@ import { EcfDataSourceService } from './infrastructure/ecf-data-source.service';
 import { AnaliseCreditoCalcularService } from './analise-credito-calcular.service';
 import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard }  from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequiresPermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser }   from '../../common/decorators/current-user.decorator';
 import { Audit }         from '../../common/interceptors/audit.interceptor';
 
-@UseGuards(JwtAuthGuard)
+// Endpoints sem @RequiresPermission continuam abertos a qualquer usuário autenticado
+// (PermissionsGuard passa quando não há decorator); só os administrativos são restritos.
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('analise-credito')
 export class AnaliseCreditoController {
   private readonly logger = new Logger(AnaliseCreditoController.name);
@@ -106,6 +110,7 @@ export class AnaliseCreditoController {
 
   @Post('admin/resetar')
   @HttpCode(HttpStatus.OK)
+  @RequiresPermission('analise-credito.processar')
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoReset')
   async resetarDadosProcessados(@CurrentUser('tenantId') tenantId: string) {
     const empresas = await this.prisma.creditoEmpresa.findMany({
@@ -154,28 +159,27 @@ export class AnaliseCreditoController {
 
   @Post('admin/reprocessar-ecf')
   @HttpCode(HttpStatus.ACCEPTED)
+  @RequiresPermission('analise-credito.processar')
   @Audit(AuditAcao.STATUS_CHANGE, 'AnaliseCreditoReprocessarEcf')
   async reprocessarEcf(@CurrentUser('tenantId') tenantId: string) {
-    // CNPJs do cadastro de empresas do tenant
-    const empresas = await this.prisma.empresa.findMany({
-      where:  { tenantId },
-      select: { cnpj: true },
-      distinct: ['cnpj'],
-    });
-
-    // CNPJs com ECF processado na tabela de obrigações (sem filtro de tenant — design do módulo)
-    const ecfObrigacoes = await this.prisma.obrigacaoAcessoria.findMany({
-      where:  { tipoObrigacao: 'ECF', statusProcessamento: 'Processado' },
-      select: { cnpj: true },
-      distinct: ['cnpj'],
-    });
-
-    const cnpjsSet = new Set([
-      ...empresas.map(e => e.cnpj),
-      ...ecfObrigacoes.map(e => e.cnpj),
+    // CNPJs que pertencem AO TENANT (cadastro + base de crédito) — nunca de outros tenants.
+    const [empresas, creditoEmps] = await Promise.all([
+      this.prisma.empresa.findMany({ where: { tenantId }, select: { cnpj: true }, distinct: ['cnpj'] }),
+      this.prisma.creditoEmpresa.findMany({ where: { tenantId }, select: { cnpj: true }, distinct: ['cnpj'] }),
     ]);
-    const cnpjs = [...cnpjsSet];
-    this.logger.log(`[ReprocessarEcf] tenant=${tenantId} — ${cnpjs.length} empresa(s) (${empresas.length} cadastradas + ${ecfObrigacoes.length} ECF-only)`);
+    const meusCnpjs = [...new Set([...empresas.map(e => e.cnpj), ...creditoEmps.map(e => e.cnpj)])];
+
+    // ObrigacaoAcessoria é GLOBAL (não tem tenantId). Filtramos pelos CNPJs DO TENANT para
+    // reprocessar só quem tem ECF. NUNCA usar essa tabela para DESCOBRIR CNPJs novos — isso
+    // importaria dados de crédito de OUTROS tenants (vazamento cross-tenant).
+    const comEcf = meusCnpjs.length === 0 ? [] : await this.prisma.obrigacaoAcessoria.findMany({
+      where:  { tipoObrigacao: 'ECF', statusProcessamento: 'Processado', cnpj: { in: meusCnpjs } },
+      select: { cnpj: true },
+      distinct: ['cnpj'],
+    });
+    const comEcfSet = new Set(comEcf.map(e => e.cnpj));
+    const cnpjs = meusCnpjs.filter(c => comEcfSet.has(c));
+    this.logger.log(`[ReprocessarEcf] tenant=${tenantId} — ${cnpjs.length} empresa(s) com ECF (de ${meusCnpjs.length} do tenant)`);
 
     void (async () => {
       for (const cnpj of cnpjs) {
@@ -570,7 +574,7 @@ export class AnaliseCreditoController {
     const exercicio = this.parseExercicio(exercicioStr);
     if (exercicio === undefined) throw new BadRequestException('exercicio é obrigatório');
 
-    const DRE_LINHAS = ['receita_bruta','receita_liquida','ebitda','ebit','lucro_liquido','desp_financeiras','cmv'];
+    const DRE_LINHAS = ['receita_bruta','receita_liquida','lucro_bruto','ebitda','ebit','lucro_liquido','desp_financeiras','cmv'];
 
     const [dreRows, estrutura] = await Promise.all([
       this.prisma.creditoDre.findMany({
@@ -1165,6 +1169,7 @@ export class AnaliseCreditoController {
   }
 
   @Patch('regras/:id')
+  @RequiresPermission('analise-credito.regras')
   async atualizarRegra(
     @Param('id') id: string,
     @Body() dto: UpdateRegraDto,
@@ -1175,6 +1180,7 @@ export class AnaliseCreditoController {
   }
 
   @Patch('regras/:id/toggle')
+  @RequiresPermission('analise-credito.regras')
   async toggleRegra(
     @Param('id') id: string,
     @CurrentUser('sub') usuarioId: string,

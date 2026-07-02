@@ -100,6 +100,7 @@ async function main() {
     // Permissões de Análise de Crédito
     'analise-credito.view',
     'analise-credito.processar',
+    'analise-credito.regras',
   ];
 
   // Use raw SQL to upsert perfil (bypasses stale Prisma client types)
