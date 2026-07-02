@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfigService } from '../../config/app-config.service';
@@ -55,7 +56,7 @@ interface EmpresaRow {
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 @Injectable()
-export class CertificadosService extends AuditableService {
+export class CertificadosService extends AuditableService implements OnModuleInit {
   private readonly logger = new Logger(CertificadosService.name);
   private readonly encKey: Buffer;
 
@@ -254,6 +255,50 @@ export class CertificadosService extends AuditableService {
     throw new NotFoundException(
       `Certificado para CNPJ ${cnpj} não possui senha armazenada. Re-faça o upload do certificado.`,
     );
+  }
+
+  /** No startup, grava a cadeia nos certs importados antes do fix (mTLS estrito do ADN NFS-e). */
+  async onModuleInit(): Promise<void> {
+    // fire-and-forget: não bloqueia o boot; idempotente (só certs sem cadeia).
+    void this.backfillCadeias().catch((e) =>
+      this.logger.warn(`[backfillCadeias] falhou: ${e instanceof Error ? e.message : String(e)}`),
+    );
+  }
+
+  /**
+   * Reprocessa o PFX já armazenado (arquivoEnc + senhaEnc) dos certificados que ainda não têm
+   * a cadeia (certChainPemEnc) e grava a cadeia completa — corrige, SEM reupload, os certs
+   * importados antes do fix. Necessário p/ o mTLS estrito do ADN NFS-e (evita E2214).
+   */
+  async backfillCadeias(): Promise<{ pendentes: number; atualizados: number; erros: number }> {
+    const certs = await this.prisma.certificadoDigital.findMany({
+      where: { certChainPemEnc: null, arquivoEnc: { not: null }, senhaEnc: { not: null } },
+      select: { id: true, arquivoEnc: true, storageIv: true, senhaEnc: true, senhaIv: true },
+    });
+    if (certs.length === 0) return { pendentes: 0, atualizados: 0, erros: 0 };
+
+    let atualizados = 0;
+    let erros = 0;
+    for (const c of certs) {
+      try {
+        if (!c.arquivoEnc || !c.storageIv || !c.senhaEnc || !c.senhaIv) { erros++; continue; }
+        const pfxBuf = this.decryptFile(c.arquivoEnc, c.storageIv);
+        const senha = this.decryptFile(c.senhaEnc, c.senhaIv).toString('utf8');
+        const parsed = this.parsePfx(pfxBuf, senha);
+        if (!parsed.ok) { erros++; continue; }
+        const { encrypted, storageIv } = this.encryptFile(Buffer.from(parsed.data.pemChain, 'utf8'));
+        await this.prisma.certificadoDigital.update({
+          where: { id: c.id },
+          data: { certChainPemEnc: encrypted, certChainPemIv: storageIv },
+        });
+        atualizados++;
+      } catch (e) {
+        erros++;
+        this.logger.warn(`[backfillCadeias] cert ${c.id}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    this.logger.log(`[backfillCadeias] ${atualizados}/${certs.length} cadeias gravadas (${erros} erros)`);
+    return { pendentes: certs.length, atualizados, erros };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
