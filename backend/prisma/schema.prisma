@@ -966,9 +966,12 @@ model CertificadoDigital {
   status         CertificadoStatus
   arquivoEnc     Bytes?               @map("arquivo_enc")
   storageIv      String?              @map("storage_iv")
-  /// Certificado público em PEM, criptografado AES-256-GCM
+  /// Certificado público em PEM (folha), criptografado AES-256-GCM
   certPemEnc     Bytes?               @map("cert_pem_enc")
   certPemIv      String?              @map("cert_pem_iv")
+  /// Cadeia completa PEM (folha + intermediários ICP-Brasil), criptografada — mTLS estrito do ADN NFS-e
+  certChainPemEnc Bytes?              @map("cert_chain_pem_enc")
+  certChainPemIv  String?             @map("cert_chain_pem_iv")
   /// Chave privada em PEM, criptografada AES-256-GCM
   keyPemEnc      Bytes?               @map("key_pem_enc")
   keyPemIv       String?              @map("key_pem_iv")

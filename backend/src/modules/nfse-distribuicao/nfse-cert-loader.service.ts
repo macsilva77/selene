@@ -52,7 +52,13 @@ export class NfseCertLoaderService {
     }
 
     const encKey = this.getEncKey();
-    const pemCert = this.decrypt(certificado.certPemEnc, certificado.certPemIv, encKey).toString('utf8');
+    // Prefere a CADEIA completa (folha + intermediários) quando disponível — o ADN da NFS-e
+    // valida a cadeia de forma estrita no mTLS; só a folha causa E2214 (reimportar o cert
+    // grava a cadeia). Fallback p/ a folha em certs antigos (ainda sujeito ao E2214 intermitente).
+    const temCadeia = !!(certificado.certChainPemEnc && certificado.certChainPemIv);
+    const pemCert = temCadeia
+      ? this.decrypt(certificado.certChainPemEnc!, certificado.certChainPemIv!, encKey).toString('utf8')
+      : this.decrypt(certificado.certPemEnc, certificado.certPemIv, encKey).toString('utf8');
     const pemKey = this.decrypt(certificado.keyPemEnc, certificado.keyPemIv, encKey).toString('utf8');
 
     this.cache.set(certificadoId, {

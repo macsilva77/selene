@@ -31,8 +31,10 @@ interface ParsedCert {
   thumbprint: string;
   status: CertificadoStatus;
   diasParaVencer: number;
-  /** Certificado público PEM (para conexões mTLS sem precisar da senha) */
+  /** Certificado público PEM (folha) — usado p/ thumbprint e compatibilidade */
   pemCert: string;
+  /** Cadeia PEM completa (folha + intermediários ICP-Brasil) — mTLS estrito do ADN NFS-e */
+  pemChain: string;
   /** Chave privada PEM (para conexões mTLS sem precisar da senha) */
   pemKey: string;
 }
@@ -114,6 +116,10 @@ export class CertificadosService extends AuditableService {
     const keyBagEntry = keyBagList[0];
     const pemKey = keyBagEntry?.key ? forge.pki.privateKeyToPem(keyBagEntry.key) : '';
     const pemCert = forge.pki.certificateToPem(cert);
+    // Cadeia completa (folha + intermediários). O ADN da NFS-e valida a cadeia ESTRITA no
+    // mTLS — enviar só a folha causa o E2214 "Erro Cadeia de Certificação" (intermitente,
+    // pois só passa quando o ADN completa a cadeia sozinho via cache/AIA).
+    const pemChain = this.montarCadeia(cert, certBagList);
 
     // Thumbprint SHA-1 (padrão ICP-Brasil)
     const md = forge.md.sha1.create();
@@ -158,9 +164,45 @@ export class CertificadosService extends AuditableService {
         status,
         diasParaVencer,
         pemCert,
+        pemChain,
         pemKey,
       },
     };
+  }
+
+  /**
+   * Ordena a cadeia de certificação a partir da folha: folha → intermediário(s), seguindo
+   * o emissor de cada um entre os certificados presentes no PFX. Exclui a raiz auto-assinada
+   * (o TLS não precisa dela). Se o PFX só tiver a folha, retorna só a folha.
+   */
+  private montarCadeia(folha: forge.pki.Certificate, certBagList: forge.pkcs12.Bag[]): string {
+    const todos = certBagList
+      .map((b) => b.cert)
+      .filter((c): c is forge.pki.Certificate => !!c);
+
+    const mesmaDN = (a: { hash?: string; attributes?: unknown[] }, b: { hash?: string; attributes?: unknown[] }): boolean => {
+      if (a.hash && b.hash) return a.hash === b.hash;
+      const key = (n: { attributes?: unknown[] }) =>
+        (n.attributes ?? []).map((x) => `${(x as { shortName?: string; type?: string }).shortName ?? (x as { type?: string }).type}=${(x as { value?: string }).value}`).join('|');
+      return key(a) === key(b);
+    };
+
+    const cadeia: forge.pki.Certificate[] = [folha];
+    const vistos = new Set<forge.pki.Certificate>([folha]);
+    let atual = folha;
+    while (true) {
+      const emissor = todos.find(
+        (c) =>
+          !vistos.has(c) &&
+          mesmaDN(c.subject, atual.issuer) && // c emitiu o 'atual'
+          !mesmaDN(c.subject, c.issuer),      // e não é raiz auto-assinada
+      );
+      if (!emissor) break;
+      cadeia.push(emissor);
+      vistos.add(emissor);
+      atual = emissor;
+    }
+    return cadeia.map((c) => forge.pki.certificateToPem(c)).join('');
   }
 
   // ── Encryption / Decryption (AES-256-GCM) ────────────────────────────────────
@@ -262,6 +304,7 @@ export class CertificadosService extends AuditableService {
 
     // Criptografa PEM cert e key separadamente (permite mTLS sem reter a senha)
     const { encrypted: certPemEnc, storageIv: certPemIv } = this.encryptFile(Buffer.from(parsed.pemCert, 'utf8'));
+    const { encrypted: certChainPemEnc, storageIv: certChainPemIv } = this.encryptFile(Buffer.from(parsed.pemChain, 'utf8'));
     const pemKeyEncResult = parsed.pemKey
       ? this.encryptFile(Buffer.from(parsed.pemKey, 'utf8'))
       : null;
@@ -287,6 +330,8 @@ export class CertificadosService extends AuditableService {
         storageIv,
         certPemEnc,
         certPemIv,
+        certChainPemEnc,
+        certChainPemIv,
         keyPemEnc: pemKeyEncResult?.encrypted ?? null,
         keyPemIv: pemKeyEncResult?.storageIv ?? null,
         senhaEnc: senhaEncResult.encrypted,
@@ -561,6 +606,7 @@ export class CertificadosService extends AuditableService {
 
     const { encrypted, storageIv } = this.encryptFile(buffer);
     const { encrypted: certPemEnc, storageIv: certPemIv } = this.encryptFile(Buffer.from(parsed.pemCert, 'utf8'));
+    const { encrypted: certChainPemEnc, storageIv: certChainPemIv } = this.encryptFile(Buffer.from(parsed.pemChain, 'utf8'));
     const pemKeyEncResult = parsed.pemKey ? this.encryptFile(Buffer.from(parsed.pemKey, 'utf8')) : null;
     const senhaEncResult = this.encryptFile(Buffer.from(password, 'utf8'));
 
@@ -594,6 +640,8 @@ export class CertificadosService extends AuditableService {
           storageIv,
           certPemEnc,
           certPemIv,
+          certChainPemEnc,
+          certChainPemIv,
           keyPemEnc: pemKeyEncResult?.encrypted ?? null,
           keyPemIv: pemKeyEncResult?.storageIv ?? null,
           senhaEnc: senhaEncResult.encrypted,
