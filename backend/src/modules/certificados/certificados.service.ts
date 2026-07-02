@@ -336,11 +336,14 @@ export class CertificadosService extends AuditableService implements OnModuleIni
       };
     }
 
-    // Impede thumbprint duplicado dentro do mesmo tenant
+    // Impede thumbprint duplicado no tenant — EXCETO quando o certificado já existe mas está
+    // SEM a cadeia (importado antes do fix da cadeia mTLS): aí o reenvio REPARA o registro
+    // (grava cadeia + senha), sem criar duplicado. Necessário p/ destravar a NFS-e (E2214).
     const existing = await this.prisma.certificadoDigital.findFirst({
       where: { tenantId, thumbprint: parsed.thumbprint, ativo: true },
+      select: { id: true, certChainPemEnc: true },
     });
-    if (existing) {
+    if (existing?.certChainPemEnc) {
       throw new ConflictException('Este certificado já está cadastrado nesta conta.');
     }
 
@@ -357,33 +360,40 @@ export class CertificadosService extends AuditableService implements OnModuleIni
     // Criptografa a senha do PFX (necessário para ReceitaNetBX/JSignNet que exige o PFX original)
     const senhaEncResult = this.encryptFile(Buffer.from(password, 'utf8'));
 
-    // Cria o registro (draft que será finalizado em /certificados)
-    const cert = await this.prisma.certificadoDigital.create({
-      data: {
-        tenantId,
-        criadoPorId: usuarioId,
-        razaoSocial: parsed.razaoSocial,
-        cnpjCert: parsed.cnpjCert,
-        raizCnpj: parsed.raizCnpj,
-        numeroSerie: parsed.numeroSerie,
-        autoridadeCert: parsed.autoridadeCert,
-        dataEmissao: parsed.dataEmissao,
-        dataValidade: parsed.dataValidade,
-        thumbprint: parsed.thumbprint,
-        status: parsed.status,
-        arquivoEnc: encrypted,
-        storageIv,
-        certPemEnc,
-        certPemIv,
-        certChainPemEnc,
-        certChainPemIv,
-        keyPemEnc: pemKeyEncResult?.encrypted ?? null,
-        keyPemIv: pemKeyEncResult?.storageIv ?? null,
-        senhaEnc: senhaEncResult.encrypted,
-        senhaIv: senhaEncResult.storageIv,
-        nomeArquivo: file.originalname,
-      },
-    });
+    // Campos derivados do arquivo (comuns à criação e ao reparo)
+    const dadosArquivo = {
+      status: parsed.status,
+      dataValidade: parsed.dataValidade,
+      arquivoEnc: encrypted,
+      storageIv,
+      certPemEnc,
+      certPemIv,
+      certChainPemEnc,
+      certChainPemIv,
+      keyPemEnc: pemKeyEncResult?.encrypted ?? null,
+      keyPemIv: pemKeyEncResult?.storageIv ?? null,
+      senhaEnc: senhaEncResult.encrypted,
+      senhaIv: senhaEncResult.storageIv,
+      nomeArquivo: file.originalname,
+    };
+
+    // Reparo: mesmo certificado já existe sem a cadeia → atualiza sem duplicar. Senão, cria.
+    const cert = existing
+      ? await this.prisma.certificadoDigital.update({ where: { id: existing.id }, data: dadosArquivo })
+      : await this.prisma.certificadoDigital.create({
+          data: {
+            tenantId,
+            criadoPorId: usuarioId,
+            razaoSocial: parsed.razaoSocial,
+            cnpjCert: parsed.cnpjCert,
+            raizCnpj: parsed.raizCnpj,
+            numeroSerie: parsed.numeroSerie,
+            autoridadeCert: parsed.autoridadeCert,
+            dataEmissao: parsed.dataEmissao,
+            thumbprint: parsed.thumbprint,
+            ...dadosArquivo,
+          },
+        });
 
     await this.audit('CertificadoDigital', cert.id, AuditAcao.UPLOAD, { usuarioId, depois: { thumbprint: parsed.thumbprint, status: parsed.status }, ipOrigem: ip });
 
